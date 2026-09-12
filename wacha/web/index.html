@@ -73,6 +73,14 @@
   .g-node:focus { outline: none; }
   .g-node-label { fill: var(--ink); font-size: 13px; text-anchor: middle; pointer-events: none; }
   .g-hint { color: var(--muted); font-size: .8rem; margin-top: 10px; text-align: center; }
+  /* Provenance: seed (hand-verified) vs WordNet (auto-extracted) */
+  .badge { font-size: .68rem; padding: 1px 7px; border-radius: 999px; margin-left: 8px;
+           vertical-align: middle; font-weight: 600; }
+  .badge.seed { background: rgba(87,217,163,.16); color: var(--accent2); border: 1px solid var(--accent2); }
+  .badge.wn { background: rgba(255,157,107,.14); color: var(--oov); border: 1px solid var(--oov); }
+  .legend { margin-top: 12px; color: var(--muted); font-size: .82rem; text-align: center; line-height: 1.9; }
+  .g-node.src-wn circle { stroke: var(--oov); stroke-dasharray: 4 3; }
+  .g-edge.src-wn { stroke: var(--oov); stroke-dasharray: 4 3; opacity: .7; }
   .learner { border-color: var(--accent2); }
   .learner .body { font-size: 1.12rem; }
   .learner .example { margin-top: 8px; color: var(--ink); }
@@ -162,6 +170,13 @@ function render(d) {
     html += `<span class="empty">ไม่มีข้อมูลความสัมพันธ์ (no relationship data)</span>`;
   } else {
     html += buildGraphSvg(d);
+    // Legend: explain the seed vs WordNet provenance honestly.
+    if (d.related.some(r => r.source === "wordnet")) {
+      html += `<div class="legend">`
+        + `<span class="badge seed">ตรวจแล้ว</span> ความสัมพันธ์ที่ตรวจสอบด้วยมือ &nbsp;·&nbsp; `
+        + `<span class="badge wn">WordNet</span> สกัดจาก Thai WordNet อัตโนมัติ (ยังไม่ได้ตรวจทีละคู่ — อาจมีคู่ที่ไม่แม่นยำ)`
+        + `</div>`;
+    }
   }
   html += `</div>`;
 
@@ -172,9 +187,13 @@ function render(d) {
   } else {
     html += `<ul class="rel">`;
     d.related.forEach((rw, i) => {
+      const badge = rw.source === "seed"
+        ? `<span class="badge seed" title="ความสัมพันธ์ที่ตรวจสอบด้วยมือ">ตรวจแล้ว</span>`
+        : `<span class="badge wn" title="สกัดจาก Thai WordNet อัตโนมัติ ยังไม่ได้ตรวจทีละคู่">WordNet</span>`;
       html += `<li><div class="head">`;
       html += `<span class="rank">${i + 1}.</span>`;
       html += `<span class="rw" data-word="${esc(rw.word)}">${esc(rw.word)}</span>`;
+      html += badge;
       html += `<span class="score">score ${rw.score.toFixed(3)}</span>`;
       html += `</div>`;
       if (rw.path && rw.path.length) {
@@ -252,12 +271,13 @@ function buildGraphSvg(d) {
     const nodeR = 20 + norm * 12;                // higher score -> bigger node
     const rel = relationLabel(rw, query);
     const mx = cx + (x - cx) * 0.55, my = cy + (y - cy) * 0.55;
+    const srcClass = rw.source === "seed" ? "src-seed" : "src-wn";
 
-    edges += `<line x1="${cx}" y1="${cy}" x2="${x}" y2="${y}" class="g-edge"/>`;
+    edges += `<line x1="${cx}" y1="${cy}" x2="${x}" y2="${y}" class="g-edge ${srcClass}"/>`;
     edges += `<text x="${mx}" y="${my}" class="g-edge-label">${esc(rel)}</text>`;
 
-    nodes += `<g class="g-node rw" data-word="${esc(rw.word)}" tabindex="0" role="button" `
-      + `aria-label="สำรวจคำ ${esc(rw.word)}">`
+    nodes += `<g class="g-node rw ${srcClass}" data-word="${esc(rw.word)}" tabindex="0" role="button" `
+      + `aria-label="สำรวจคำ ${esc(rw.word)} (${rw.source === 'seed' ? 'ตรวจแล้ว' : 'WordNet อัตโนมัติ'})">`
       + `<circle cx="${x}" cy="${y}" r="${nodeR}"/>`
       + `<text x="${x}" y="${y + 4}" class="g-node-label">${esc(rw.word)}</text>`
       + `</g>`;

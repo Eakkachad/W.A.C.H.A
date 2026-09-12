@@ -250,6 +250,17 @@ None of P1-P5 touches or risks the already-verified core (segmentation + relatio
   still prefer building/loading the engine once at startup, not per-request — and delete the
   `.datrie.cache` if you ever suspect it's stale (editing the word list auto-invalidates it).
 
+- **WordNet relations are auto-extracted and NOT hand-audited — always keep them labeled, never silently
+  mix them with hand-verified facts.** The ~29k-word synonym expansion comes from Thai WordNet synset
+  membership (13,664 groups), which has real noise: some synset pairs aren't true Thai synonyms (found
+  example: `ข้อหา`↔`มลทิน`). We deliberately do NOT hand-clean 13k groups (a wrong "verified" label is
+  worse than an honest "unaudited" one). Instead every related-word result carries a `RelationSource`
+  (`Seed` = hand-verified / `WordNet` = auto-extracted), surfaced as a tag in the CLI and a badge + legend
+  in the web UI (green "ตรวจแล้ว" vs orange "WordNet"). **If you add more bulk relation sources, tag them
+  the same way** — provenance is the project's answer to data-quality risk (mirrors the learner-content
+  `source` field). In a pitch, be ready to say "the graph separates hand-verified relations from
+  auto-extracted ones, and shows you which is which" if a judge points at an odd pair.
+
 ## 9. Handoff protocol (how sessions/agents stay in sync)
 
 This project is designed to be picked up cold by any agent or session, including ones with no memory of

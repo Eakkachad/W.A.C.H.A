@@ -12,11 +12,46 @@
 
 use crate::dictionary::{Dictionary, Relation};
 use crate::graph::KnowledgeGraph;
+use std::collections::HashSet;
+
+/// Where a relationship came from — its provenance, so a user (or a hackathon
+/// judge) can tell a hand-verified fact from an auto-imported one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RelationSource {
+    /// Hand-authored + human-verified seed relation (the 20 curated entries).
+    Seed,
+    /// Auto-extracted from Thai WordNet synset membership. High coverage but
+    /// **not individually hand-checked** — WordNet has known noise (e.g. a
+    /// synset can pair words a Thai speaker wouldn't call true synonyms). Label
+    /// these honestly so the team can say "auto-extracted, unaudited" on sight.
+    WordNet,
+}
+
+impl RelationSource {
+    /// Short Thai/label tag for display.
+    pub fn tag(self) -> &'static str {
+        match self {
+            RelationSource::Seed => "ตรวจแล้ว",           // hand-verified
+            RelationSource::WordNet => "WordNet (อัตโนมัติ)", // auto-extracted
+        }
+    }
+
+    /// Machine-readable label for JSON.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            RelationSource::Seed => "seed",
+            RelationSource::WordNet => "wordnet",
+        }
+    }
+}
 
 /// A relationship engine: a knowledge graph built from dictionary triples.
 pub struct RelationEngine {
     graph: KnowledgeGraph,
     triple_count: usize,
+    /// Directed (subject_id, object_id) pairs that came from the hand-verified
+    /// seed entries. Everything else in the graph is auto-extracted (WordNet).
+    seed_edges: HashSet<(usize, usize)>,
 }
 
 /// One related word plus the explanation of how it connects to the query word.
@@ -28,6 +63,9 @@ pub struct RelatedWord {
     /// Human-readable relation path from the query word to this word, e.g.
     /// ["แมว --เป็นชนิดของ--> สัตว์", "สุนัข --เป็นชนิดของ--> สัตว์"].
     pub path: Vec<String>,
+    /// Provenance of the connection: [`RelationSource::Seed`] (hand-verified) or
+    /// [`RelationSource::WordNet`] (auto-extracted, unaudited).
+    pub source: RelationSource,
 }
 
 impl RelationEngine {
@@ -49,7 +87,6 @@ impl RelationEngine {
     }
 
     fn build(dict: &Dictionary, wordnet: Option<&crate::wordnet::WordNet>) -> Self {
-        use std::collections::HashSet;
         let mut graph = KnowledgeGraph::new();
         let mut triple_count = 0;
         let syn_label = Relation::Synonym.thai_label();
@@ -57,6 +94,8 @@ impl RelationEngine {
         // WordNet expansion never duplicates a seed-declared synonym or another
         // WordNet edge.
         let mut synonym_seen: HashSet<(usize, usize)> = HashSet::new();
+        // Directed pairs from the hand-verified seed entries (any relation).
+        let mut seed_edges: HashSet<(usize, usize)> = HashSet::new();
 
         for entry in dict.all_entries() {
             for (rel, target) in &entry.relations {
@@ -65,6 +104,7 @@ impl RelationEngine {
                 let o = graph.add_entity(target);
                 graph.add_triple(&entry.word, label, target);
                 triple_count += 1;
+                seed_edges.insert((s, o));
                 if *rel == Relation::Synonym {
                     synonym_seen.insert((s, o));
                 }
@@ -75,6 +115,7 @@ impl RelationEngine {
                 ) {
                     graph.add_triple(target, label, &entry.word);
                     triple_count += 1;
+                    seed_edges.insert((o, s));
                     if *rel == Relation::Synonym {
                         synonym_seen.insert((o, s));
                     }
@@ -95,7 +136,7 @@ impl RelationEngine {
             }
         }
 
-        Self { graph, triple_count }
+        Self { graph, triple_count, seed_edges }
     }
 
     pub fn entity_count(&self) -> usize {
@@ -152,9 +193,57 @@ impl RelationEngine {
             .map(|(id, score)| {
                 let target = self.graph.entity_name(id).to_string();
                 let path = self.explain_path(seed, id, &subgraph);
-                RelatedWord { word: target, score, path }
+                let source = self.classify_source(seed, id, &subgraph);
+                RelatedWord { word: target, score, path, source }
             })
             .collect()
+    }
+
+    /// Classify a related word's provenance: [`RelationSource::Seed`] if the
+    /// connection to the query is carried by any hand-verified seed edge,
+    /// otherwise [`RelationSource::WordNet`] (auto-extracted, unaudited).
+    ///
+    /// A direct seed edge (query↔word) is Seed. For a 2-hop bridge, it's Seed
+    /// only if *both* hops are seed edges (a hop through WordNet makes the whole
+    /// connection auto-derived). Anything else is WordNet.
+    fn classify_source(&self, seed: usize, target: usize, subgraph: &[crate::graph::Triple]) -> RelationSource {
+        let is_seed = |a: usize, b: usize| {
+            self.seed_edges.contains(&(a, b)) || self.seed_edges.contains(&(b, a))
+        };
+        // Direct connection?
+        let direct_exists = subgraph.iter().any(|t| {
+            (t.subject_id == seed && t.object_id == target)
+                || (t.subject_id == target && t.object_id == seed)
+        });
+        if direct_exists {
+            return if is_seed(seed, target) {
+                RelationSource::Seed
+            } else {
+                RelationSource::WordNet
+            };
+        }
+        // Two-hop bridge: Seed only if some middle node connects to BOTH the
+        // query and the target via seed edges.
+        for t1 in subgraph {
+            let mid = if t1.subject_id == seed {
+                t1.object_id
+            } else if t1.object_id == seed {
+                t1.subject_id
+            } else {
+                continue;
+            };
+            if !is_seed(seed, mid) {
+                continue;
+            }
+            let mid_to_target = subgraph.iter().any(|t2| {
+                (t2.subject_id == mid && t2.object_id == target)
+                    || (t2.subject_id == target && t2.object_id == mid)
+            });
+            if mid_to_target && is_seed(mid, target) {
+                return RelationSource::Seed;
+            }
+        }
+        RelationSource::WordNet
     }
 
     /// Human-readable relation edges that connect `seed` to `target` within the
@@ -186,7 +275,7 @@ impl RelationEngine {
         }
         // Otherwise show the two-hop bridge: edges from seed and edges into
         // target that share a middle node.
-        let seed_edges: Vec<&crate::graph::Triple> = subgraph
+        let seed_side_edges: Vec<&crate::graph::Triple> = subgraph
             .iter()
             .filter(|t| t.subject_id == seed || t.object_id == seed)
             .collect();
@@ -195,7 +284,7 @@ impl RelationEngine {
             .filter(|t| t.subject_id == target || t.object_id == target)
             .collect();
         let mut path = Vec::new();
-        for se in &seed_edges {
+        for se in &seed_side_edges {
             let mid = if se.subject_id == seed { se.object_id } else { se.subject_id };
             for te in &target_edges {
                 let tmid = if te.subject_id == target { te.object_id } else { te.subject_id };
@@ -258,5 +347,51 @@ mod tests {
     fn unknown_word_returns_empty() {
         let e = engine();
         assert!(e.related("ไดโนเสาร์", 5).is_empty());
+    }
+
+    #[test]
+    fn seed_relations_are_tagged_seed() {
+        let e = engine(); // seed-only, no WordNet
+        for rw in e.related("แมว", 6) {
+            assert_eq!(
+                rw.source,
+                RelationSource::Seed,
+                "seed-only engine must mark {} as Seed",
+                rw.word
+            );
+        }
+    }
+
+    #[test]
+    fn wordnet_pairs_tagged_wordnet_seed_pairs_stay_seed() {
+        // Build with WordNet so auto-extracted synonyms appear.
+        let mut dict = Dictionary::new();
+        for en in seed_entries() {
+            dict.insert(en);
+        }
+        let wn = crate::wordnet::WordNet::embedded();
+        let e = RelationEngine::from_dictionary_with_wordnet(&dict, &wn);
+
+        // A hand-verified seed pair must stay Seed even with WordNet loaded:
+        // ครู→อาจารย์ is a seed Synonym.
+        let from_kru = e.related("ครู", 10);
+        if let Some(rw) = from_kru.iter().find(|r| r.word == "อาจารย์") {
+            assert_eq!(rw.source, RelationSource::Seed, "ครู→อาจารย์ is a seed relation");
+        }
+
+        // An auto-extracted WordNet pair must be tagged WordNet: ข้อหา→มลทิน
+        // (the exact noisy pair the review flagged — it exists ONLY via WordNet,
+        // never a seed entry, so it must be labeled auto-extracted/unaudited).
+        let from_khoha = e.related("ข้อหา", 10);
+        assert!(!from_khoha.is_empty(), "ข้อหา should have WordNet relations");
+        if let Some(rw) = from_khoha.iter().find(|r| r.word == "มลทิน") {
+            assert_eq!(
+                rw.source,
+                RelationSource::WordNet,
+                "ข้อหา→มลทิน is auto-extracted from WordNet, must be tagged WordNet"
+            );
+        }
+        // Every ข้อหา relation is WordNet-sourced (ข้อหา isn't a seed word).
+        assert!(from_khoha.iter().all(|r| r.source == RelationSource::WordNet));
     }
 }

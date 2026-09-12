@@ -197,11 +197,28 @@ fn print_lookup(_engine: &Engine, r: &Lookup, query: &str) {
         println!("\nคำที่เกี่ยวข้อง: (ไม่มีข้อมูลความสัมพันธ์ — no relationship data)");
     } else {
         println!("\nคำที่เกี่ยวข้อง (related words, ranked; with explanation):");
+        let mut any_wordnet = false;
         for (i, rw) in r.related.iter().enumerate() {
-            println!("  {}. {}  (score {:.3})", i + 1, rw.word, rw.score);
+            if rw.source == wacha::relations::RelationSource::WordNet {
+                any_wordnet = true;
+            }
+            println!(
+                "  {}. {}  (score {:.3})  [{}]",
+                i + 1,
+                rw.word,
+                rw.score,
+                rw.source.tag()
+            );
             for edge in &rw.path {
                 println!("        ↳ {edge}");
             }
+        }
+        // Honest legend: WordNet relations are auto-extracted and not hand-checked.
+        if any_wordnet {
+            println!(
+                "\n  [ตรวจแล้ว] = ความสัมพันธ์ที่ตรวจสอบด้วยมือ · \
+                 [WordNet (อัตโนมัติ)] = สกัดจาก Thai WordNet โดยอัตโนมัติ ยังไม่ได้ตรวจทีละคู่ อาจมีคู่ที่ไม่แม่นยำ"
+            );
         }
     }
     println!();

@@ -573,3 +573,40 @@ Verified live: rebuilt, bound `--host 100.76.70.14 --port 8095`, confirmed `heal
 Tailscale IP from the tailnet (startup log shows `listening on http://100.76.70.14:8095` + the no-auth
 note). Default (`wacha-web --data ../data`) still binds localhost only. 46 tests still pass (no Rust logic
 besides arg parsing changed).
+
+### 2026-09-12 (follow-up b) — Relation provenance: seed (verified) vs WordNet (auto-extracted)
+
+A review of the WordNet expansion surfaced a real credibility risk: the 13,664 auto-imported synset groups
+were **not hand-checked**, and some pairs aren't true Thai synonyms — concrete example found:
+**`ข้อหา` (an accusation/charge) ↔ `มลทิน` (a moral blemish/stain)**, which a Thai speaker would not call
+synonyms. This is the same *class* of error the 2026-09-12 Task-1 audit fixed for the seed data
+(`ครู/นักเรียน`), but now at 13k-group scale where hand-auditing every pair isn't feasible. Worse, unlike
+learner content (which carries `source: human_seed`), the graph relations had **no provenance tag** — so if
+a judge saw a bad pair, the team couldn't instantly say "that's auto-extracted, not hand-verified."
+
+**Fix: per-relation provenance, surfaced everywhere.** Rather than try to clean 13k groups by hand (a wrong
+label is worse than an honest "unaudited" one), every related-word result now carries its source, and the
+UI/CLI shows it:
+- `relations.rs`: new `RelationSource` enum (`Seed` = hand-verified / `WordNet` = auto-extracted,
+  unaudited). The engine tracks the exact set of hand-verified seed edges during build; each result is
+  classified `Seed` iff its connection to the query is carried by seed edge(s) (direct, or a 2-hop bridge
+  where *both* hops are seed), else `WordNet`. Seed stays authoritative — a pair declared in the seed data
+  is `Seed` even if WordNet also contains it.
+- CLI (`wacha lookup`): each related word shows `[ตรวจแล้ว]` or `[WordNet (อัตโนมัติ)]`, plus a legend
+  explaining the WordNet caveat when any appears.
+- Web: `/api/lookup` adds `"source":"seed"|"wordnet"` per related word; the UI shows a green **ตรวจแล้ว** /
+  orange **WordNet** badge on each list item, renders WordNet graph nodes/edges dashed-orange, and shows a
+  legend below the graph.
+
+**Verified (real output):**
+- `ครู`: `อาจารย์` → `[ตรวจแล้ว]`/`seed` (a hand-verified seed synonym), while `ผู้สาธิตวิธีการ`,
+  `ครูบาอาจารย์`, `ผู้สอน` → `[WordNet (อัตโนมัติ)]`/`wordnet` — provenance distinguished *within one query*.
+- `ข้อหา`: `มลทิน` → `[WordNet (อัตโนมัติ)]`/`wordnet` — the flagged noisy pair now self-labels as
+  auto-extracted/unaudited. The team can point at the badge if a judge asks.
+- 2 new tests (`seed_relations_are_tagged_seed`, `wordnet_pairs_tagged_wordnet_seed_pairs_stay_seed`)
+  lock this in, including the exact `ข้อหา→มลทิน = WordNet` and `ครู→อาจารย์ = Seed` cases. 48 tests pass;
+  `poc` 10/10; `katgpt-rs` untouched.
+
+Aside (not a bug): relative-PPR scores shifted scale after the WordNet import (e.g. `ครู→อาจารย์` ~1.44 →
+~7.60) — expected, since relative-PPR is sensitive to the whole graph structure; scores are only meaningful
+*within* one query's ranking, not comparable across graph versions. No test hardcodes score values.
