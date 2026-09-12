@@ -30,7 +30,7 @@ files too and note it here — this log is the record of *that it changed*, thos
 | Interactive relationship graph in `wacha-web` (P3) | **done** — SVG radial graph, click-to-explore; client-side only; opened in a real browser | 2026-09-12 |
 | WordNet confidence signal + measured precision (Round 3 · Task 7, P0) | **done** — degree-based Confirmed/Unverified marker in CLI+web; real 120-pair sample = **84.2%** precision | 2026-09-12 |
 | Round 3 Task 8 — pitch materials (`PITCH.md`) | **done** — Thai script (leads with §1) + honest Q&A + pre-verified demo word list | 2026-09-12 |
-| Round 3 Task 9 — demo rehearsal + adversarial-query test | not started | — |
+| Round 3 Task 9 — demo rehearsal + adversarial-query test | **done** — cold 43.4s/warm 0.27s; 11-case adversarial battery all pass; fallback transcript saved | 2026-09-12 |
 | Round 3 Task 10 — open-data/API documentation | not started | — |
 | Round 3 Task 11 (optional) — real Typhoon 2 if API access found (`--host` part **done**, `bec54b8`) | mostly done | 2026-09-12 |
 | Day 2 — demo/submit | not started | — |
@@ -773,3 +773,52 @@ not just internal doc. Three required parts, all present:
 
 No code change; docs only. Remaining Round 3: Task 9 (demo rehearsal + adversarial battery), Task 10
 (API/licenses doc), Task 11 item 2 (real Typhoon 2 if access).
+
+### 2026-09-12 (Round 3 · Task 9) — Demo rehearsal + adversarial robustness (real run)
+
+**Cold vs warm start (re-measured fresh, real numbers):**
+- Deleted `words_th.datrie.cache`, cold start → **time-to-ready 43.4s** (`engine built in 43.396s`, then
+  wrote cache). Matches the documented ~43s.
+- Restarted with cache present → **time-to-ready 0.27s** (`loaded segmenter from cache … in 37.3ms`).
+- Demo protocol: start `wacha-web` on the warm path **well before** presenting; never build live.
+
+**Adversarial-query battery (run for real against the live server, not code review) — ALL PASS, no crash,
+no hang, server healthy afterward:**
+
+| input | result |
+|---|---|
+| empty `q=` | HTTP 200, `{"query":"","segmentation":[],"entry":null,"related":[]}` |
+| missing `q` param | HTTP 200, same clean empty result |
+| english `hello` | HTTP 200, segmented as OOV single chars |
+| numbers `12345` | HTTP 200, OOV chars |
+| emoji `🐱🔥😀` | HTTP 200, each emoji a clean OOV token (no UTF-8 breakage) |
+| very long (5000× `ก`) | HTTP 200, ~100 KB response, no hang |
+| low-confidence word `ข้อหา` | HTTP 200, returns `มลทิน` [wordnet/unverified] |
+| mixed `แมวcat123` | HTTP 200, `แมว` in-vocab + latin/digits OOV |
+| `<script>alert(1)</script>` | HTTP 200, JSON-escaped + echoed as a plain string (valid JSON; frontend `esc()` renders as text → no XSS) |
+| unknown path `/does-not-exist` | HTTP 404 `not found` |
+| invalid UTF-8 bytes `%FF%FE%80` | HTTP 200, decoded to `�` replacement chars gracefully (no panic) |
+
+After the whole battery, `/healthz` → `ok` and `ครู` still returns 8 related words. **No bug found** — the
+`std::net` server + hand-written JSON encoder + `url_decode` handle all of these safely. (This is the 4th
+"run it for real" pass on this project; the previous three each found a real bug, this one didn't — the
+robustness is now genuinely there, not assumed.)
+
+**Fallback artifacts (in `dict-hackathon/demo-fallback/`):**
+- `demo_transcript_2026-09-12.txt` — full offline transcript of a successful run of all 4 PITCH.md demo
+  words + the segmentation demo, captured live. **This is the true offline fallback** (readable without
+  the server) if network/hardware fails on the day. Committed.
+- `index_snapshot.html` — the served UI page (16.9 KB), git-ignored (regenerate via `curl`; needs the
+  server to function since it calls `/api/lookup`).
+- `screencapture` is available on this machine for grabbing visual screenshots from the live browser if a
+  visual fallback is also wanted (manual step).
+
+**Honest note for the presenter (not a bug, WordNet source artifact):** `ครู` surfaces `วันอังคาร`/`อังคาร`
+(Tuesday) among related words, tagged `[wordnet/confirmed]` — a Thai-WordNet cross-mapping quirk
+(ครู↔ดาวพฤหัส/day-name astrology synset). It's *confirmed* (degree > 1) so the confidence signal doesn't
+flag it, but it's not a great "synonym". PITCH.md only demos ครู's top-4 (อาจารย์, ผู้สาธิตวิธีการ,
+ครูบาอาจารย์, ผู้สอน — all good), so the scripted demo is unaffected. If a judge scrolls further, the
+provenance badge already says `WordNet` (auto-extracted) — the honest answer is ready. This is exactly the
+Thai-WordNet imprecision the Task 7 84.2% figure quantifies.
+
+Tests unchanged (no code change this task): `wacha` 50, `poc` 10. `katgpt-rs` untouched.

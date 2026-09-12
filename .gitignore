@@ -8,5 +8,9 @@ target/
 # wordnet_synonyms.tsv (~1MB) instead; re-fetch the .db only to regenerate it.
 wordnet_th.db
 
+# Generated served-page snapshot (regenerate via curl; the transcript is the
+# real offline fallback and IS committed).
+demo-fallback/index_snapshot.html
+
 # macOS
 .DS_Store

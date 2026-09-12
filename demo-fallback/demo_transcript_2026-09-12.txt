@@ -1,0 +1,49 @@
+วาจา (WACHA) — DEMO FALLBACK TRANSCRIPT
+Captured: 2026-09-12 15:05:15 +0700 from live server http://100.76.70.14:8095 (--data ../data)
+Use this if live network/hardware fails during the presentation. Matches PITCH.md demo words.
+========================================================================
+
+──────── lookup: ครู ────────
+segmented: ครู
+นิยาม: ผู้สั่งสอนศิษย์; ผู้ถ่ายทอดความรู้
+คำอธิบายง่าย: คนที่สอนความรู้ให้นักเรียนในโรงเรียน (source: human_seed)
+คำที่เกี่ยวข้อง:
+   อาจารย์  [seed/confirmed]  score=7.60
+   ผู้สาธิตวิธีการ  [wordnet/confirmed]  score=7.60
+   ครูบาอาจารย์  [wordnet/confirmed]  score=7.54
+   ผู้สอน  [wordnet/confirmed]  score=7.54
+   ผู้ให้ความรู้  [wordnet/confirmed]  score=7.54
+   อ.  [wordnet/confirmed]  score=7.37
+   วันอังคาร  [wordnet/confirmed]  score=6.78
+   อังคาร  [wordnet/confirmed]  score=6.78
+
+──────── lookup: สุนัข ────────
+segmented: สุนัข
+นิยาม: สัตว์เลี้ยงลูกด้วยนมชนิดหนึ่ง เลี้ยงไว้เฝ้าบ้าน; หมา
+คำอธิบายง่าย: สัตว์สี่ขาที่คนเลี้ยงไว้เป็นเพื่อนและช่วยเฝ้าบ้าน เรียกอีกอย่างว่าหมา (source: human_seed)
+คำที่เกี่ยวข้อง:
+   หมา  [seed/confirmed]  score=8.50
+   หมาบ้าน  [wordnet/confirmed]  score=8.46
+   สัตว์เลี้ยง  [seed/confirmed]  score=7.83
+   สัตว์  [seed/confirmed]  score=7.38
+   แมว  [seed/confirmed]  score=6.84
+   สัตว์ป่า  [wordnet/confirmed]  score=6.82
+   สัตว์เดียรัจฉาน  [wordnet/confirmed]  score=6.82
+   เดียรัจฉาน  [wordnet/confirmed]  score=6.82
+
+──────── lookup: รถยนต์ ────────
+segmented: รถยนต์
+คำที่เกี่ยวข้อง:
+   รถ  [wordnet/confirmed]  score=9.13
+   ยานยนต์  [wordnet/unverified]  score=8.91
+
+──────── lookup: ข้อหา ────────
+segmented: ข้อหา
+คำที่เกี่ยวข้อง:
+   มลทิน  [wordnet/unverified]  score=9.51
+
+──────── segmentation demo: เด็กน้อยรักสุนัข ────────
+segmented: เด็กน้อย | รัก | สุนัข
+
+========================================================================
+END OF TRANSCRIPT

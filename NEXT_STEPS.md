@@ -320,6 +320,12 @@ hand-wavy) answers, and a specific demo word list with real, pre-verified output
 
 ## Task 9 — Demo rehearsal and robustness
 
+**✅ DONE (2026-09-12, real run) — see `PROGRESS.md`.** Cold start 43.4s (deleted cache) / warm 0.27s
+(cache reload) re-measured; 11-case adversarial battery run live (empty, long 5000×ก, english, numbers,
+emoji, invalid UTF-8, script-injection, unknown path, low-confidence word) — all HTTP 200/404, no
+crash/hang, server healthy after. Fallback: `demo-fallback/demo_transcript_2026-09-12.txt` (offline). No
+bug found. Task body below kept for context.
+
 **What to do:**
 1. Start `wacha-web` fresh (cold, from a deleted cache, timed) at least once to confirm the ~43s number is
    still accurate, then confirm the warm/cached path is what will actually be used at demo time — the
