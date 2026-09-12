@@ -6,12 +6,13 @@ for the ORST "เปิดคลังคำ พลิกคลังคิด" 
 (as in สัตย์วาจา, "word of honor"); every letter of the backronym maps to a real, verified piece of the
 system (see `wacha/README.md` for the full breakdown), not a marketing label.
 
-Status: **planning complete, feasibility POC passed, and the core hybrid vertical slice is now built &
-tested** (`wacha/` crate — Datrie segmenter with TCC-aware OOV fix + vendored graph engine with
-explainable relationship queries; 29 tests pass; runs on the real 62k-word CC0 list). Day-0 blockers
-(data source, OOV bug) are cleared. Event dates not yet confirmed. This folder exists so any agent or
-session (including a fresh one with no memory of how this plan was made) can pick the work up cold — that
-is the explicit purpose of this file and the others below.
+Status: **win-readiness round (Round 3) in progress — core product is demo-complete.** `wacha/` (Datrie
+segmenter, vendored graph engine, WordNet-expanded relationships with provenance/confidence tagging,
+offline learner content, web UI with graph viz) passes 50 tests and runs end-to-end on the real 62k-word
+CC0 list + ~29k WordNet-derived relations. Pitch materials (`PITCH.md`) and a rehearsed/adversarially-tested
+demo are done; see `PROGRESS.md` for the full dated history. Event dates not yet confirmed. This folder
+exists so any agent or session (including a fresh one with no memory of how this plan was made) can pick
+the work up cold — that is the explicit purpose of this file and the others below.
 
 ---
 
@@ -37,7 +38,7 @@ is the explicit purpose of this file and the others below.
    superseded by `wacha/` for anything except historical reference.
 7. **[PITCH.md](./PITCH.md)** — the demo/presentation script (Thai): 2–3 min pitch leading with the
    positioning, honest Q&A for hard questions, and a pre-verified demo word list with real output.
-7. Background research (not this-project-scoped, but cited and reusable): [`../knowledge-base/topics/thai-dictionary-hackathon.md`](../knowledge-base/topics/thai-dictionary-hackathon.md).
+8. Background research (not this-project-scoped, but cited and reusable): [`../knowledge-base/topics/thai-dictionary-hackathon.md`](../knowledge-base/topics/thai-dictionary-hackathon.md).
 
 ## One-line orientation
 
@@ -54,17 +55,17 @@ is the explicit purpose of this file and the others below.
   separate, unrelated [Green Mind AI 2026 / mango-a100](../neural-engines/mango-a100/) track.
 - **Data source:** resolved (2026-09-04) — a real CC0 62,107-word Thai list (NECTEC LEXiTRON via
   PyThaiNLP), not a hypothetical risk anymore. See `PROGRESS.md`.
-- **Current biggest open items (2026-09-05):** (1) a data-quality nitpick — one seed relation
-  (`ครู`/`นักเรียน` tagged as antonyms) is semantically wrong and needs auditing/fixing before this is
-  shown to judges; (2) a confirmed real performance bug — building the engine from the full word list
-  takes 42.4s (Thai's narrow UTF-8 byte range breaks the double-array trie's collision resolution at
-  scale) — mitigated by a guardrail (never rebuild mid-demo), not yet fixed at the root. Both are Task 1
-  and Task 2 in `NEXT_STEPS.md`.
-- **Feasibility POC → real build:** the POC (2026-09-04) proved both halves of the hybrid work on real
-  Thai text; a real product crate (`wacha/`) now exists with 29 passing tests and verified-by-actually-
-  running output. See `PROGRESS.md` for the full history, including two real bugs found by actually
-  executing the code rather than trusting tests/logs (a codepoint-vs-Thai-Character-Cluster OOV bug, and
-  the 42s build-time bug above).
+- **Remaining open items (2026-09-12, Round 3):** Tasks 7–10 are done (confidence tagging + measured
+  84.2% WordNet precision, `PITCH.md`, rehearsed/adversarially-tested demo, and `wacha/API.md` — the
+  `/api/lookup` contract + data-license "open data" story). Only Task 11.2 remains (optional — real
+  Typhoon 2 access to upgrade learner content from `human_seed` provenance). See `NEXT_STEPS.md`'s
+  "Round 3" and `PROGRESS.md` for the full detail.
+- **Feasibility POC → real build → win-readiness:** the POC (2026-09-04) proved both halves of the hybrid
+  work on real Thai text; a real product crate (`wacha/`) now exists with 50 passing tests and
+  verified-by-actually-running output at every stage. See `PROGRESS.md` for the full history, including
+  every real bug found by actually executing the code rather than trusting tests/logs or a prior agent's
+  summary (a codepoint-vs-Thai-Character-Cluster OOV bug, a 42s build-time bug now fixed via a trie cache,
+  and a real WordNet data-quality/confidence-tagging gap now closed with a measured 84.2% precision).
 - **Persistent cross-session context:** Claude's memory system, `hackathon-dictionary-reimagined-2026`
   entry — kept in sync with this folder, but this folder is the canonical, detailed version.
 
