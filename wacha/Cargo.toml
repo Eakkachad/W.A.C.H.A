@@ -1,0 +1,19 @@
+[package]
+name = "wacha"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "วาจา (WACHA) — Word Architecture, Cluster-aware Hybrid Analysis: katgpt-rs Datrie segmenter + vendored AXIOM knowledge graph for explainable Thai word relationships (ORST Dictionary Reimagined hackathon)."
+
+[lib]
+name = "wacha"
+path = "src/lib.rs"
+
+[[bin]]
+name = "wacha"
+path = "src/bin/cli.rs"
+
+[dependencies]
+katgpt-tokenizer = { path = "../../katgpt-rs/crates/katgpt-tokenizer", features = ["datrie_vocab"] }
+
+[dev-dependencies]

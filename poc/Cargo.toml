@@ -1,0 +1,8 @@
+[package]
+name = "dict-hackathon-poc"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+katgpt-tokenizer = { path = "../../katgpt-rs/crates/katgpt-tokenizer", features = ["datrie_vocab"] }
