@@ -300,6 +300,7 @@ fn lookup_json(engine: &Engine, query: &str) -> String {
         s.push_str(&format!("{{\"word\":{},", json_str(&rw.word)));
         s.push_str(&format!("\"score\":{:.4},", rw.score));
         s.push_str(&format!("\"source\":{},", json_str(rw.source.as_str())));
+        s.push_str(&format!("\"confidence\":{},", json_str(rw.confidence.as_str())));
         s.push_str("\"path\":[");
         for (j, edge) in rw.path.iter().enumerate() {
             if j > 0 {

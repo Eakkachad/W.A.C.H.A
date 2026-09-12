@@ -78,9 +78,12 @@
            vertical-align: middle; font-weight: 600; }
   .badge.seed { background: rgba(87,217,163,.16); color: var(--accent2); border: 1px solid var(--accent2); }
   .badge.wn { background: rgba(255,157,107,.14); color: var(--oov); border: 1px solid var(--oov); }
+  .badge.unv { background: rgba(255,209,102,.14); color: #ffd166; border: 1px solid #ffd166; }
   .legend { margin-top: 12px; color: var(--muted); font-size: .82rem; text-align: center; line-height: 1.9; }
   .g-node.src-wn circle { stroke: var(--oov); stroke-dasharray: 4 3; }
   .g-edge.src-wn { stroke: var(--oov); stroke-dasharray: 4 3; opacity: .7; }
+  .g-node.conf-unv circle { stroke: #ffd166; }
+  .g-unv-mark { fill: #ffd166; font-size: 15px; text-anchor: middle; pointer-events: none; }
   .learner { border-color: var(--accent2); }
   .learner .body { font-size: 1.12rem; }
   .learner .example { margin-top: 8px; color: var(--ink); }
@@ -170,12 +173,15 @@ function render(d) {
     html += `<span class="empty">ไม่มีข้อมูลความสัมพันธ์ (no relationship data)</span>`;
   } else {
     html += buildGraphSvg(d);
-    // Legend: explain the seed vs WordNet provenance honestly.
+    // Legend: explain the seed vs WordNet provenance + the confidence marker.
     if (d.related.some(r => r.source === "wordnet")) {
       html += `<div class="legend">`
         + `<span class="badge seed">ตรวจแล้ว</span> ความสัมพันธ์ที่ตรวจสอบด้วยมือ &nbsp;·&nbsp; `
-        + `<span class="badge wn">WordNet</span> สกัดจาก Thai WordNet อัตโนมัติ (ยังไม่ได้ตรวจทีละคู่ — อาจมีคู่ที่ไม่แม่นยำ)`
-        + `</div>`;
+        + `<span class="badge wn">WordNet</span> สกัดจาก Thai WordNet อัตโนมัติ (ยังไม่ได้ตรวจทีละคู่ — อาจมีคู่ที่ไม่แม่นยำ)`;
+      if (d.related.some(r => r.confidence === "unverified")) {
+        html += `<br><span class="badge unv">⚠ ยังไม่ยืนยัน</span> คู่คำโดดเดี่ยว — ไม่มีชุดคำอื่นใน WordNet ยืนยันซ้ำ (โครงสร้างกราฟบอกว่าควรตรวจก่อนเชื่อ)`;
+      }
+      html += `</div>`;
     }
   }
   html += `</div>`;
@@ -190,10 +196,14 @@ function render(d) {
       const badge = rw.source === "seed"
         ? `<span class="badge seed" title="ความสัมพันธ์ที่ตรวจสอบด้วยมือ">ตรวจแล้ว</span>`
         : `<span class="badge wn" title="สกัดจาก Thai WordNet อัตโนมัติ ยังไม่ได้ตรวจทีละคู่">WordNet</span>`;
+      const conf = rw.confidence === "unverified"
+        ? `<span class="badge unv" title="คู่คำโดดเดี่ยวใน WordNet — ไม่มีชุดคำอื่นยืนยันซ้ำ อาจไม่แม่นยำ">⚠ ยังไม่ยืนยัน</span>`
+        : "";
       html += `<li><div class="head">`;
       html += `<span class="rank">${i + 1}.</span>`;
       html += `<span class="rw" data-word="${esc(rw.word)}">${esc(rw.word)}</span>`;
       html += badge;
+      html += conf;
       html += `<span class="score">score ${rw.score.toFixed(3)}</span>`;
       html += `</div>`;
       if (rw.path && rw.path.length) {
@@ -272,14 +282,19 @@ function buildGraphSvg(d) {
     const rel = relationLabel(rw, query);
     const mx = cx + (x - cx) * 0.55, my = cy + (y - cy) * 0.55;
     const srcClass = rw.source === "seed" ? "src-seed" : "src-wn";
+    const unvClass = rw.confidence === "unverified" ? " conf-unv" : "";
 
     edges += `<line x1="${cx}" y1="${cy}" x2="${x}" y2="${y}" class="g-edge ${srcClass}"/>`;
     edges += `<text x="${mx}" y="${my}" class="g-edge-label">${esc(rel)}</text>`;
 
-    nodes += `<g class="g-node rw ${srcClass}" data-word="${esc(rw.word)}" tabindex="0" role="button" `
-      + `aria-label="สำรวจคำ ${esc(rw.word)} (${rw.source === 'seed' ? 'ตรวจแล้ว' : 'WordNet อัตโนมัติ'})">`
+    const unvMark = rw.confidence === "unverified"
+      ? `<text x="${x + nodeR - 4}" y="${y - nodeR + 10}" class="g-unv-mark" aria-hidden="true">⚠</text>`
+      : "";
+    nodes += `<g class="g-node rw ${srcClass}${unvClass}" data-word="${esc(rw.word)}" tabindex="0" role="button" `
+      + `aria-label="สำรวจคำ ${esc(rw.word)} (${rw.source === 'seed' ? 'ตรวจแล้ว' : 'WordNet อัตโนมัติ'}${rw.confidence === 'unverified' ? ', ยังไม่ยืนยัน' : ''})">`
       + `<circle cx="${x}" cy="${y}" r="${nodeR}"/>`
       + `<text x="${x}" y="${y + 4}" class="g-node-label">${esc(rw.word)}</text>`
+      + unvMark
       + `</g>`;
   });
 

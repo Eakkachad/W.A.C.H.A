@@ -198,16 +198,26 @@ fn print_lookup(_engine: &Engine, r: &Lookup, query: &str) {
     } else {
         println!("\nคำที่เกี่ยวข้อง (related words, ranked; with explanation):");
         let mut any_wordnet = false;
+        let mut any_unverified = false;
         for (i, rw) in r.related.iter().enumerate() {
             if rw.source == wacha::relations::RelationSource::WordNet {
                 any_wordnet = true;
             }
+            // Only mark low-confidence (Unverified) relations — Confirmed is the
+            // quiet default so the output isn't cluttered.
+            let conf_mark = if rw.confidence == wacha::relations::RelationConfidence::Unverified {
+                any_unverified = true;
+                "  ⚠ ยังไม่ยืนยัน"
+            } else {
+                ""
+            };
             println!(
-                "  {}. {}  (score {:.3})  [{}]",
+                "  {}. {}  (score {:.3})  [{}]{}",
                 i + 1,
                 rw.word,
                 rw.score,
-                rw.source.tag()
+                rw.source.tag(),
+                conf_mark
             );
             for edge in &rw.path {
                 println!("        ↳ {edge}");
@@ -218,6 +228,12 @@ fn print_lookup(_engine: &Engine, r: &Lookup, query: &str) {
             println!(
                 "\n  [ตรวจแล้ว] = ความสัมพันธ์ที่ตรวจสอบด้วยมือ · \
                  [WordNet (อัตโนมัติ)] = สกัดจาก Thai WordNet โดยอัตโนมัติ ยังไม่ได้ตรวจทีละคู่ อาจมีคู่ที่ไม่แม่นยำ"
+            );
+        }
+        if any_unverified {
+            println!(
+                "  ⚠ ยังไม่ยืนยัน = คู่คำโดดเดี่ยวใน WordNet (ไม่มีชุดคำอื่นยืนยันซ้ำ) — \
+                 อาจถูกต้องหรือไม่ก็ได้ ควรตรวจก่อนเชื่อ"
             );
         }
     }

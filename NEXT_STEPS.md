@@ -227,6 +227,134 @@ session, described (or screenshotted) in `PROGRESS.md`.
 
 ---
 
+# Round 3 (2026-09-12, later) — win-readiness: correctness risk, pitch, demo, real-world story
+
+Tasks 1-6 above are all done and verified (see `PROGRESS.md`) — the core product (correct seed relations,
+fast start, CLI + web with an explainable relationship graph, ~29k-word WordNet-expanded coverage, offline
+learner content) is demo-complete. **This round is not about building more product** — it's about what
+actually determines whether this wins: closing a real credibility risk found during verification, and the
+non-code work (pitch, rehearsal, the "real-world use" story) that hasn't been touched at all yet.
+
+**Do not re-litigate anything in `AGENT_HANDOFF.md` §1/§3/§7.5** (the modelless/deterministic positioning,
+the hybrid architecture, the WordNet-expansion decision) — those are settled. This round works within that,
+it doesn't reconsider it.
+
+## Task 7 (P0 — do this first, highest priority of everything below) — Confidence-tag WordNet relations + quantify their real error rate
+
+**✅ DONE (2026-09-12, verified live + real measurement) — see `PROGRESS.md`.** Degree-based
+`RelationConfidence {Confirmed, Unverified}` (isolated both-degree-1 WordNet pairs → Unverified; seed
+always Confirmed) live in CLI + web JSON + web UI (⚠ marker + legend). Verified: `ข้อหา/มลทิน`=Unverified,
+`สุนัข/หมา`=Confirmed. Real precision: random 120-pair sample (seed 20260912) manually judged = **84.2%**
+genuine synonyms (Confirmed 85.1% vs Unverified 81.8% — signal separates only weakly; the honest defense
+is provenance + confidence labeling, not a claim that the signal is a strong classifier). Task body below
+kept for context.
+
+**Why this is first:** verification on 2026-09-12 found a real, judge-visible correctness problem: the
+mass-imported Thai WordNet synonym data (`wordnet_synonyms.tsv`, ~13,664 groups) contains at least one
+confirmed bad pair — `ข้อหา` (accusation/charge) linked as a "synonym" of `มลทิน` (moral stain/blemish),
+which are not synonyms in ordinary Thai. This traces to Thai WordNet's own source-data imprecision (a
+cross-lingual mapping artifact from Princeton WordNet), not a bug in `wacha`'s code — the graph mechanically
+reproduces whatever the source data says, with zero judgment layer (see `PROGRESS.md`'s discussion of how
+the relationship graph "connects" words: pure graph math over facts, no semantic evaluation of any kind).
+If a judge free-types a word and hits a pair like this, it undermines the entire "explainable and correct"
+positioning that this project is built around. This is fixable without touching the core architecture.
+
+**What to do:**
+1. **Add a confidence signal using data the graph already has — no new data acquisition needed.** For each
+   WordNet-derived relation, compute the degree (in `graph.rs`, `adjacency_of(entity_id).len()`) of both
+   endpoints. A pair where **both** endpoints have degree 1 (i.e., their only connection in the whole graph
+   is to each other, with no corroborating evidence from any other synset or seed relation) is
+   structurally uncorroborated and should be flagged as lower-confidence. This was verified during
+   analysis: `ข้อหา`/`มลทิน` is exactly this shape (an isolated 2-node pair), while a good pair like
+   `สุนัข`/`หมา` is not (both appear in multiple WordNet groups). Confirm this predicts well on a handful of
+   further known-good and known-bad pairs before wiring it in broadly.
+2. **Surface the confidence signal, don't just compute it silently.** Add it to the `RelatedWord`/relation
+   data returned by `relations.rs` (a `confidence: Confirmed | Unverified` -style field, or similar — match
+   the existing code's style, don't over-engineer this into a numeric score). Show it in both the CLI
+   output and `wacha-web`'s JSON/UI — a small, honest marker (e.g., a subtle label or icon on low-confidence
+   relations is enough; this is not meant to be alarming, just honest) is sufficient. Seed-sourced relations
+   (the 20 hand-curated words) should always read as fully confirmed — this signal is specifically for the
+   WordNet-derived tier.
+3. **Quantify the real error rate with an actual random sample, not just the one pair already found.**
+   Randomly sample ~100-150 pairs from `wordnet_synonyms.tsv`, manually judge each as a genuine synonym or
+   not (use real Thai-language judgment, not a heuristic), and compute the resulting precision estimate.
+   Record the exact sample, the judgment for each, and the resulting percentage in `PROGRESS.md` — this
+   number is for the pitch (Task 8), so it must be a real, defensible measurement, not an estimate.
+4. Re-run `cargo test` (must still pass) and verify live: query a known-bad-shape pair (or a newly found
+   one from the sample) and confirm it's marked low-confidence; query a well-corroborated pair (e.g.
+   `สุนัข`/`หมา` or `ครู`/`อาจารย์`) and confirm it is **not** flagged.
+
+**Acceptance criteria:** the degree-based confidence signal is live in both CLI and web output, verified
+against at least one known-bad and one known-good real pair; a real random-sample error-rate measurement
+(with the actual sample and judgments) is recorded in `PROGRESS.md`.
+
+## Task 8 — Pitch materials
+
+**Why:** the positioning in `AGENT_HANDOFF.md` §1 (modelless, deterministic, explainable — "not an AI
+chatbot wearing a dictionary costume") is strong but currently only exists as internal documentation.
+Nobody has written down what to actually say to judges.
+
+**What to do:**
+1. Write a short (2-3 minute spoken) pitch script in Thai, as a new file `dict-hackathon/PITCH.md`. Open
+   with the positioning statement from `AGENT_HANDOFF.md` §1 — that's the differentiator, lead with it, not
+   bury it. Cover: the problem (per the organizer's brief and `AGENT_HANDOFF.md` §7.5's scorecard), the
+   hybrid architecture in one sentence each, and the honest scope (offline-precomputed AI, WordNet-derived
+   relations at a measured confidence level from Task 7 — don't hide the limitation, state it as evidence
+   of rigor).
+2. Prepare honest, specific answers (not deflections) to the hardest likely questions: "why not just use
+   an LLM for everything," "how do you know the WordNet data is reliable" (this is where Task 7's real
+   number goes), "what would it take to actually deploy this." Write these as a Q&A section in the same
+   file.
+3. Pick 4-6 specific words to search live during the demo — a mix that shows the hand-curated seed
+   richness (e.g. `ครู`), a good WordNet-expanded example (e.g. `รถยนต์` or `สุนัข`), and one word chosen to
+   preempt "let me try my own word" by demonstrating the confidence tagging from Task 7 honestly. List
+   these with their actual expected output in `PITCH.md` so whoever presents doesn't have to guess live.
+
+**Acceptance criteria:** `PITCH.md` exists with a complete script, a Q&A section with real (not
+hand-wavy) answers, and a specific demo word list with real, pre-verified output for each.
+
+## Task 9 — Demo rehearsal and robustness
+
+**What to do:**
+1. Start `wacha-web` fresh (cold, from a deleted cache, timed) at least once to confirm the ~43s number is
+   still accurate, then confirm the warm/cached path is what will actually be used at demo time — the
+   server must be started well before presenting, never live.
+2. Run a real battery of adversarial queries against the running server and record actual results: empty
+   query, a very long string, non-Thai input (English, numbers, emoji), a single stray byte/invalid UTF-8
+   if easy to construct, and a word from the Task 7 sample known to be low-confidence. None of these should
+   crash the server or hang — confirm this by actually doing it, not by code review.
+3. Produce a fallback: a screen recording (or at minimum a sequence of screenshots) of one full successful
+   demo run, in case live network/hardware fails on the day. Note where this is saved.
+
+**Acceptance criteria:** a documented, real adversarial-query test session with actual results (not
+predictions) in `PROGRESS.md`; a fallback recording/screenshot set exists and its location is noted.
+
+## Task 10 — Package the open-data/real-world story
+
+**Why:** answers the organizer's brief's "build networks" and "promote open data" objectives concretely,
+and gives a real answer to "would this ever actually get used" beyond the demo.
+
+**What to do:**
+1. Write a short, developer-facing section (in `wacha/README.md` or a new `wacha/API.md`) documenting the
+   `/api/lookup` JSON shape as a stable-enough public contract, and explicitly stating the license of every
+   derived data asset shipped (`words_th.txt`, `wordnet_synonyms.tsv`, `learner_content.json` — all
+   CC0/NICT-permissive per existing provenance notes) so a third party could realistically reuse them.
+2. Reference this section directly in `PITCH.md`'s answer to "how would this get used after the hackathon."
+
+**Acceptance criteria:** the documentation exists, is accurate (spot-check the JSON shape against a real
+`/api/lookup` response), and `PITCH.md` references it.
+
+## Task 11 (optional, lowest priority — only if time remains after 7-10)
+
+1. **✅ DONE — the `--host`/Tailscale change is committed (`bec54b8`, 2026-09-12).** Finished properly:
+   `--host ADDR` flag (default `127.0.0.1`), security warning on non-localhost bind, verified live binding
+   to the Tailscale IP `100.76.70.14`. Not dangling. (This item predated that commit.)
+2. If real Typhoon 2 (or SEA-LION) API access becomes available, run `gen-learner` for real and confirm the
+   asset's `source` field updates from `human_seed` to `typhoon-2` — verify at least 3 words' new output
+   before considering this done, same as every other task in this project.
+
+---
+
 ## When you're done (or stopping partway)
 
 1. Update `PROGRESS.md`'s status board for every task above (done / not started / in progress with what's

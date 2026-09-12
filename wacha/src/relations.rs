@@ -45,6 +45,44 @@ impl RelationSource {
     }
 }
 
+/// Structural confidence of a relation, derived purely from the graph's own
+/// connectivity — no new data, no semantic judgment.
+///
+/// A WordNet-derived pair whose **both** endpoints connect to nothing else in
+/// the whole graph (distinct-neighbor degree 1 each) is an *isolated,
+/// uncorroborated* pair: the only evidence for it is that one synset. Thai
+/// WordNet has known cross-lingual mapping noise, and these isolated pairs are
+/// where the bad ones concentrate (verified: `ข้อหา`/`มลทิน` is exactly this
+/// shape). We mark them [`RelationConfidence::Unverified`] — meaning "not
+/// cross-corroborated by any other synset", NOT "wrong" (some, like
+/// `รถยนต์`/`ยานยนต์`, are perfectly good). Everything else — seed relations
+/// (always) and WordNet relations corroborated by ≥2 synsets — is
+/// [`RelationConfidence::Confirmed`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RelationConfidence {
+    /// Hand-verified (seed) OR cross-corroborated by more than one synset.
+    Confirmed,
+    /// WordNet-derived isolated pair (both endpoints degree 1) — not
+    /// cross-corroborated. Honest "we can't vouch for this one" marker.
+    Unverified,
+}
+
+impl RelationConfidence {
+    pub fn tag(self) -> &'static str {
+        match self {
+            RelationConfidence::Confirmed => "ยืนยัน",       // confirmed
+            RelationConfidence::Unverified => "ยังไม่ยืนยัน", // unverified
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            RelationConfidence::Confirmed => "confirmed",
+            RelationConfidence::Unverified => "unverified",
+        }
+    }
+}
+
 /// A relationship engine: a knowledge graph built from dictionary triples.
 pub struct RelationEngine {
     graph: KnowledgeGraph,
@@ -66,6 +104,10 @@ pub struct RelatedWord {
     /// Provenance of the connection: [`RelationSource::Seed`] (hand-verified) or
     /// [`RelationSource::WordNet`] (auto-extracted, unaudited).
     pub source: RelationSource,
+    /// Structural confidence of the connection (graph-degree based). Seed
+    /// relations are always [`RelationConfidence::Confirmed`]; isolated WordNet
+    /// pairs are [`RelationConfidence::Unverified`].
+    pub confidence: RelationConfidence,
 }
 
 impl RelationEngine {
@@ -194,9 +236,42 @@ impl RelationEngine {
                 let target = self.graph.entity_name(id).to_string();
                 let path = self.explain_path(seed, id, &subgraph);
                 let source = self.classify_source(seed, id, &subgraph);
-                RelatedWord { word: target, score, path, source }
+                let confidence = self.classify_confidence(seed, id, source);
+                RelatedWord { word: target, score, path, source, confidence }
             })
             .collect()
+    }
+
+    /// Number of *distinct* neighbor entities of `entity_id` in the graph
+    /// (deduplicated across the triples it participates in). Degree 1 = its only
+    /// connection in the whole graph is to a single other word.
+    fn distinct_neighbor_degree(&self, entity_id: usize) -> usize {
+        let mut neighbors = std::collections::HashSet::new();
+        for &idx in self.graph.adjacency_of(entity_id) {
+            let t = &self.graph.triples[idx];
+            let other = if t.subject_id == entity_id { t.object_id } else { t.subject_id };
+            if other != entity_id {
+                neighbors.insert(other);
+            }
+        }
+        neighbors.len()
+    }
+
+    /// Structural confidence of the query→target relation. Seed relations are
+    /// always Confirmed. A WordNet relation is Unverified iff it's an isolated
+    /// pair — both endpoints have distinct-neighbor degree 1 (no corroboration
+    /// from any other synset/seed relation). Everything else is Confirmed.
+    fn classify_confidence(&self, seed: usize, target: usize, source: RelationSource) -> RelationConfidence {
+        if source == RelationSource::Seed {
+            return RelationConfidence::Confirmed;
+        }
+        let both_isolated =
+            self.distinct_neighbor_degree(seed) == 1 && self.distinct_neighbor_degree(target) == 1;
+        if both_isolated {
+            RelationConfidence::Unverified
+        } else {
+            RelationConfidence::Confirmed
+        }
     }
 
     /// Classify a related word's provenance: [`RelationSource::Seed`] if the
@@ -393,5 +468,42 @@ mod tests {
         }
         // Every ข้อหา relation is WordNet-sourced (ข้อหา isn't a seed word).
         assert!(from_khoha.iter().all(|r| r.source == RelationSource::WordNet));
+    }
+
+    #[test]
+    fn isolated_wordnet_pair_is_unverified_corroborated_is_confirmed() {
+        let mut dict = Dictionary::new();
+        for en in seed_entries() {
+            dict.insert(en);
+        }
+        let wn = crate::wordnet::WordNet::embedded();
+        let e = RelationEngine::from_dictionary_with_wordnet(&dict, &wn);
+
+        // ข้อหา↔มลทิน is an isolated 2-node pair (both degree 1) -> Unverified.
+        let khoha = e.related("ข้อหา", 10);
+        let mlt = khoha.iter().find(|r| r.word == "มลทิน").expect("มลทิน related to ข้อหา");
+        assert_eq!(
+            mlt.confidence,
+            RelationConfidence::Unverified,
+            "isolated WordNet pair ข้อหา/มลทิน must be Unverified"
+        );
+
+        // สุนัข↔หมา is corroborated (each appears in multiple synsets) -> Confirmed.
+        let suna = e.related("สุนัข", 10);
+        let ma = suna.iter().find(|r| r.word == "หมา").expect("หมา related to สุนัข");
+        assert_eq!(
+            ma.confidence,
+            RelationConfidence::Confirmed,
+            "corroborated pair สุนัข/หมา must be Confirmed"
+        );
+    }
+
+    #[test]
+    fn seed_relations_always_confirmed() {
+        // seed-only engine: every relation is Confirmed regardless of degree.
+        let e = engine();
+        for rw in e.related("แมว", 8) {
+            assert_eq!(rw.confidence, RelationConfidence::Confirmed);
+        }
     }
 }

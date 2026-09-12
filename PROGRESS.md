@@ -28,6 +28,12 @@ files too and note it here — this log is the record of *that it changed*, thos
 | Typhoon 2 / direction 3 (offline-precomputed learner content) | **done** — static asset (20 words) + `gen-learner` tool; runtime is LLM-free; text currently `human_seed`, honestly labeled | 2026-09-12 |
 | Relation coverage via Thai WordNet (P2) | **done** — ~29k words gain real synonym relations; graph 24→29,281 entities, 52,545 triples | 2026-09-12 |
 | Interactive relationship graph in `wacha-web` (P3) | **done** — SVG radial graph, click-to-explore; client-side only; opened in a real browser | 2026-09-12 |
+| WordNet confidence signal + measured precision (Round 3 · Task 7, P0) | **done** — degree-based Confirmed/Unverified marker in CLI+web; real 120-pair sample = **84.2%** precision | 2026-09-12 |
+| Round 3 Task 7 — confidence-tag WordNet relations + real error-rate sample | not started (handed to another agent to execute) | 2026-09-12 |
+| Round 3 Task 8 — pitch materials (`PITCH.md`) | not started | — |
+| Round 3 Task 9 — demo rehearsal + adversarial-query test | not started | — |
+| Round 3 Task 10 — open-data/API documentation | not started | — |
+| Round 3 Task 11 (optional) — resolve uncommitted `--host` change; real Typhoon 2 if API access found | not started | — |
 | Day 2 — demo/submit | not started | — |
 
 **A real product crate now exists** (`wacha/`) in addition to the `poc/` feasibility harness. The
@@ -610,3 +616,142 @@ UI/CLI shows it:
 Aside (not a bug): relative-PPR scores shifted scale after the WordNet import (e.g. `ครู→อาจารย์` ~1.44 →
 ~7.60) — expected, since relative-PPR is sensitive to the whole graph structure; scores are only meaningful
 *within* one query's ranking, not comparable across graph versions. No test hardcodes score values.
+
+### 2026-09-12 (Round 3 handoff) — win-readiness plan written for another agent to execute
+
+Discussed with the user how the relationship graph mechanically "connects" words (pure graph math over
+mechanically-inserted facts — WordNet's `word_synset` table GROUP BY, no semantic evaluation at any point;
+Personalized PageRank + BFS at query time, zero learning) — this directly explains *why* `ข้อหา`/`มลทิน`
+got linked: the code has no judgment layer, it faithfully reproduces whatever the source data says. Then
+discussed, at a strategic level, what actually needs to happen next for both real-world robustness and
+competition readiness (not just more product features) — the answer was: close the correctness-risk gap
+just found, then do the pitch/rehearsal/open-data-story work that hasn't been touched at all yet.
+
+Wrote **`NEXT_STEPS.md`'s "Round 3"** (Tasks 7-11) for a different agent to execute, with this session
+waiting to verify the results (per the user's earlier-established preference: check in when told, not
+automated polling):
+- **Task 7 (P0):** confidence-tag WordNet-derived relations using the graph's own node-degree data
+  (isolated/uncorroborated pairs — exactly `ข้อหา`/`มลทิน`'s shape — flagged low-confidence; well-connected
+  pairs like `สุนัข`/`หมา` stay unflagged), plus a real random-sample (~100-150 pairs) manual error-rate
+  measurement for the pitch. No new data acquisition needed — pure graph topology on data already in
+  `wacha`.
+- **Task 8:** write `PITCH.md` — a real spoken script leading with the §1 positioning, honest answers to
+  hard questions, and a pre-verified demo word list.
+- **Task 9:** actual demo rehearsal — adversarial queries run for real against the live server, plus a
+  recorded fallback in case of live failure.
+- **Task 10:** document the `/api/lookup` contract + data licenses as the concrete "open data / build on
+  this" answer to the brief's networking objective.
+- **Task 11 (optional):** resolve the uncommitted `--host`/Tailscale change found during the previous
+  verification pass (still uncommitted — not yet acted on); upgrade `learner_content.json` from
+  `human_seed` to real `typhoon-2` provenance if API access is ever obtained.
+
+**Next action:** waiting for the executing agent's report, then re-verify by actually running the changes
+(tests, live queries against the confidence tagging, the adversarial-query battery, the sample audit
+numbers) — same convention as every prior round in this project, not a trust-the-summary check.
+
+### 2026-09-12 (Round 3 · Task 7, P0) — WordNet confidence signal + real precision measurement
+
+Addressed the top win-readiness risk: WordNet's auto-imported relations include non-synonyms
+(`ข้อหา`/`มลทิน`), and a judge free-typing a word could hit one. Two parts: a structural confidence
+signal, and a **real measured error rate** for the pitch.
+
+**Part A — degree-based confidence signal (no new data).** For a WordNet-derived pair, if **both**
+endpoints have distinct-neighbor degree 1 in the graph (their only connection in the whole graph is to each
+other — no other synset or seed relation corroborates them), it's an *isolated, uncorroborated* pair →
+tagged `Unverified`. Everything else (seed relations always; WordNet pairs corroborated by ≥2 synsets) →
+`Confirmed`.
+- `relations.rs`: `RelationConfidence {Confirmed, Unverified}`, `RelatedWord.confidence`,
+  `distinct_neighbor_degree()` + `classify_confidence()` (seed ⇒ always Confirmed). 3 tests.
+- Surfaced everywhere, subtly (Confirmed is the quiet default; only Unverified is marked): CLI shows
+  `⚠ ยังไม่ยืนยัน` + a legend; `/api/lookup` adds `"confidence"`; web UI shows a yellow
+  `⚠ ยังไม่ยืนยัน` badge on list items and a `⚠` on graph nodes + legend.
+- **Live-verified:** `ข้อหา→มลทิน` = `[WordNet] ⚠ ยังไม่ยืนยัน` (unverified); `สุนัข→หมา` = `[ตรวจแล้ว]`
+  (seed, no warn); `สุนัข→หมาบ้าน` = WordNet but **Confirmed** (corroborated, correctly not flagged). Web
+  API: `มลทิน … unverified`, `หมา … confirmed`.
+
+**Part B — real precision measurement (the pitch number).** Method: enumerated all 26,242 unique
+within-synset pairs, drew a **reproducible random sample of 120** (`random.seed(20260912)`), and judged
+each by hand as a genuine Thai synonym or not. Full annotated sample below (`[C]`=Confirmed / `[U]`=Unverified
+by the signal; `✓`=genuine / `✗`=not).
+
+- **Overall precision: 101/120 = 84.2%** of auto-imported WordNet relations are genuine synonyms.
+- By confidence tier: **Confirmed 74/87 = 85.1%**, **Unverified 27/33 = 81.8%**.
+
+**Honest interpretation (don't overclaim in the pitch):** the degree signal separates good from bad only
+*weakly* here (85.1% vs 81.8%) — WordNet's noise is spread across both tiers, not concentrated in isolated
+pairs. It reliably catches the specific `ข้อหา/มลทิน` *shape* (isolated 2-node pair) and is a cheap,
+honest "not cross-corroborated" flag, but it is **not** a strong quality classifier. The real defense is
+the combination: (1) ~84% of relations are correct, (2) every relation is provenance-tagged
+(seed=verified vs wordnet=auto), and (3) structurally-uncorroborated ones are additionally flagged
+Unverified — so nothing is ever presented as more certain than it is. Note also that "Unverified" ≠
+"wrong": e.g. `รถยนต์/ยานยนต์` is flagged Unverified but is a perfectly good synonym.
+
+Full sample + judgments (reproducible via seed 20260912):
+```
+  1 [U] ✓ การขาดมนุษยธรรม / ความขาดมนุษยธรรม     61 [C] ✓ กลางคืน / ค่ำคืน
+  2 [C] ✗ หมูขุน / หมูตอน                        62 [C] ✓ ตัวประกอบฉาก / ตัวแสดงประกอบฉาก
+  3 [C] ✓ นิวาสถาน / บ้าน                        63 [C] ✓ หายดี / เป็นปกติ
+  4 [U] ✓ คอส / โคไซน์                           64 [C] ✓ เครื่องโทรทัศน์ / โทรทัศน์
+  5 [C] ✓ กุ๊กไก่ / ไก่                          65 [C] ✗ งาน / สายงาน
+  6 [C] ✓ กระเป๋าสตางค์ / กระเป๋าใส่ธนบัตร        66 [C] ✓ นางกลางเมือง / หญิงขายตัว
+  7 [U] ✗ ลูกเสือสามัญรุ่นเล็ก / ลูกเสือสำรอง     67 [C] ✓ ประเทศมหาอำนาจทางทะเล / มหาอำนาจทางทะเล
+  8 [C] ✗ อย่างน่ามหัศจรรย์ / อย่างมาก            68 [C] ✓ การดับสิ้น / การสูญพันธุ์
+  9 [C] ✓ ยั่วยุ / ล่อ                           69 [C] ✓ คนขายชาติ / คนทรยศ
+ 10 [C] ✗ หน่วย / หน่วยวัด                        70 [C] ✓ ขึ้นรถไฟ / นั่งรถไฟ
+ 11 [C] ✓ ราชวงศ์เบลจิค / ราชวงศ์เบลเยี่ยม        71 [C] ✓ คนพ่ายแพ้ / คนล้มเหลว
+ 12 [C] ✓ ปลาแซลมอนรมควัน / เนื้อปลาแซลมอนรมควัน  72 [U] ✓ เอนเตอโรไคเนส / เอนไซม์เอนเตอโรไคเนส
+ 13 [C] ✓ การบีบ / การบีบอัด                      73 [U] ✓ มิวออน / อนุภาคมิวออน
+ 14 [C] ✓ ความทัดเทียม / ความเสมอภาค              74 [C] ✓ การถ่มน้ำลาย / การบ้วนน้ำลาย
+ 15 [C] ✗ องค์กรขนาดใหญ่ / องค์การ                75 [C] ✓ คะแนนบาสเกตบอล / แต้ม
+ 16 [C] ✓ การทำฮาราคีรี / การฮาราคีรี             76 [C] ✓ หนังวาบหวิว / หนังอาร์
+ 17 [C] ✓ ผลมะม่วง / มะม่วง                       77 [C] ✓ นิวแฮมป์เชียร์ / รัฐนิวแฮมป์เชียร์
+ 18 [C] ✓ บาร์บิทอล / บาร์บิโทน                   78 [U] ✓ นักปรัชญาสุนทรียศาสตร์ / นักสุนทรียศาสตร์
+ 19 [C] ✓ มังคุด / ลูกมังคุด                      79 [U] ✓ การทำผิดศีลธรรมทางเพศ / การประพฤติผิดในกาม
+ 20 [U] ✓ ห่อด้วยผ้าอ้อม / ห่อผ้าอ้อม             80 [C] ✗ การพังทลาย / ความล้มเหลว
+ 21 [C] ✓ มินิคาร์ / รถมินิคาร์                   81 [C] ✗ คร่ำเคร่ง / ห่อหุ้ม
+ 22 [C] ✓ กัลบก / ช่างตัดผม                       82 [C] ✓ ควย / นกเขา
+ 23 [C] ✓ สารปรุงแต่ง / สารปรุงแต่งอาหาร          83 [U] ✓ ทฤษฎีสัมพฤตินิยม / สัมพฤตินิยม
+ 24 [C] ✓ ระบบความคิด / สำนักความคิด              84 [C] ✓ คนยักยอกทรัพย์ / ผู้ยักยอก
+ 25 [U] ✗ การคำนวณทางคณิตศาสตร์ / การบวกลบคูณหาร  85 [C] ✓ การระเบิดพลีชีพ / การใช้ระเบิดพลีชีพ
+ 26 [C] ✓ ตาย / สิ้นชีพ                           86 [C] ✓ ความเห็นพ้อง / ฉันทามติ
+ 27 [C] ✓ หีบพระศพ / โลง                          87 [C] ✓ นักศึกษา / นิสิตนักศึกษา
+ 28 [C] ✓ พูดกระซิบ / พูดเบาๆ                     88 [U] ✓ พล.ท. / พลโท
+ 29 [C] ✓ ผู้นำ / แกนนำ                           89 [C] ✓ กลุ่มผู้บาดเจ็บ / คนเจ็บ
+ 30 [U] ✓ แสดงความไม่เห็นด้วย / ไม่เห็นด้วย       90 [C] ✗ อย่างจริงใจ / อย่างอบอุ่น
+ 31 [C] ✓ กลุ่มวัยรุ่นอันธพาล / แก็งค์วัยรุ่น     91 [U] ✗ เนื้อเยื่อผิวมะระ / เนื้อเยื่อแกรนูเลชัน
+ 32 [C] ✓ บูท / รองเท้าบูท                        92 [C] ✓ การคลอดลูก / การเกิดลูก
+ 33 [C] ✓ ผ้าผ่อน / เสื้อผ้า                      93 [C] ✓ มินิคาร์ / รถมินิ
+ 34 [U] ✗ การแข่งขันชิงถ้วยพระราชทาน / …ถ้วยรางวัล 94 [U] ✓ แรงงานฝีมือ / แรงงานมีฝีมือ
+ 35 [U] ✓ ปลาเอลไวฟ์ / เนื้อปลาเอลไวฟ์            95 [U] ✓ โจรงัดตู้เซฟ / โจรเปิดตู้เซฟ
+ 36 [C] ✓ บริษัทก่อสร้าง / บริษัทรับเหมา          96 [C] ✓ ลูทีน / แซนโธฟีล
+ 37 [C] ✓ การจ้าง / การว่าจ้าง                    97 [U] ✓ ลาเมลลา / เยื่อลาเมลลา
+ 38 [C] ✓ คนขับรถประจำทาง / คนขับรถโดยสาร         98 [C] ✓ คอร์ตแบด / คอร์ตแบดมินตัน
+ 39 [C] ✓ …สูงกว่างบประมาณ / ต้นทุนเกินงบ         99 [C] ✓ ยุคทอง / ยุครุ่งโรจน์
+ 40 [U] ✓ ขย้ำ / ตะปบ                            100 [U] ✓ ผู้ลี้ภัย / ผู้อพยพลี้ภัย
+ 41 [U] ✓ มิตเตอร์รองด์ / มิตเตอร์แรนด์          101 [C] ✓ จีแมน / พนักงานสืบสวนอาชญากรรม
+ 42 [C] ✗ …รอบก่อนรองชนะเลิศ / …รอบตัดเชือก      102 [U] ✓ การเลิกเสพยาอย่างเด็ดขาด / การเลิกเสพ…
+ 43 [C] ✓ ค้นหา / เสาะหา                         103 [C] ✓ แบ่ง / แบ่งสรรปันส่วน
+ 44 [C] ✓ จานพิเศษ / จานเด็ด                     104 [C] ✓ กุลธิดา / บุตรหญิง
+ 45 [C] ✓ ตั้งครรภ์ / มีท้อง                     105 [C] ✓ หน้าอกหน้าใจ / เต้านม
+ 46 [C] ✓ คนทรยศ / ไส้ศึก                        106 [C] ✓ ตีหม้อ / เย็ด
+ 47 [C] ✓ เจ้าตูบ / ไอ้โฮ่ง                      107 [C] ✗ ทางบ้าน / ผู้ชมโทรทัศน์
+ 48 [U] ✗ ตรวจอย่างละเอียด / สแกน               108 [C] ✓ คนนิโกร / ชาวนิโกร
+ 49 [C] ✗ ฮอตดอก / ไส้กรอก                       109 [C] ✓ สวิง / สวิงแจ๊ส
+ 50 [C] ✗ ขับ / ปล่อย                            110 [C] ✗ ผู้หญิงแถวหน้า / หญิงเหล็ก
+ 51 [C] ✓ การแข่งขันรถแรลลี่ / แรลลี่            111 [C] ✓ พอประมาณ / อย่างพอใช้
+ 52 [C] ✓ คนธรรมดาทั่วไป / ประชาชี              112 [U] ✓ คอตีบ / โรคคอตีบ
+ 53 [U] ✓ หายวับ / หายวับไปกับตา                113 [U] ✓ ทำหน้าบึ้ง / ทำหน้าบูด
+ 54 [C] ✓ คุณพ่อ / พ่อ                          114 [C] ✓ คนรับใช้หญิง / คนใช้หญิง
+ 55 [U] ✓ พล.ร.อ. / พลเรือเอก                   115 [U] ✓ วารสารที่ออกตามเวลา / หนังสือที่ออกตามเวลา
+ 56 [U] ✓ บุฟเฟต์ / อาหารบุฟเฟต์                116 [C] ✓ บรรพชิต / พระภิกษุสงฆ์
+ 57 [U] ✓ การโอน / การโอนกรรมสิทธิ์             117 [C] ✓ กลางคืน / รัตติกาล
+ 58 [U] ✓ ชุดบิกินี / ทูพีซ                     118 [C] ✓ ซ่อน / หลบซ่อน
+ 59 [U] ✗ ตกกระหน่ำ / ไหลทะลัก                  119 [C] ✓ สิบสอง / หนึ่งโหล
+ 60 [C] ✓ กะหรี่ / ผู้หญิงหากิน                 120 [U] ✓ ปลาเรนโบว์เทราต์ / เนื้อปลาเรนโบว์เทราต์
+```
+19 pairs judged not-genuine (✗): 13 in the Confirmed tier, 6 in Unverified — most are hyponym/near-miss
+(`หน่วย/หน่วยวัด`, `ฮอตดอก/ไส้กรอก`) or cross-lingual artifacts (`อย่างจริงใจ/อย่างอบอุ่น`), a couple
+genuinely wrong (`คร่ำเคร่ง/ห่อหุ้ม`). This is Thai WordNet's own source-data character, faithfully
+reproduced — the value wacha adds is labeling it, not hiding it.
+
+**Tests:** 50 pass (`wacha`), incl. the 3 new confidence tests; `poc` 10/10; `katgpt-rs` untouched.
