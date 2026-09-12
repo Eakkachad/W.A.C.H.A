@@ -62,6 +62,17 @@
   .rel .edge { color: var(--muted); font-size: .92rem; }
   .rel .edge .arrow { color: var(--accent2); }
   .empty { color: var(--muted); font-style: italic; }
+  .graph { display: block; margin: 0 auto; max-width: 100%; }
+  .g-edge { stroke: var(--edge); stroke-width: 1.5; }
+  .g-edge-label { fill: var(--muted); font-size: 11px; text-anchor: middle; }
+  .g-center circle { fill: var(--accent); }
+  .g-center-label { fill: #10142b; font-weight: 700; font-size: 15px; text-anchor: middle; }
+  .g-node { cursor: pointer; }
+  .g-node circle { fill: var(--panel2); stroke: var(--accent2); stroke-width: 1.5; transition: fill .15s, stroke-width .15s; }
+  .g-node:hover circle, .g-node:focus circle { fill: var(--accent2); stroke-width: 3; }
+  .g-node:focus { outline: none; }
+  .g-node-label { fill: var(--ink); font-size: 13px; text-anchor: middle; pointer-events: none; }
+  .g-hint { color: var(--muted); font-size: .8rem; margin-top: 10px; text-align: center; }
   .learner { border-color: var(--accent2); }
   .learner .body { font-size: 1.12rem; }
   .learner .example { margin-top: 8px; color: var(--ink); }
@@ -145,7 +156,16 @@ function render(d) {
     html += `</div>`;
   }
 
-  // Related words with explanation
+  // Related words: interactive graph (centerpiece) + text list (fallback/detail)
+  html += `<div class="card"><h2>แผนภาพความสัมพันธ์ — คลิกคำเพื่อสำรวจต่อ (explainable graph)</h2>`;
+  if (d.related.length === 0) {
+    html += `<span class="empty">ไม่มีข้อมูลความสัมพันธ์ (no relationship data)</span>`;
+  } else {
+    html += buildGraphSvg(d);
+  }
+  html += `</div>`;
+
+  // Related words with explanation (text detail — kept as the accessible fallback)
   html += `<div class="card"><h2>คำที่เกี่ยวข้อง — พร้อมคำอธิบาย (explainable)</h2>`;
   if (d.related.length === 0) {
     html += `<span class="empty">ไม่มีข้อมูลความสัมพันธ์ (no relationship data)</span>`;
@@ -173,15 +193,84 @@ function render(d) {
 
   resultEl.innerHTML = html;
 
-  // Click a related word to look it up (graph exploration).
+  // Click (or keyboard-activate) a related word — in the list OR the graph — to
+  // look it up (graph exploration). SVG nodes and list items both carry .rw.
   resultEl.querySelectorAll(".rw").forEach(el => {
-    el.addEventListener("click", () => {
+    const go = () => {
       const w = el.getAttribute("data-word");
       qEl.value = w;
       lookup(w);
       window.scrollTo({ top: 0, behavior: "smooth" });
+    };
+    el.addEventListener("click", go);
+    el.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); }
     });
   });
+}
+
+// Extract the relation label connecting the query word to a related word,
+// from that related word's explanation path (edges like "A --REL--> B").
+// Falls back to a neutral label if none is directly parseable.
+function relationLabel(rw, queryWord) {
+  if (!rw.path || !rw.path.length) return "เกี่ยวข้อง";
+  // Prefer an edge that directly touches both the query word and this word.
+  for (const edge of rw.path) {
+    const m = edge.match(/^(.*?)\s+--(.+?)-->\s+(.*)$/);
+    if (!m) continue;
+    const [, a, rel, b] = m.map(s => s.trim());
+    if ((a === queryWord && b === rw.word) || (a === rw.word && b === queryWord)) {
+      return rel;
+    }
+  }
+  // Otherwise use the first edge's relation.
+  const m0 = rw.path[0].match(/^(.*?)\s+--(.+?)-->\s+(.*)$/);
+  return m0 ? m0[2].trim() : "เกี่ยวข้อง";
+}
+
+// Build a simple radial SVG graph: the query word at center, related words on a
+// circle around it (closer + larger = higher score), edges labeled with the
+// relation. Nodes carry class "rw" + data-word so the existing click handler
+// re-queries them (click to explore the graph).
+function buildGraphSvg(d) {
+  const W = 640, H = 440, cx = W / 2, cy = H / 2;
+  const rels = d.related.slice(0, 8);
+  const scores = rels.map(r => r.score);
+  const maxS = Math.max(...scores), minS = Math.min(...scores);
+  const span = (maxS - minS) || 1;
+  // Radius: highest score nearest the center; lowest pushed out.
+  const rMin = 96, rMax = 190;
+  const query = d.entry ? d.entry.word : (d.segmentation[0] ? d.segmentation[0].text : "");
+
+  let edges = "", nodes = "";
+  rels.forEach((rw, i) => {
+    const angle = (2 * Math.PI * i) / rels.length - Math.PI / 2;
+    const norm = (rw.score - minS) / span;      // 0..1, 1 = most related
+    const radius = rMax - norm * (rMax - rMin);  // higher score -> smaller radius
+    const x = cx + radius * Math.cos(angle);
+    const y = cy + radius * Math.sin(angle);
+    const nodeR = 20 + norm * 12;                // higher score -> bigger node
+    const rel = relationLabel(rw, query);
+    const mx = cx + (x - cx) * 0.55, my = cy + (y - cy) * 0.55;
+
+    edges += `<line x1="${cx}" y1="${cy}" x2="${x}" y2="${y}" class="g-edge"/>`;
+    edges += `<text x="${mx}" y="${my}" class="g-edge-label">${esc(rel)}</text>`;
+
+    nodes += `<g class="g-node rw" data-word="${esc(rw.word)}" tabindex="0" role="button" `
+      + `aria-label="สำรวจคำ ${esc(rw.word)}">`
+      + `<circle cx="${x}" cy="${y}" r="${nodeR}"/>`
+      + `<text x="${x}" y="${y + 4}" class="g-node-label">${esc(rw.word)}</text>`
+      + `</g>`;
+  });
+
+  // Center (query) node.
+  const center = `<g class="g-center"><circle cx="${cx}" cy="${cy}" r="34"/>`
+    + `<text x="${cx}" y="${cy + 5}" class="g-center-label">${esc(query)}</text></g>`;
+
+  return `<svg class="graph" viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="xMidYMid meet" `
+    + `role="img" aria-label="แผนภาพความสัมพันธ์ของคำ ${esc(query)}">`
+    + `<g class="g-edges">${edges}</g>${center}<g class="g-nodes">${nodes}</g></svg>`
+    + `<div class="g-hint">คลิก (หรือกด Enter ที่) คำใด ๆ เพื่อสำรวจความสัมพันธ์ของคำนั้นต่อ · ยิ่งใกล้กลาง = ยิ่งเกี่ยวข้อง</div>`;
 }
 
 $("#go").addEventListener("click", () => lookup(qEl.value));

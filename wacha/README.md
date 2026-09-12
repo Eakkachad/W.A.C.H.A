@@ -64,8 +64,10 @@ This makes even one-shot `lookup`/`segment` invocations fast, not just the long-
 
 ### Web UI (`wacha-web`)
 
-A minimal, dependency-free web front end for demos (search box → segmentation → definition → ranked
-related words with explanation paths, click a related word to explore the graph). It's a blocking
+A minimal, dependency-free web front end for demos (search box → segmentation → definition → an
+**interactive SVG relationship graph** (query word centered, related words as clickable nodes sized/placed
+by score, edges labeled with the relation) plus the ranked related-words text list with explanation paths;
+click any node to re-center and explore). It's a blocking
 `std::net` HTTP server — no axum/tokio — that builds the `Engine` **once at startup** and serves it across
 requests.
 

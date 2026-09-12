@@ -205,6 +205,11 @@ results; `cargo test` still passes; real query output for 5 new (non-seed) words
 
 ## Task 6 (P3 in `AGENT_HANDOFF.md` §7.5, optional polish) — Visualize the relationship graph in `wacha-web`
 
+**✅ DONE (2026-09-12, verified in a real browser) — see `PROGRESS.md`.** Added a client-side SVG radial
+graph to `wacha/web/index.html` (`buildGraphSvg`): query word centered, related words as clickable nodes
+(distance/size by score), edges labeled with the relation from the explanation path; click/Enter a node to
+re-query. Text list kept as the accessible fallback. No backend change. Task body below kept for context.
+
 **Why:** the current related-words panel is a ranked text list with path strings. A small interactive
 graph (nodes + edges, click to re-center on a related word) communicates the "explainable AI reasoning"
 story far more viscerally to judges, and directly serves the brief's own "เห็นภาพ" (visualize) language.

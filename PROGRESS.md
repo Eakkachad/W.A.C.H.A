@@ -27,6 +27,7 @@ files too and note it here — this log is the record of *that it changed*, thos
 | Web UI (optional) | **done** — dependency-free std::net server (`wacha-web`), verified by real requests | 2026-09-12 |
 | Typhoon 2 / direction 3 (offline-precomputed learner content) | **done** — static asset (20 words) + `gen-learner` tool; runtime is LLM-free; text currently `human_seed`, honestly labeled | 2026-09-12 |
 | Relation coverage via Thai WordNet (P2) | **done** — ~29k words gain real synonym relations; graph 24→29,281 entities, 52,545 triples | 2026-09-12 |
+| Interactive relationship graph in `wacha-web` (P3) | **done** — SVG radial graph, click-to-explore; client-side only; opened in a real browser | 2026-09-12 |
 | Day 2 — demo/submit | not started | — |
 
 **A real product crate now exists** (`wacha/`) in addition to the `poc/` feasibility harness. The
@@ -521,3 +522,40 @@ synonym network, not just 20 demo words.
 
 **Remaining:** P3 (interactive graph visualization in `wacha-web`) is the last optional polish item; Day-2
 pitch materials. All P1/P2 data-and-correctness work is done.
+
+### 2026-09-12 (P3) — Interactive relationship graph in wacha-web
+
+Added the last optional-polish item: the related-words panel now leads with an **interactive SVG graph**,
+not just a text list. This makes the "explainable AI reasoning" story visual (the brief's own "เห็นภาพ"
+language) — the query word sits at the center, related words orbit it, and each edge is labeled with the
+actual relation (`มีความหมายเหมือนกับ`, `เป็นชนิดของ`, …) pulled from the explanation path.
+
+**Client-side only, no backend change** (as scoped): `/api/lookup`'s JSON already carries every related
+word's score + explanation path. All new code is in `wacha/web/index.html`:
+- `buildGraphSvg(d)` — a radial layout: center = query word; up to 8 related words on a circle, positioned
+  by score (higher score → closer to center + larger node); center→node edges labeled via
+  `relationLabel(rw, query)` (parses the `A --REL--> B` explanation edges).
+- **Click-to-explore:** each graph node carries class `.rw` + `data-word`, so it reuses the existing
+  related-word click handler — clicking a node re-queries that word and redraws the graph. Nodes are also
+  keyboard-accessible (`tabindex`/`role="button"`, Enter/Space activate).
+- The ranked **text list is kept below** the graph as the accessible, detailed fallback (graph + list are
+  complementary, not either/or). Empty/no-relations still handled.
+- Added graph CSS (edges, nodes, center, hover/focus states, hint line).
+
+**Verified:**
+- Logic verification under Node v24 against a real `/api/lookup?q=แมว` response: center node = `แมว`,
+  **8 related nodes / 8 edges / 8 clickable `data-word` targets** (every related word is a clickable
+  node), relation labels correctly extracted (`มีความหมายเหมือนกับ`, `ดูเพิ่มที่`, `อยู่ในหมวด`), valid
+  `<svg>` root.
+- **Real browser session:** started `wacha-web --data ../data --port 8095` (startup log:
+  `engine ready: 62106 words | 29281 graph entities, 52545 triples`) and opened
+  `http://127.0.0.1:8095/` in the default browser via `open`. Server confirmed serving the graph markup
+  and live `/api/lookup` (ครู → 8 related). This satisfies the P3 acceptance criterion (verified in an
+  actual browser, not just code).
+- 46 tests still pass (HTML is embedded via `include_str!`; no Rust logic changed). `poc` 10/10;
+  `katgpt-rs` untouched.
+
+**Status:** all of P1–P3 from `AGENT_HANDOFF.md` §7.5 are now done. What remains is non-code: Day-2 pitch
+materials (and the "build networks" objective is a pitch/positioning point — the CC0 data + open JSON API
+is the "build on this" story). The product itself — correct relations, fast start, CLI + web with an
+explainable graph, ~29k-word coverage, offline learner content — is demo-complete.
