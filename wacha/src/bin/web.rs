@@ -28,6 +28,7 @@ use wacha::{Engine, Lookup};
 fn main() {
     let mut data_dir: Option<String> = None;
     let mut port: u16 = 8080;
+    let mut host: String = String::from("127.0.0.1");
     let args: Vec<String> = env::args().collect();
     let mut i = 1;
     while i < args.len() {
@@ -43,8 +44,19 @@ fn main() {
                 });
                 i += 2;
             }
+            "--host" if i + 1 < args.len() => {
+                host = args[i + 1].clone();
+                i += 2;
+            }
             "-h" | "--help" => {
-                println!("usage: wacha-web [--data DIR] [--port N]");
+                println!(
+                    "usage: wacha-web [--data DIR] [--host ADDR] [--port N]\n\n\
+                     --host  bind address (default 127.0.0.1, localhost only).\n\
+                     \t        For Tailscale access, pass your tailnet IP, e.g.\n\
+                     \t        --host 100.76.70.14  (bind only the Tailscale interface),\n\
+                     \t        or --host 0.0.0.0 to bind all interfaces.\n\
+                     --port  TCP port (default 8080)."
+                );
                 return;
             }
             other => {
@@ -78,7 +90,7 @@ fn main() {
     );
 
     let engine = Arc::new(engine);
-    let addr = format!("127.0.0.1:{port}");
+    let addr = format!("{host}:{port}");
     let listener = match TcpListener::bind(&addr) {
         Ok(l) => l,
         Err(e) => {
@@ -87,6 +99,12 @@ fn main() {
         }
     };
     println!("วาจา (WACHA) web UI listening on http://{addr}  (Ctrl-C to stop)");
+    if host != "127.0.0.1" && host != "localhost" {
+        println!(
+            "note: bound to a non-localhost address ({host}). This server has no auth; \
+             only expose it on a trusted network (e.g. your Tailscale tailnet), not the public internet."
+        );
+    }
 
     for stream in listener.incoming() {
         match stream {

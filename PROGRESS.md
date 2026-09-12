@@ -559,3 +559,17 @@ word's score + explanation path. All new code is in `wacha/web/index.html`:
 materials (and the "build networks" objective is a pitch/positioning point — the CC0 data + open JSON API
 is the "build on this" story). The product itself — correct relations, fast start, CLI + web with an
 explainable graph, ~29k-word coverage, offline learner content — is demo-complete.
+
+### 2026-09-12 (follow-up a) — `wacha-web --host` flag (Tailscale access)
+
+Small addition surfaced by working on this machine over Tailscale: `wacha-web` previously hard-bound
+`127.0.0.1`, unreachable from other tailnet devices. Added a `--host ADDR` flag (default `127.0.0.1`, so
+the safe localhost-only behavior is unchanged). For remote access, bind the machine's **Tailscale IP**
+(e.g. `--host 100.76.70.14`) rather than `0.0.0.0`, so only tailnet devices can reach it. The server prints
+a security note when bound to any non-localhost address (it has **no auth** — only expose it on a trusted
+network like a Tailscale tailnet, never the public internet / Funnel).
+
+Verified live: rebuilt, bound `--host 100.76.70.14 --port 8095`, confirmed `healthz` reachable via the
+Tailscale IP from the tailnet (startup log shows `listening on http://100.76.70.14:8095` + the no-auth
+note). Default (`wacha-web --data ../data`) still binds localhost only. 46 tests still pass (no Rust logic
+besides arg parsing changed).
