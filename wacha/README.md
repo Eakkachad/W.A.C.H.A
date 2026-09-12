@@ -62,6 +62,24 @@ by Thai's narrow UTF-8 byte range triggering heavy trie-collision cascades (see 
 This makes even one-shot `lookup`/`segment` invocations fast, not just the long-lived REPL. Delete the
 `.datrie.cache` file to force a clean rebuild.
 
+### Web UI (`wacha-web`)
+
+A minimal, dependency-free web front end for demos (search box → segmentation → definition → ranked
+related words with explanation paths, click a related word to explore the graph). It's a blocking
+`std::net` HTTP server — no axum/tokio — that builds the `Engine` **once at startup** and serves it across
+requests.
+
+```bash
+# Seed dictionary (instant startup), then open http://127.0.0.1:8080
+cargo run --release --bin wacha-web
+
+# Real 62k-word list (uses the trie cache), custom port:
+cargo run --release --bin wacha-web -- --data ../data --port 8087
+```
+
+Endpoints: `GET /` (the UI), `GET /api/lookup?q=<word>` (JSON: segmentation + entry + related-with-paths),
+`GET /healthz`.
+
 ## The user journey
 
 `type a word → segment it → look up its definition → see related words, each with an explanation`

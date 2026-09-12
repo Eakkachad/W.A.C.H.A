@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>วาจา (WACHA) — พจนานุกรมไทยอธิบายความสัมพันธ์</title>
+<style>
+  :root {
+    --bg: #0f1220; --panel: #191d33; --panel2: #212745; --ink: #e8ebff;
+    --muted: #9aa3c7; --accent: #7c9cff; --accent2: #57d9a3; --oov: #ff9d6b;
+    --edge: #2c335c;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: "Sarabun", "Noto Sans Thai", system-ui, sans-serif;
+    background: var(--bg); color: var(--ink); line-height: 1.55;
+  }
+  header { padding: 28px 20px 10px; text-align: center; }
+  header h1 { margin: 0; font-size: 2rem; letter-spacing: .5px; }
+  header .sub { color: var(--muted); font-size: .95rem; margin-top: 4px; }
+  header .backronym { color: var(--accent); font-size: .8rem; margin-top: 2px; }
+  main { max-width: 760px; margin: 0 auto; padding: 12px 16px 60px; }
+  .search { display: flex; gap: 8px; margin: 18px 0 8px; }
+  .search input {
+    flex: 1; padding: 14px 16px; font-size: 1.15rem; border-radius: 12px;
+    border: 1px solid var(--edge); background: var(--panel); color: var(--ink);
+  }
+  .search input:focus { outline: 2px solid var(--accent); }
+  .search button {
+    padding: 0 20px; font-size: 1.05rem; border: 0; border-radius: 12px;
+    background: var(--accent); color: #10142b; font-weight: 700; cursor: pointer;
+  }
+  .hint { color: var(--muted); font-size: .85rem; }
+  .hint code {
+    background: var(--panel2); padding: 1px 6px; border-radius: 5px; cursor: pointer;
+  }
+  .card {
+    background: var(--panel); border: 1px solid var(--edge); border-radius: 14px;
+    padding: 16px 18px; margin-top: 16px;
+  }
+  .card h2 { margin: 0 0 10px; font-size: .8rem; letter-spacing: 1px;
+             text-transform: uppercase; color: var(--muted); }
+  .seg { display: flex; flex-wrap: wrap; gap: 8px; }
+  .tok {
+    padding: 6px 12px; border-radius: 999px; font-size: 1.05rem;
+    background: var(--panel2); border: 1px solid var(--edge);
+  }
+  .tok.oov { border-color: var(--oov); color: var(--oov); }
+  .tok .tag { font-size: .65rem; color: var(--muted); margin-left: 6px; }
+  .def .word { font-size: 1.6rem; font-weight: 700; }
+  .def .pos { color: var(--accent2); margin-left: 8px; font-size: 1rem; }
+  .def .body { margin-top: 6px; font-size: 1.1rem; }
+  .rel { list-style: none; padding: 0; margin: 0; }
+  .rel li { padding: 10px 0; border-bottom: 1px solid var(--edge); }
+  .rel li:last-child { border-bottom: 0; }
+  .rel .head { display: flex; align-items: baseline; gap: 10px; }
+  .rel .rank { color: var(--muted); width: 1.4em; text-align: right; }
+  .rel .rw { font-size: 1.2rem; font-weight: 600; cursor: pointer; color: var(--accent); }
+  .rel .rw:hover { text-decoration: underline; }
+  .rel .score { color: var(--muted); font-size: .8rem; }
+  .rel .paths { margin: 6px 0 0 2.4em; }
+  .rel .edge { color: var(--muted); font-size: .92rem; }
+  .rel .edge .arrow { color: var(--accent2); }
+  .empty { color: var(--muted); font-style: italic; }
+  footer { text-align: center; color: var(--muted); font-size: .8rem; padding: 20px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>วาจา <span style="color:var(--muted);font-size:1rem">/ WACHA</span></h1>
+  <div class="sub">พจนานุกรมไทยยุคใหม่ — ตัดคำ + อธิบายความสัมพันธ์ของคำอย่างมีเหตุผล</div>
+  <div class="backronym">Word Architecture · Cluster-aware Hybrid Analysis</div>
+</header>
+<main>
+  <div class="search">
+    <input id="q" type="text" placeholder="พิมพ์คำภาษาไทย เช่น แมว, ครู, อ่าน…" autofocus>
+    <button id="go">ค้นหา</button>
+  </div>
+  <div class="hint">
+    ลอง: <code>แมว</code> <code>ครู</code> <code>อ่าน</code> <code>สุนัข</code> <code>พจนานุกรม</code>
+  </div>
+  <div id="result"></div>
+</main>
+<footer>วาจา (WACHA) — ต้นแบบสำหรับ “เปิดคลังคำ พลิกคลังคิด” · katgpt-rs Datrie + AXIOM graph (hybrid)</footer>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const resultEl = $("#result");
+const qEl = $("#q");
+
+function esc(s) {
+  return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+}
+
+async function lookup(word) {
+  word = (word || "").trim();
+  if (!word) { resultEl.innerHTML = ""; return; }
+  resultEl.innerHTML = `<div class="card"><span class="empty">กำลังค้นหา “${esc(word)}”…</span></div>`;
+  try {
+    const res = await fetch(`/api/lookup?q=${encodeURIComponent(word)}`);
+    const data = await res.json();
+    render(data);
+  } catch (e) {
+    resultEl.innerHTML = `<div class="card"><span class="empty">เกิดข้อผิดพลาด: ${esc(e)}</span></div>`;
+  }
+}
+
+function render(d) {
+  let html = "";
+
+  // Segmentation
+  html += `<div class="card"><h2>การตัดคำ (segmentation)</h2><div class="seg">`;
+  if (d.segmentation.length === 0) {
+    html += `<span class="empty">—</span>`;
+  } else {
+    for (const t of d.segmentation) {
+      const cls = t.in_vocab ? "tok" : "tok oov";
+      const tag = t.in_vocab ? "" : `<span class="tag">OOV</span>`;
+      html += `<span class="${cls}">${esc(t.text)}${tag}</span>`;
+    }
+  }
+  html += `</div></div>`;
+
+  // Definition
+  html += `<div class="card def"><h2>นิยาม (definition)</h2>`;
+  if (d.entry) {
+    html += `<div><span class="word">${esc(d.entry.word)}</span><span class="pos">${esc(d.entry.pos)}</span></div>`;
+    html += `<div class="body">${esc(d.entry.definition)}</div>`;
+  } else {
+    html += `<span class="empty">ไม่พบนิยามของคำนี้ในพจนานุกรม (no dictionary entry)</span>`;
+  }
+  html += `</div>`;
+
+  // Related words with explanation
+  html += `<div class="card"><h2>คำที่เกี่ยวข้อง — พร้อมคำอธิบาย (explainable)</h2>`;
+  if (d.related.length === 0) {
+    html += `<span class="empty">ไม่มีข้อมูลความสัมพันธ์ (no relationship data)</span>`;
+  } else {
+    html += `<ul class="rel">`;
+    d.related.forEach((rw, i) => {
+      html += `<li><div class="head">`;
+      html += `<span class="rank">${i + 1}.</span>`;
+      html += `<span class="rw" data-word="${esc(rw.word)}">${esc(rw.word)}</span>`;
+      html += `<span class="score">score ${rw.score.toFixed(3)}</span>`;
+      html += `</div>`;
+      if (rw.path && rw.path.length) {
+        html += `<div class="paths">`;
+        for (const edge of rw.path) {
+          const pretty = esc(edge).replace(/--(.+?)--&gt;/g, '<span class="arrow">—$1→</span>');
+          html += `<div class="edge">↳ ${pretty}</div>`;
+        }
+        html += `</div>`;
+      }
+      html += `</li>`;
+    });
+    html += `</ul>`;
+  }
+  html += `</div>`;
+
+  resultEl.innerHTML = html;
+
+  // Click a related word to look it up (graph exploration).
+  resultEl.querySelectorAll(".rw").forEach(el => {
+    el.addEventListener("click", () => {
+      const w = el.getAttribute("data-word");
+      qEl.value = w;
+      lookup(w);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+  });
+}
+
+$("#go").addEventListener("click", () => lookup(qEl.value));
+qEl.addEventListener("keydown", (e) => { if (e.key === "Enter") lookup(qEl.value); });
+document.querySelectorAll(".hint code").forEach(c => {
+  c.addEventListener("click", () => { qEl.value = c.textContent; lookup(c.textContent); });
+});
+</script>
+</body>
+</html>

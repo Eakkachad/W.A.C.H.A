@@ -24,7 +24,7 @@ files too and note it here — this log is the record of *that it changed*, thos
 | Day 0/1 — fix or plan around the 42s Datrie build-time cost | **done** — trie cache: 43.35s → 9.7ms (~4400×) | 2026-09-12 |
 | Data-quality audit of 20 seed relations (found: ครู/นักเรียน mislabeled as antonyms) | **done** — relabeled 3, added RelatedTo + 2 regression tests | 2026-09-12 |
 | Vendor `Datrie` into `wacha` (drop the `katgpt-rs` path dependency) | **done** — zero external deps left; 38/38 tests | 2026-09-12 |
-| Web UI (optional) | not started — see `NEXT_STEPS.md` Task 3 | — |
+| Web UI (optional) | **done** — dependency-free std::net server (`wacha-web`), verified by real requests | 2026-09-12 |
 | Typhoon 2 / direction 3 (optional) | not started — see `NEXT_STEPS.md` Task 4 | — |
 | Day 2 — demo/submit | not started | — |
 
@@ -311,3 +311,42 @@ never used) and its `toast_types` dependency. Removed the `katgpt-tokenizer` pat
 `wacha` now builds and runs with **zero dependencies outside this repository** (`serde` and `postcard` are
 the only external crates left, both from crates.io, not a local path). This fully retires the fragility
 risk found above — there is no longer any external working tree whose state `wacha` depends on.
+
+### 2026-09-12 (later) — NEXT_STEPS Task 3 done: minimal web UI (dependency-free)
+
+Built `wacha-web`, a self-contained web front end over the `Engine` API for the live demo, keeping the
+project's dependency-light constraint (no axum/tokio/serde_json).
+
+**What was built:**
+- Refactored the CLI's cache-aware engine loader up into the library as
+  `Engine::load_from_dir(dir, log)` so the CLI and the server share one code path (build the engine
+  exactly once, using the on-disk trie cache). The CLI now just calls it; ~70 lines of duplicated cache
+  logic removed.
+- `wacha/src/bin/web.rs`: a blocking HTTP/1.1 server on `std::net::TcpListener`, thread-per-connection,
+  serving an `Arc<Engine>` built **once at startup**. Routes: `/` (embedded single-page UI via
+  `include_str!`), `/api/lookup?q=<word>` (JSON), `/healthz`. Hand-written JSON serializer + a small
+  `application/x-www-form-urlencoded` decoder (handles `%XX`/`+`) so Thai query strings work. **Zero new
+  web dependencies.**
+- `wacha/web/index.html`: search box → segmentation (in-vocab pills vs orange OOV pills) → definition →
+  ranked related words, each with its `เกี่ยวข้องกับ`/`เป็นชนิดของ`/… explanation path rendered as
+  `—relation→` edges. Related words are click-to-explore (clicking one re-queries it — graph browsing).
+- Registered the `wacha-web` bin in `Cargo.toml`.
+
+**Verified by real requests (not just "it compiles"):** started `wacha-web --data ../data --port 8087`,
+which logged `loaded segmenter from cache … in 20.29ms` *before* `listening on …` — confirming the engine
+is built once at startup, not per request. Then via `curl`:
+- `/healthz` → `ok`.
+- `/api/lookup?q=แมว` → correct JSON: `segmentation:[{แมว,in_vocab:true}]`, full definition, and 6 ranked
+  related words with explanation paths (`แมว --เป็นชนิดของ--> สัตว์`, etc.).
+- `/api/lookup?q=ครู` → shows the **Task 1 relation fix through the web layer too**:
+  `ครู --เกี่ยวข้องกับ--> นักเรียน` (not the old wrong `ตรงข้ามกับ`).
+- `/api/lookup?q=นักเรียนอ่านหนังสือ` → segments to `นักเรียน | อ่านหนังสือ`, `entry:null`, `related:[]`
+  — the not-a-single-headword path handled gracefully (no crash, honest empty result).
+- `/` → serves the HTML page.
+
+**Test state unchanged/green:** `wacha` 38/38, `poc` 10/10. `katgpt-rs` reverted to pristine and left
+untouched this session (per the user's instruction to avoid editing other repos — `wacha` is fully
+self-contained via its vendored `datrie.rs`).
+
+**Remaining (optional, lowest priority):** `NEXT_STEPS.md` Task 4 (Typhoon 2 AI-simplified definitions).
+The core submission — correct relations, fast start, CLI + web demo — is complete.

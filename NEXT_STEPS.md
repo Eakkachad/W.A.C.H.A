@@ -111,6 +111,11 @@ rebuilding, with that confirmation described in `PROGRESS.md`.
 
 ## Task 3 (optional, do only if Tasks 1-2 are done and there's time left) — Minimal web UI
 
+**✅ DONE (2026-09-12, verified by real curl requests) — see `PROGRESS.md`.** Built `wacha-web`: a
+dependency-free `std::net` HTTP server + embedded single-page UI (`wacha/web/index.html`) over the shared
+`Engine::load_from_dir` loader (engine built once at startup, confirmed via the startup log). Task body
+below kept for historical context.
+
 Build a thin web frontend over the `Engine` API (`wacha`'s `lib.rs`) so the demo doesn't rely on a
 terminal CLI in front of judges. This was flagged as a nice-to-have in `PROGRESS.md`'s 2026-09-04 entry,
 never started.

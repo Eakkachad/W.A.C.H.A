@@ -131,6 +131,64 @@ impl Engine {
         Self::build(Vec::<String>::new(), dictionary::seed_entries(), None)
     }
 
+    /// Load an engine from a data directory containing `words_th.txt` (and
+    /// optionally `tnc_freq.txt`), using an on-disk trie cache
+    /// (`words_th.datrie.cache`) to skip the ~43s rebuild when it's present and
+    /// newer than the word list. This is the shared entry point for both the
+    /// CLI and the web server — build the engine *once* at startup with it.
+    ///
+    /// `log` receives human-readable progress lines (pass e.g. `|m| eprintln!("{m}")`
+    /// or a no-op closure).
+    pub fn load_from_dir(dir: &std::path::Path, mut log: impl FnMut(&str)) -> std::io::Result<Self> {
+        use std::time::Instant;
+
+        let words_path = dir.join("words_th.txt");
+        let words_txt = std::fs::read_to_string(&words_path)?;
+        let word_list: Vec<&str> = words_txt.lines().collect();
+
+        let freq_path = dir.join("tnc_freq.txt");
+        let freq_txt = std::fs::read_to_string(&freq_path).ok();
+
+        log(&format!(
+            "loaded {} words from {}{}",
+            word_list.len(),
+            words_path.display(),
+            if freq_txt.is_some() { " (+ frequencies)" } else { "" }
+        ));
+
+        let cache_path = dir.join("words_th.datrie.cache");
+        if cache_is_fresh(&cache_path, &words_path) {
+            match Segmenter::load_cache(&cache_path) {
+                Ok(seg) => {
+                    let t = Instant::now();
+                    let engine = Self::build_from_segmenter(
+                        word_list,
+                        dictionary::seed_entries(),
+                        freq_txt.as_deref(),
+                        seg,
+                    );
+                    log(&format!(
+                        "loaded segmenter from cache {} in {:?} (skipped ~43s trie build)",
+                        cache_path.display(),
+                        t.elapsed()
+                    ));
+                    return Ok(engine);
+                }
+                Err(e) => log(&format!("cache load failed ({e}); rebuilding from scratch")),
+            }
+        }
+
+        log("building trie from scratch (first run is slow, ~40s for 62k words)…");
+        let t = Instant::now();
+        let engine = Self::build(word_list, dictionary::seed_entries(), freq_txt.as_deref());
+        log(&format!("engine built in {:?}", t.elapsed()));
+        match engine.segmenter().save_cache(&cache_path) {
+            Ok(()) => log(&format!("wrote segmenter cache to {}", cache_path.display())),
+            Err(e) => log(&format!("warning: could not write cache ({e})")),
+        }
+        Ok(engine)
+    }
+
     pub fn segmenter(&self) -> &Segmenter {
         &self.segmenter
     }
@@ -167,6 +225,20 @@ impl Engine {
         });
         let related = self.relations.related(query, top_k);
         Lookup { segmentation, entry, related }
+    }
+}
+
+/// A trie cache is usable if it exists and is at least as new as the word-list
+/// file it was built from (editing the word list invalidates a stale cache).
+fn cache_is_fresh(cache_path: &std::path::Path, words_path: &std::path::Path) -> bool {
+    let (Ok(cache_meta), Ok(words_meta)) =
+        (std::fs::metadata(cache_path), std::fs::metadata(words_path))
+    else {
+        return false;
+    };
+    match (cache_meta.modified(), words_meta.modified()) {
+        (Ok(cache_m), Ok(words_m)) => cache_m >= words_m,
+        _ => true,
     }
 }
 
