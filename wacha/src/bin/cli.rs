@@ -150,11 +150,12 @@ fn print_help() {
 
 fn print_stats(engine: &Engine) {
     println!(
-        "segmenter: {} words | dictionary: {} entries | graph: {} entities, {} triples",
+        "segmenter: {} words | dictionary: {} entries | graph: {} entities, {} triples | learner content: {} words",
         engine.word_count(),
         engine.entry_count(),
         engine.relation_entity_count(),
         engine.relation_triple_count(),
+        engine.learner_count(),
     );
 }
 
@@ -182,6 +183,14 @@ fn print_lookup(_engine: &Engine, r: &Lookup, query: &str) {
         None => {
             println!("\n(ไม่พบนิยามของคำนี้ในพจนานุกรม — no dictionary entry)");
         }
+    }
+
+    // Offline-precomputed learner content — a clearly-labeled enrichment, shown
+    // separately from the formal definition, with its honest provenance.
+    if let Some(l) = &r.learner {
+        println!("\nคำอธิบายง่าย: {}", l.simple);
+        println!("ตัวอย่างประโยค: {}", l.example);
+        println!("  (เนื้อหาสำหรับผู้เรียน · จัดทำล่วงหน้าออฟไลน์ · ที่มา: {})", l.source);
     }
 
     if r.related.is_empty() {

@@ -262,6 +262,17 @@ fn lookup_json(engine: &Engine, query: &str) -> String {
         None => s.push_str("\"entry\":null,"),
     }
 
+    // learner (offline-precomputed enrichment; may be null)
+    match &r.learner {
+        Some(l) => s.push_str(&format!(
+            "\"learner\":{{\"simple\":{},\"example\":{},\"source\":{}}},",
+            json_str(&l.simple),
+            json_str(&l.example),
+            json_str(&l.source)
+        )),
+        None => s.push_str("\"learner\":null,"),
+    }
+
     // related
     s.push_str("\"related\":[");
     for (i, rw) in r.related.iter().enumerate() {

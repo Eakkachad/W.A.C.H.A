@@ -62,6 +62,11 @@
   .rel .edge { color: var(--muted); font-size: .92rem; }
   .rel .edge .arrow { color: var(--accent2); }
   .empty { color: var(--muted); font-style: italic; }
+  .learner { border-color: var(--accent2); }
+  .learner .body { font-size: 1.12rem; }
+  .learner .example { margin-top: 8px; color: var(--ink); }
+  .learner .example::before { content: ""; }
+  .learner .prov { margin-top: 10px; color: var(--muted); font-size: .78rem; font-style: italic; }
   footer { text-align: center; color: var(--muted); font-size: .8rem; padding: 20px; }
 </style>
 </head>
@@ -130,6 +135,15 @@ function render(d) {
     html += `<span class="empty">ไม่พบนิยามของคำนี้ในพจนานุกรม (no dictionary entry)</span>`;
   }
   html += `</div>`;
+
+  // Learner content (offline-precomputed enrichment, clearly labeled)
+  if (d.learner) {
+    html += `<div class="card learner"><h2>คำอธิบายง่าย (สำหรับผู้เรียน)</h2>`;
+    html += `<div class="body">${esc(d.learner.simple)}</div>`;
+    html += `<div class="example">ตัวอย่าง: ${esc(d.learner.example)}</div>`;
+    html += `<div class="prov">เนื้อหาสำหรับผู้เรียน · จัดทำล่วงหน้าแบบออฟไลน์ · ที่มา: ${esc(d.learner.source)}</div>`;
+    html += `</div>`;
+  }
 
   // Related words with explanation
   html += `<div class="card"><h2>คำที่เกี่ยวข้อง — พร้อมคำอธิบาย (explainable)</h2>`;

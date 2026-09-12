@@ -1,6 +1,6 @@
 # AGENT HANDOFF: วาจา (WACHA) — Dictionary Reimagined Hackathon (เปิดคลังคำ พลิกคลังคิด)
 
-**Document version:** 2.4 (hybrid locked in; vertical slice built; 42s cold-start FIXED via trie cache; seed relations audited/corrected; `Datrie` vendored — zero external dependencies left)
+**Document version:** 2.5 (positioning locked in — modelless/deterministic/explainable, §1; finalized completion roadmap P1-P5, §7.5; web UI built)
 **Date of creation:** 2026-09-03 · **Last updated:** 2026-09-12
 **Project workspace:** [`dict-hackathon/`](file:///Users/wuttichaimaneesangsakorn/Eak_ject/Reserch/dict-hackathon)
 **Organizer:** สำนักงานราชบัณฑิตยสภา (Office of the Royal Society of Thailand, ORST)
@@ -18,6 +18,29 @@ and `PLAN.md` merely planned; update it whenever you finish something or change 
 
 Build a Next-Generation Dictionary Platform prototype that modernizes how Thai-language dictionary data
 is searched, accessed, and reused (education / research / language innovation), using AI and Open Data.
+
+### What วาจา (WACHA) ultimately *is* — the positioning (locked in 2026-09-12)
+
+**วาจา is a modelless, deterministic dictionary-intelligence engine — not an AI chatbot wearing a
+dictionary costume.** Its two core layers (segmentation, explainable relationships) run **zero neural
+models at query time**: no GPU, no API key, no inference cost, no hallucination risk, the same answer
+every time, and every answer comes with a literal, inspectable reasoning path (a BFS edge list), not a
+black-box generation. This traces directly back to `katgpt-rs`'s own self-description as a "modelless
+inference primitives" repo (see `katgpt-tokenizer`'s own `Cargo.toml`: *"standalone **modelless**
+tokenizer crate"*) — the user's original intent for this whole track was efficiency and precision under
+constrained resources, and the build ended up matching that intent more literally than initially planned:
+the segmenter is a pure double-array trie (µs-scale lookups after a one-time cached build), and the
+relationship layer is a pure graph algorithm (Personalized PageRank + BFS) over hand-verified facts — both
+100% deterministic, auditable, and correct-by-construction rather than statistically probable.
+
+**Where AI actually fits, and where it deliberately doesn't:** the only place any LLM (Typhoon 2, §7
+direction 3) touches this system is an explicitly bounded, **offline, precomputed content-enrichment
+step** (simplified definitions / example sentences), generated once and cached — never a live inference
+dependency, and never allowed to touch the segmentation or relationship layers that must stay correct. If
+that enrichment text is imperfect, it cannot corrupt the verified dictionary data or the explainable graph
+underneath it. This is the honest, differentiated pitch: most competing hackathon entries will likely wrap
+an LLM API around dictionary text (probabilistic, costly, hallucination-prone, needs internet/a GPU); วาจา
+inverts that — determinism and explainability are the default, AI is an optional, clearly-labeled garnish.
 
 The chosen differentiator is a **hybrid of two of the user's own research assets**, each used only for
 the part it's actually good at:
@@ -43,8 +66,10 @@ hackathon as a pure off-the-shelf integration exercise.
 log). The `wacha/` crate (library + CLI, separate from the `poc/` feasibility harness) implements
 directions 1+2 from §7: a `Datrie` segmenter with a TCC-aware OOV fallback (the POC bug is fixed) plus the
 vendored `graph.rs` giving explainable relationship queries over dictionary-derived triples. It builds
-clean, passes 29 tests, and runs end-to-end on the real 62,107-word CC0 list. Direction 3 (Typhoon 2) and
-a web UI remain optional/unstarted. The planning context below is preserved for provenance.
+clean, passes 38 tests (2026-09-12), and runs end-to-end on the real 62,107-word CC0 list. A web UI
+(`wacha-web`) is also built (2026-09-12). Direction 3 (Typhoon 2, now scoped as offline-precomputed only —
+see §1's positioning note) remains the one open item. The planning context below is preserved for
+provenance.
 
 Two research passes preceded the build:
 
@@ -135,11 +160,64 @@ Original notes (kept for provenance — each was checked directly, not re-cited)
    supports it), surfaced as a multi-hop "how are these words related" query with a visualized BFS path
    (inspired by Etytree/DBnary from the research pass — graph, not tree, since real relationships have
    cycles) and PageRank-ranked "related words." This is now the primary differentiator, not a fallback.
-3. **AI-simplified definitions** (optional add-on) — take a dense/formal RID-style definition and use
-   Typhoon 2 to generate a plain-language or example-sentence version for learners.
+3. **AI-simplified definitions** (optional add-on, **now scoped as offline-precomputed only** — see §1's
+   positioning note) — take a dense/formal RID-style definition and use Typhoon 2 to generate a
+   plain-language definition or example sentence for learners, generated once per seed word and cached as
+   a static asset, never called live during a demo.
 
 Recommended scope for 2 days: (1) + (2) as the core submission. Add (3) only if Day 1 finishes ahead of
 `PLAN.md`'s exit criteria — it's independent of the other two and safe to cut without unraveling anything.
+
+## 7.5. Finalized completion roadmap (2026-09-12) — mapped against the organizer's own brief
+
+The organizer's actual brief (received 2026-09-12, Thai) states the goals as: turn the dictionary from a
+"word bank" into a "data bank" (คลังคำศัพท์ → คลังข้อมูล); make it more than a lookup tool, encyclopedia-like
+for specialized knowledge (สารานุกรม → หาความรู้เฉพาะด้าน); elevate search for the digital age; build a
+prototype with a UI/functions that help people learn how to use Thai (ช่วยเรียนรู้ภาษาไทยใช้ยังไง); build
+networks; and promote AI/Open Data. Scorecard against what's built:
+
+| Brief objective | Status |
+|---|---|
+| Word bank → data bank | ✅ done — `Entry`/`Relation`/`graph.rs` is structured data, not flat text |
+| More than lookup (explainable, not just definitions) | ✅ done — explainable multi-hop related-words with a visible reasoning path |
+| Elevate search for the digital age | ✅ done — CLI + `wacha-web` JSON API, µs-scale queries after warmup |
+| Encyclopedia-like specialized knowledge | ⚠️ partial — only 20 hand-curated words have rich relations; **P2 below is the fix** |
+| Help learn how to use Thai | ⚠️ partial — related-words shows word relationships, but no learner-facing simplified text yet; **P1 below is the fix** |
+| Build networks | ⚠️ addressable in the pitch, not the code — the open CC0 data + open JSON API *is* the "build on this" story; make it explicit in Day 2 pitch materials, don't leave it implicit |
+| Promote AI/Open Data | ✅ done — CC0-cited data throughout; "AI" here is the graph-reasoning layer (a real, classical AI technique, just not deep learning) plus the optional Typhoon 2 layer |
+
+**Priority-ordered remaining work** (P1 highest — do these before anything else optional):
+
+- **P1 — Offline-precomputed learner content (closes the "help learn Thai" gap, ~lowest risk).** Generate
+  a plain-language definition + one example sentence for each of the 20 seed words via Typhoon 2, **once,
+  offline**, and hardcode/cache the results as static data (a JSON/Rust data file, not a live call). This
+  is direction 3 from §7, deliberately de-scoped from "live API integration" to "static enrichment asset"
+  — it satisfies the brief's objective and the "use AI" requirement without introducing any live-demo
+  failure mode or breaking the modelless-at-runtime positioning (§1). Wire it into both the CLI and
+  `wacha-web` as a "คำอธิบายง่าย" (simple explanation) field alongside the existing formal definition.
+- **P2 — Expand relation coverage via Thai WordNet (closes the "encyclopedia/specialized knowledge" and
+  "data bank" gaps at scale).** `wordnet_th.db` was already found and license-checked (permissive NICT
+  license) during the 2026-09-04 data-source resolution but never wired in (see `PROGRESS.md`). Extracting
+  synonym/hypernym/hyponym relations from it and feeding them into `graph.rs` as triples would scale the
+  relationship graph from 20 words to a real fraction of the 62k-word list — the single highest-leverage
+  remaining improvement for both "data bank" depth and demo impressiveness (a judge searching an
+  unpredictable word should still get an explainable result, not just the 20 pre-picked ones).
+- **P3 — Visualize the relationship graph, not just list it.** `wacha-web`'s related-words panel is
+  currently a ranked text list with path strings. A small interactive graph rendering (nodes + edges,
+  click to re-center) would communicate "explainable AI reasoning" far more viscerally to judges than text
+  — directly serves the brief's "เห็นภาพ" (visualize) language. Scope as a client-side-only enhancement
+  (the `/api/lookup` JSON already has everything needed); no backend change required.
+- **P4 — Pitch materials leading with the positioning in §1.** The differentiation story is "deterministic,
+  explainable, and modelless at runtime — efficient enough to run on a judge's laptop with no GPU and no
+  API key, unlike a typical LLM-wrapper entry" — make this the opening 30 seconds of the pitch, not a
+  footnote. Explicitly name the open CC0 data + JSON API as the "build a network on top of this" answer to
+  that brief objective.
+- **P5 — Final robustness pass.** Re-run the full verification loop (tests, real CLI/curl calls, not just
+  code review) once P1-P3 land, the same way every prior change in this project has been verified before
+  being called done.
+
+None of P1-P5 touches or risks the already-verified core (segmentation + relationship graph, directions
+1+2) — each is additive and independently droppable if time runs out, in the priority order above.
 
 ## 8. Guardrails (don't repeat these mistakes)
 

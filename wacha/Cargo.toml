@@ -17,8 +17,13 @@ path = "src/bin/cli.rs"
 name = "wacha-web"
 path = "src/bin/web.rs"
 
+[[bin]]
+name = "gen-learner"
+path = "src/bin/gen_learner.rs"
+
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 postcard = { version = "1.1.3", features = ["use-std"] }
+serde_json = "1"
 
 [dev-dependencies]

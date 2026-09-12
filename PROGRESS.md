@@ -25,7 +25,7 @@ files too and note it here — this log is the record of *that it changed*, thos
 | Data-quality audit of 20 seed relations (found: ครู/นักเรียน mislabeled as antonyms) | **done** — relabeled 3, added RelatedTo + 2 regression tests | 2026-09-12 |
 | Vendor `Datrie` into `wacha` (drop the `katgpt-rs` path dependency) | **done** — zero external deps left; 38/38 tests | 2026-09-12 |
 | Web UI (optional) | **done** — dependency-free std::net server (`wacha-web`), verified by real requests | 2026-09-12 |
-| Typhoon 2 / direction 3 (optional) | not started — see `NEXT_STEPS.md` Task 4 | — |
+| Typhoon 2 / direction 3 (offline-precomputed learner content) | **done** — static asset (20 words) + `gen-learner` tool; runtime is LLM-free; text currently `human_seed`, honestly labeled | 2026-09-12 |
 | Day 2 — demo/submit | not started | — |
 
 **A real product crate now exists** (`wacha/`) in addition to the `poc/` feasibility harness. The
@@ -350,3 +350,122 @@ self-contained via its vendored `datrie.rs`).
 
 **Remaining (optional, lowest priority):** `NEXT_STEPS.md` Task 4 (Typhoon 2 AI-simplified definitions).
 The core submission — correct relations, fast start, CLI + web demo — is complete.
+
+### 2026-09-12 (later) — Verified Task 3 + git state; locked in the project's positioning; new brief received; finalized roadmap
+
+**Re-verified the Task 3 (web UI) + commit report by actually running it, not trusting the summary:**
+- `git log` in `dict-hackathon`: 3 real commits (`8165483` → `d583bd5` → `58afbc5`). `git status` clean.
+- `katgpt-rs`: confirmed genuinely reverted — `git status`/`git diff` on `crates/katgpt-tokenizer/` both
+  empty. No stray uncommitted changes left in a repo that isn't this project's to manage.
+- Built `wacha-web --release`, ran `cargo test --release` (38/38), started the server for real, and hit
+  it with real `curl` requests: `/healthz` → `ok`; `/api/lookup?q=ครู` → correct JSON, including the Task-1
+  relation fix (`นักเรียน --เกี่ยวข้องกับ--> ครู`) visible through the web layer; empty query and an
+  unknown word both returned `200` with sane empty/fallback results, no crash; `/` served the page
+  (7,764 bytes). Startup log confirmed the engine builds once (~22ms from cache), not per-request.
+  Everything in the report checked out.
+
+**User shared the organizer's actual design brief** (Thai, "ออกแบบพจนานุกรมออนไลน์"): goals are turning
+the dictionary from a word bank into a data bank, going beyond simple lookup toward encyclopedia-like
+specialized knowledge, elevating search for the digital era, a prototype with a UI/functions that help
+people learn how to use Thai, building networks, and promoting AI/Open Data.
+
+**User then asked for a full analysis + finalized completion plan, and to articulate what this project
+ultimately *is*** — specifically flagging that the original intent behind referencing `katgpt-rs` was
+**efficiency** (lightweight, fast, works under constrained resources) and that a fully **modelless**
+design was considered early on, for correctness/differentiation reasons.
+
+**Positioning locked in** (`AGENT_HANDOFF.md` §1, v2.5): วาจา is a modelless, deterministic
+dictionary-intelligence engine, not an AI-wrapper. Both core layers (Datrie segmentation, PageRank/BFS
+relationship graph) run zero neural models at query time — this wasn't retrofitted messaging, it's
+literally true of what got built, and it traces back to `katgpt-rs`'s own "modelless inference primitives"
+self-description (`katgpt-tokenizer`'s `Cargo.toml` description). AI (Typhoon 2) is scoped as an optional,
+offline-precomputed enrichment layer only — never a live runtime dependency, and never touching the parts
+that must stay correct.
+
+**Scored the current build against every brief objective** (table in `AGENT_HANDOFF.md` §7.5): fully met —
+word-bank-to-data-bank, beyond-lookup explainability, digital-era search. Partially met — encyclopedic
+depth (only 20 curated words have rich relations) and the "help learn Thai" function (no learner-facing
+generated text yet). Addressable in the pitch, not the code — "build networks" (the open CC0 data + JSON
+API already *is* that story, just needs to be said explicitly).
+
+**Finalized a priority-ordered roadmap** (`AGENT_HANDOFF.md` §7.5, `NEXT_STEPS.md` Tasks 4-6):
+- **Task 4 (P1, rescoped):** Typhoon 2 AI-simplified definitions/example sentences, generated **offline
+  once** and cached as a static asset — not a live API call. Closes the "help learn Thai" gap without
+  reintroducing live-demo risk or compromising the modelless-at-runtime positioning.
+- **Task 5 (P2, new):** wire in `wordnet_th.db` (already found/license-checked 2026-09-04, never
+  integrated) to scale relation coverage past the 20 hand-curated seed words — the single highest-leverage
+  remaining improvement for both "data bank" depth and demo robustness against an unpredictable judge
+  query.
+- **Task 6 (P3, new, optional polish):** visualize the relationship graph in `wacha-web` (client-side only,
+  the JSON API already has everything needed) instead of a plain text list — serves the brief's own
+  "เห็นภาพ" (visualize) language.
+- **P4/P5** (pitch materials leading with the positioning statement; a final full re-verification pass) —
+  documented in `AGENT_HANDOFF.md` §7.5, not separate `NEXT_STEPS.md` tasks.
+
+None of this touches the already-verified core — every remaining item is additive and independently
+droppable in the stated priority order if time runs out.
+
+### 2026-09-12 (later still) — NEXT_STEPS Task 4 done: offline-precomputed learner content
+
+Implemented the P1 item from `AGENT_HANDOFF.md` §7.5 — learner-facing enrichment (คำอธิบายง่าย + example
+sentence) as an **offline-precomputed static asset**, with **zero runtime LLM dependency**. This closes
+the brief's "help people learn how to use Thai" gap without introducing any live-demo failure mode.
+
+**IMPORTANT — honest provenance (read this before citing it as an AI feature):** the 20 shipped learner
+entries are currently **hand-authored** (`"source": "human_seed"`), NOT generated by Typhoon 2. This
+environment has no Typhoon 2 API key and no outbound access to that endpoint, so rather than fabricate
+"AI-generated" text and mislabel it, the text was written by hand as accurate Thai and labeled truthfully.
+The *pipeline* to regenerate it from a real model is built and runnable (`gen-learner`, below); running it
+against a real Typhoon 2 endpoint will overwrite the entries with `"source": "typhoon-2"`. The `source`
+field is the single source of truth for where each entry's text came from — nothing is attributed to an
+AI that did not produce it. This matches §1's "clearly-labeled garnish" positioning exactly.
+
+**What was built:**
+- `wacha/data/learner_content.json` — the static asset: 20 words × {simple, example, source}, plus a
+  `_meta` block documenting the schema and provenance. CC0-compatible hand-authored text.
+- `wacha/src/learner.rs` — `LearnerContent` + `LearnerStore`; the default asset is embedded at compile
+  time via `include_str!` (demo needs no external file). Parses with `serde_json`. Never touches the
+  network. 4 tests (asset parses, covers all seed words, provenance labels are from the known set,
+  unknown words return None).
+- Wired into the facade: `Engine` now holds a `LearnerStore` (from `embedded()`), `Lookup` gained a
+  `learner: Option<LearnerContent>` field populated in `lookup()`, and `learner_count()` was added. The
+  learner text is shown *separately from* the formal `นิยาม` — it enriches, never replaces, and can't
+  corrupt the deterministic layers.
+- CLI (`print_lookup`) shows `คำอธิบายง่าย` + `ตัวอย่างประโยค` + a provenance line; `stats` shows the
+  learner-content count. `wacha-web`'s `/api/lookup` emits a `learner` JSON block; `web/index.html` renders
+  a distinct learner card (green border) with the provenance label.
+- `wacha/src/bin/gen_learner.rs` — the **offline, run-once** generator. Targets any OpenAI-compatible
+  chat endpoint (Typhoon 2 default: `https://api.opentyphoon.ai/v1`, model `typhoon-v2-8b-instruct`;
+  overridable via `WACHA_LLM_BASE_URL`/`WACHA_LLM_MODEL`/`WACHA_LLM_API_KEY`). Delegates the HTTPS POST to
+  `curl` so the crate gains no HTTP-client dependency. Tolerant model-reply parser (bare/fenced/prose-
+  wrapped JSON), merges over the existing asset (a partial run won't destroy prior entries), stamps a
+  `--source` provenance label. `--dry-run` prints prompts and makes no call (no key needed). 4 tests on
+  the parser + prompt builder.
+
+**Verified by actually running it (per the project convention):**
+- `cargo test` → 46 tests pass (42 lib + 4 gen-learner bin).
+- `wacha stats` → `… | learner content: 20 words`.
+- `wacha lookup แมว` (real CLI output):
+  ```
+  นิยาม: สัตว์เลี้ยงลูกด้วยนมชนิดหนึ่ง เลี้ยงไว้ในบ้าน จับหนูเป็นอาหาร
+  คำอธิบายง่าย: สัตว์สี่ขาตัวเล็ก มีขนนุ่ม ร้องเหมียว ๆ คนนิยมเลี้ยงไว้ในบ้าน
+  ตัวอย่างประโยค: แมวของฉันชอบนอนกลางวันแล้วออกมาเล่นตอนกลางคืน
+    (เนื้อหาสำหรับผู้เรียน · จัดทำล่วงหน้าออฟไลน์ · ที่มา: human_seed)
+  ```
+- `wacha lookup ครู` → `คำอธิบายง่าย: คนที่สอนความรู้ให้นักเรียนในโรงเรียน` / example / `ที่มา: human_seed`.
+- `wacha-web` `/api/lookup?q=แมว` → JSON `"learner":{"simple":"…","example":"…","source":"human_seed"}`.
+- `gen-learner --dry-run` → renders correct Thai prompts for all 20 words, makes no API call.
+
+**Test/repo state:** `wacha` 46/46, `poc` 10/10. `katgpt-rs` untouched (wacha remains self-contained).
+All work committed to the `dict-hackathon` repo only.
+
+**How to make it genuinely Typhoon-2-sourced later (one command, offline):**
+```
+export WACHA_LLM_API_KEY=sk-...
+cargo run --bin gen-learner -- --out data/learner_content.json
+```
+Then rebuild — the embedded asset updates to `"source":"typhoon-2"`. No runtime/demo change needed.
+
+**Remaining:** `NEXT_STEPS.md` P2 (Thai WordNet relation expansion) is the next-highest-leverage item;
+Day-2 pitch materials. The four prioritized build tasks (relations fix, fast start, web UI, learner
+content) are now all done.

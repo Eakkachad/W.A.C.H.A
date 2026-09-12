@@ -80,6 +80,28 @@ cargo run --release --bin wacha-web -- --data ../data --port 8087
 Endpoints: `GET /` (the UI), `GET /api/lookup?q=<word>` (JSON: segmentation + entry + related-with-paths),
 `GET /healthz`.
 
+### Learner content (offline-precomputed, LLM-free at runtime)
+
+Each seed word carries a learner-facing **คำอธิบายง่าย** (plain-language explanation) + one example
+sentence, shown in the CLI and web UI next to (never replacing) the formal definition. This is a
+**static asset** (`data/learner_content.json`, embedded at compile time) — **the running engine never
+calls an LLM**, so there's no latency, cost, network, or hallucination risk in the demo. It's the
+"clearly-labeled garnish" from the positioning: it can enrich but never corrupt the deterministic
+segmentation/graph layers.
+
+Every entry carries an honest `source` provenance label. The shipped text is currently `human_seed`
+(hand-authored). To (re)generate it from a real Thai LLM **offline, once**:
+
+```bash
+export WACHA_LLM_API_KEY=sk-...                          # your Typhoon 2 (SCB 10X) key
+# optional overrides: WACHA_LLM_BASE_URL (default https://api.opentyphoon.ai/v1), WACHA_LLM_MODEL
+cargo run --bin gen-learner -- --out data/learner_content.json     # writes source: "typhoon-2"
+cargo run --bin gen-learner -- --dry-run                           # preview prompts, no API call
+```
+
+Then rebuild — the embedded asset (and thus the CLI/web output) picks up the new text and `typhoon-2`
+provenance. The generator is dev-only; it's never part of the demo/runtime path.
+
 ## The user journey
 
 `type a word → segment it → look up its definition → see related words, each with an explanation`

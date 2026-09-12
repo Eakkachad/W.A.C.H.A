@@ -138,21 +138,80 @@ per-request.
 
 ---
 
-## Task 4 (optional, lowest priority) — Wire Typhoon 2 for AI-simplified definitions
+## Task 4 (now P1 in `AGENT_HANDOFF.md` §7.5 — RESCOPED 2026-09-12, do this one first among what's left)
 
-This is "direction 3" from `AGENT_HANDOFF.md` §7 — explicitly optional, cut first if time runs short.
+**✅ DONE (2026-09-12, verified) — see `PROGRESS.md`.** Static asset `wacha/data/learner_content.json`
+(20 words) + embedded loader `wacha/src/learner.rs` + `gen-learner` offline generator tool
+(Typhoon-2/OpenAI-compatible). Wired into CLI, `wacha-web` JSON, and the web card. **Runtime is
+LLM-free.** Provenance is honest: the shipped text is currently `human_seed` (hand-authored — no Typhoon 2
+key/access from the build environment), and `gen-learner` regenerates it as `typhoon-2` when run offline
+with a key. Task body below kept for historical context.
+
+**Rescoped:** no longer "wire a live Typhoon 2 API call." The organizer's brief (see `AGENT_HANDOFF.md`
+§7.5) explicitly wants a feature that helps people learn how to use Thai — this task now targets that
+directly, but as an **offline-precomputed static asset**, not a live model dependency, to protect the
+project's "modelless at runtime" positioning (`AGENT_HANDOFF.md` §1) and to remove all live-demo failure
+risk.
 
 **What to do:**
 1. Get API/self-hosted access to Typhoon 2 (SCB 10X) or SEA-LION working end-to-end on one throwaway Thai
-   prompt first, in isolation, before integrating.
-2. Add a single, well-tested call path in `wacha` that takes a formal RID-style definition and asks
-   the model for a plain-language/example-sentence version. Treat this as one API call wrapped in proper
-   error handling (timeout, failure) — **per `AGENT_HANDOFF.md` §8's guardrail, this must never hang or
-   crash the demo if the call is slow or fails.**
-3. Test with at least 3 real definitions and paste real model output (not a mock) into `PROGRESS.md`.
+   prompt — this happens once, offline, not as part of the shipped binary/demo.
+2. For each of the 20 seed words (`wacha/src/dictionary.rs`'s `seed_entries`), generate a plain-language
+   definition and/or one example sentence using the model, **offline, once**.
+3. Hardcode or embed the generated text as a static data field on each `Entry` (or a small companion JSON
+   file loaded at startup) — no network call, no API key, no runtime dependency on the model existing.
+   Wire it into the CLI (`lookup`) and `wacha-web`'s `/api/lookup` response as a `simple_explanation`-style
+   field.
+4. Paste the real generated text for at least 3 words into `PROGRESS.md`, and note in the same entry that
+   it was generated offline/once (so a future reader doesn't mistake this for a live integration).
 
-**Acceptance criteria:** a real, working call to a real Thai LLM, with a graceful fallback path if the
-call fails, demonstrated with 3 real examples pasted into `PROGRESS.md`.
+**Acceptance criteria:** every seed word has AI-generated learner-facing text visible through both the CLI
+and the web UI, with zero runtime dependency on Typhoon 2/SEA-LION being reachable — the demo works fully
+offline. See `AGENT_HANDOFF.md` §7.5 (P1) for the full rationale.
+
+---
+
+## Task 5 (P2 in `AGENT_HANDOFF.md` §7.5) — Expand relation coverage via Thai WordNet
+
+**Why:** only the 20 hand-curated seed words have real relations today. A judge searching any of the
+other ~62,000 words in the list gets segmentation but no explainable relationships. `wordnet_th.db`
+(SQLite, permissive NICT license) was already found and license-checked on 2026-09-04 but never wired in
+— this is the single highest-leverage remaining improvement for both data depth and demo robustness.
+
+**What to do:**
+1. Inspect `wordnet_th.db`'s schema (find it via the PyThaiNLP corpus download path noted in
+   `PROGRESS.md`'s 2026-09-04 entry, or re-fetch it).
+2. Extract synonym/hypernym/hyponym relations and map them onto the existing `Relation` enum
+   (`wacha/src/dictionary.rs`) — reuse `SeeAlso`/`Category`/`RelatedTo` etc. where they fit; only add a new
+   variant if genuinely nothing existing fits (match the care taken in the Task 1 audit — a wrong relation
+   label is worse than a missing one).
+3. Feed the extracted triples into `graph.rs` alongside the seed entries' triples at `Engine` build time.
+4. Verify with real queries on words *outside* the original 20-word seed set — pick 5 words at random from
+   `words_th.txt` that weren't in the seed list, run `lookup`, and paste real output into `PROGRESS.md`
+   showing they now return explainable related words too.
+5. Re-check the cold/warm build-time numbers after this change (more triples = more graph-build work,
+   though this is normally cheap compared to the trie) and re-verify the trie cache still round-trips
+   correctly.
+
+**Acceptance criteria:** words outside the original 20-word seed set return real, explainable related-word
+results; `cargo test` still passes; real query output for 5 new (non-seed) words pasted into `PROGRESS.md`.
+
+## Task 6 (P3 in `AGENT_HANDOFF.md` §7.5, optional polish) — Visualize the relationship graph in `wacha-web`
+
+**Why:** the current related-words panel is a ranked text list with path strings. A small interactive
+graph (nodes + edges, click to re-center on a related word) communicates the "explainable AI reasoning"
+story far more viscerally to judges, and directly serves the brief's own "เห็นภาพ" (visualize) language.
+
+**What to do:**
+1. Client-side only — `/api/lookup`'s JSON already carries every related word's score and explanation
+   path; no backend change should be needed.
+2. Keep it simple (an SVG or `<canvas>` force-directed-ish layout, or even a simpler radial layout with the
+   query word at the center) — this is a hackathon demo enhancement, not a general graph-visualization
+   library.
+3. Verify by actually loading it in a browser and clicking through a few words, not just reading the code.
+
+**Acceptance criteria:** a real, working, clickable graph visualization verified in an actual browser
+session, described (or screenshotted) in `PROGRESS.md`.
 
 ---
 

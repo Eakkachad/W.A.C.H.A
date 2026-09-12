@@ -1,0 +1,113 @@
+{
+  "_meta": {
+    "description": "Learner-facing enrichment for wacha seed words: a plain-language explanation (คำอธิบายง่าย) and one example sentence per word. Loaded at runtime as a static asset — the demo NEVER calls an LLM. This is the 'clearly-labeled garnish' from AGENT_HANDOFF.md §1: it enriches but can never corrupt the formal definition or the explainable relationship graph.",
+    "schema": {
+      "simple": "plain-language explanation a Thai learner/child could understand",
+      "example": "one natural example sentence using the word",
+      "source": "provenance of THIS entry's text — one of: 'human_seed' (hand-authored by a contributor), 'typhoon-2' (generated offline by Typhoon 2 via tools/gen_learner), 'sea-lion' (generated offline by SEA-LION)"
+    },
+    "provenance_note": "All entries below are currently 'human_seed' — hand-authored accurate Thai, NOT AI-generated. The offline generator (`cargo run --bin gen-learner`) will overwrite them with 'typhoon-2'-sourced text when run against a real Typhoon 2 endpoint. The source field is honest about which is which; nothing here is falsely attributed to an AI that did not produce it."
+  },
+  "entries": {
+    "แมว": {
+      "simple": "สัตว์สี่ขาตัวเล็ก มีขนนุ่ม ร้องเหมียว ๆ คนนิยมเลี้ยงไว้ในบ้าน",
+      "example": "แมวของฉันชอบนอนกลางวันแล้วออกมาเล่นตอนกลางคืน",
+      "source": "human_seed"
+    },
+    "สุนัข": {
+      "simple": "สัตว์สี่ขาที่คนเลี้ยงไว้เป็นเพื่อนและช่วยเฝ้าบ้าน เรียกอีกอย่างว่าหมา",
+      "example": "สุนัขเห่าเสียงดังเมื่อมีคนแปลกหน้าเข้ามาใกล้บ้าน",
+      "source": "human_seed"
+    },
+    "หมา": {
+      "simple": "คำเรียกสุนัขแบบภาษาพูดในชีวิตประจำวัน",
+      "example": "หมาตัวนี้น่ารักและเชื่องมาก",
+      "source": "human_seed"
+    },
+    "เสือ": {
+      "simple": "สัตว์ป่าตัวใหญ่ในตระกูลเดียวกับแมว ล่าสัตว์อื่นกินเป็นอาหาร",
+      "example": "เสือซ่อนตัวอยู่ในพงหญ้าเพื่อรอจับเหยื่อ",
+      "source": "human_seed"
+    },
+    "สัตว์": {
+      "simple": "สิ่งมีชีวิตที่เคลื่อนไหวได้เอง เช่น หมา แมว นก ปลา",
+      "example": "ในสวนสัตว์มีสัตว์หลายชนิดให้เด็ก ๆ ได้ดู",
+      "source": "human_seed"
+    },
+    "ใหญ่": {
+      "simple": "มีขนาดโตหรือมากกว่าปกติ ตรงข้ามกับเล็ก",
+      "example": "ช้างเป็นสัตว์บกที่มีตัวใหญ่ที่สุด",
+      "source": "human_seed"
+    },
+    "เล็ก": {
+      "simple": "มีขนาดย่อมหรือน้อยกว่าปกติ ตรงข้ามกับใหญ่",
+      "example": "มดเป็นสัตว์ตัวเล็กที่ทำงานร่วมกันเป็นกลุ่ม",
+      "source": "human_seed"
+    },
+    "สุข": {
+      "simple": "ความรู้สึกสบายใจและพอใจ ไม่มีความทุกข์",
+      "example": "ครอบครัวที่อยู่พร้อมหน้ากันย่อมมีความสุข",
+      "source": "human_seed"
+    },
+    "ทุกข์": {
+      "simple": "ความรู้สึกไม่สบายกายหรือไม่สบายใจ ตรงข้ามกับสุข",
+      "example": "เมื่อมีปัญหาหนัก ๆ เราก็รู้สึกเป็นทุกข์",
+      "source": "human_seed"
+    },
+    "ครู": {
+      "simple": "คนที่สอนความรู้ให้นักเรียนในโรงเรียน",
+      "example": "ครูสอนให้นักเรียนอ่านและเขียนภาษาไทย",
+      "source": "human_seed"
+    },
+    "อาจารย์": {
+      "simple": "ผู้สอนความรู้ มักใช้กับผู้สอนในระดับสูง เช่น มหาวิทยาลัย",
+      "example": "อาจารย์บรรยายวิชาประวัติศาสตร์ให้นักศึกษาฟัง",
+      "source": "human_seed"
+    },
+    "นักเรียน": {
+      "simple": "คนที่กำลังเรียนหนังสืออยู่ในโรงเรียน",
+      "example": "นักเรียนตั้งใจฟังครูสอนในห้องเรียน",
+      "source": "human_seed"
+    },
+    "โรงเรียน": {
+      "simple": "สถานที่ที่เด็ก ๆ ไปเรียนหนังสือกับครู",
+      "example": "ทุกเช้าฉันเดินไปโรงเรียนกับเพื่อน",
+      "source": "human_seed"
+    },
+    "หนังสือ": {
+      "simple": "สิ่งที่รวมตัวอักษรเป็นเล่มไว้ให้เราอ่าน",
+      "example": "ฉันยืมหนังสือนิทานจากห้องสมุดมาอ่าน",
+      "source": "human_seed"
+    },
+    "พจนานุกรม": {
+      "simple": "หนังสือที่รวมคำต่าง ๆ พร้อมบอกความหมาย เรียงตามตัวอักษร",
+      "example": "เมื่อไม่รู้ความหมายของคำ ให้เปิดพจนานุกรมดู",
+      "source": "human_seed"
+    },
+    "คำ": {
+      "simple": "เสียงหรือตัวหนังสือที่มีความหมาย ใช้พูดหรือเขียนสื่อสาร",
+      "example": "ประโยคหนึ่งเกิดจากหลายคำมาต่อกัน",
+      "source": "human_seed"
+    },
+    "ความหมาย": {
+      "simple": "สิ่งที่คำหรือประโยคต้องการจะบอกให้เราเข้าใจ",
+      "example": "คำว่า “แมว” มีความหมายว่าสัตว์เลี้ยงชนิดหนึ่ง",
+      "source": "human_seed"
+    },
+    "ภาษา": {
+      "simple": "ระบบเสียงและตัวหนังสือที่คนใช้สื่อสารกัน",
+      "example": "คนไทยส่วนใหญ่พูดภาษาไทยเป็นภาษาแม่",
+      "source": "human_seed"
+    },
+    "อ่าน": {
+      "simple": "การดูตัวหนังสือแล้วเข้าใจหรือออกเสียงตามนั้น",
+      "example": "ก่อนนอนแม่อ่านนิทานให้ลูกฟังทุกคืน",
+      "source": "human_seed"
+    },
+    "เขียน": {
+      "simple": "การทำให้เกิดตัวหนังสือหรือรูปด้วยปากกา ดินสอ หรือเครื่องมืออื่น",
+      "example": "นักเรียนเขียนชื่อของตัวเองลงในสมุด",
+      "source": "human_seed"
+    }
+  }
+}

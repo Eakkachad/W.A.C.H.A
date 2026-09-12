@@ -21,11 +21,13 @@
 pub mod datrie;
 pub mod dictionary;
 pub mod graph;
+pub mod learner;
 pub mod relations;
 pub mod segmenter;
 pub mod tcc;
 
 use dictionary::{Dictionary, Entry};
+use learner::{LearnerContent, LearnerStore};
 use relations::{RelatedWord, RelationEngine};
 use segmenter::{Segmenter, Token};
 
@@ -34,6 +36,7 @@ pub struct Engine {
     dict: Dictionary,
     segmenter: Segmenter,
     relations: RelationEngine,
+    learner: LearnerStore,
 }
 
 /// The result of the full lookup journey for one query word.
@@ -46,6 +49,10 @@ pub struct Lookup {
     pub entry: Option<EntryView>,
     /// Related words with explanations (may be empty).
     pub related: Vec<RelatedWord>,
+    /// Offline-precomputed learner content (คำอธิบายง่าย + example), if any.
+    /// A clearly-labeled enrichment — never overrides `entry`'s formal
+    /// definition, and carries its own honest provenance label.
+    pub learner: Option<LearnerContent>,
 }
 
 /// A display-friendly view of a dictionary entry.
@@ -74,7 +81,7 @@ impl Engine {
         let (all_words, dict) = Self::assemble_dict(word_list, entries, freq_text);
         let segmenter = Segmenter::from_words(all_words);
         let relations = RelationEngine::from_dictionary(&dict);
-        Self { dict, segmenter, relations }
+        Self { dict, segmenter, relations, learner: LearnerStore::embedded() }
     }
 
     /// Same as [`Engine::build`], but reuses an already-built (e.g. disk-cached)
@@ -96,7 +103,7 @@ impl Engine {
         // dictionary headwords + entries are registered.
         let (_all_words, dict) = Self::assemble_dict(word_list, entries, freq_text);
         let relations = RelationEngine::from_dictionary(&dict);
-        Self { dict, segmenter, relations }
+        Self { dict, segmenter, relations, learner: LearnerStore::embedded() }
     }
 
     /// Shared helper: fold a word list + entries + optional freq table into the
@@ -224,7 +231,13 @@ impl Engine {
             definition: e.definition.clone(),
         });
         let related = self.relations.related(query, top_k);
-        Lookup { segmentation, entry, related }
+        let learner = self.learner.get(query).cloned();
+        Lookup { segmentation, entry, related, learner }
+    }
+
+    /// Number of words with offline-precomputed learner content loaded.
+    pub fn learner_count(&self) -> usize {
+        self.learner.len()
     }
 }
 
