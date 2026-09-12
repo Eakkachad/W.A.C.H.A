@@ -82,6 +82,10 @@ cargo run --release --bin wacha-web -- --data ../data --port 8087
 Endpoints: `GET /` (the UI), `GET /api/lookup?q=<word>` (JSON: segmentation + entry + related-with-paths),
 `GET /healthz`.
 
+**Full API contract + data licenses:** see [`API.md`](./API.md) — the `/api/lookup` JSON schema (as a
+stable public contract) and the license of every shipped data asset, for anyone who wants to reuse the
+data or self-host the service.
+
 ### Learner content (offline-precomputed, LLM-free at runtime)
 
 Each seed word carries a learner-facing **คำอธิบายง่าย** (plain-language explanation) + one example

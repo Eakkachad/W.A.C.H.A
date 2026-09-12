@@ -342,6 +342,11 @@ predictions) in `PROGRESS.md`; a fallback recording/screenshot set exists and it
 
 ## Task 10 — Package the open-data/real-world story
 
+**✅ DONE (2026-09-12) — `wacha/API.md`.** `/api/lookup` JSON contract with a real spot-checked example
+(all fields incl. `source`/`confidence`), full data-asset license table (words_th.txt CC0, tnc_freq.txt
+CC0, wordnet_synonyms.tsv NICT, learner_content.json human_seed), and a "3 ways to reuse" section.
+Referenced from `PITCH.md` Q3 and `wacha/README.md`. Task body below kept for context.
+
 **Why:** answers the organizer's brief's "build networks" and "promote open data" objectives concretely,
 and gives a real answer to "would this ever actually get used" beyond the demo.
 

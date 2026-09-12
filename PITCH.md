@@ -70,6 +70,12 @@
 > production: (1) เปลี่ยนจากรายการคำ CC0 เป็นข้อมูล RID จริงถ้าราชบัณฑิตฯ เปิดให้ (จุดต่อคือ struct
 > `Entry`/`Relation`) (2) ใส่ auth + rate limit หน้า API (3) ถ้าอยาก 'คำอธิบายง่าย' ครบทุกคำ รัน
 > `gen-learner` กับ Typhoon 2 แบบออฟไลน์รอบเดียว ทั้งหมดไม่ต้องรื้อสถาปัตยกรรม
+>
+> **และเรื่อง "ต่อยอด/สร้างเครือข่าย" (ตามโจทย์):** เราเขียน contract ของ API และ license ของข้อมูล
+> ทุกชุดไว้ชัดใน [`wacha/API.md`](./wacha/API.md) — คนอื่นเอาไปใช้ได้จริงวันนี้เลย 3 ระดับ: (ก) เอาแค่
+> ข้อมูล (`words_th.txt` CC0, `wordnet_synonyms.tsv` NICT), (ข) self-host `wacha-web` เป็น JSON
+> microservice (binary เดียว + โฟลเดอร์ `data/` ไม่ต้องมี GPU/เน็ต), (ค) ใช้ crate `wacha` เป็น library
+> ตรง ๆ นี่คือ *คลังข้อมูลเปิด* ที่ต่อยอดได้จริง ไม่ใช่เดโมปิดตาย
 
 **Q4. "AI อยู่ตรงไหนในนี้กันแน่?"**
 > สองที่ ชัดเจน: (1) *graph reasoning* (PageRank/BFS) — เป็น AI แบบคลาสสิกจริง ไม่ใช่ deep learning

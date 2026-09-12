@@ -31,7 +31,7 @@ files too and note it here — this log is the record of *that it changed*, thos
 | WordNet confidence signal + measured precision (Round 3 · Task 7, P0) | **done** — degree-based Confirmed/Unverified marker in CLI+web; real 120-pair sample = **84.2%** precision | 2026-09-12 |
 | Round 3 Task 8 — pitch materials (`PITCH.md`) | **done** — Thai script (leads with §1) + honest Q&A + pre-verified demo word list | 2026-09-12 |
 | Round 3 Task 9 — demo rehearsal + adversarial-query test | **done** — cold 43.4s/warm 0.27s; 11-case adversarial battery all pass; fallback transcript saved | 2026-09-12 |
-| Round 3 Task 10 — open-data/API documentation | not started | — |
+| Round 3 Task 10 — open-data/API documentation | **done** — `wacha/API.md` (contract spot-checked + license table); referenced from PITCH.md | 2026-09-12 |
 | Round 3 Task 11 (optional) — real Typhoon 2 if API access found (`--host` part **done**, `bec54b8`) | mostly done | 2026-09-12 |
 | Day 2 — demo/submit | not started | — |
 
@@ -822,3 +822,24 @@ provenance badge already says `WordNet` (auto-extracted) — the honest answer i
 Thai-WordNet imprecision the Task 7 84.2% figure quantifies.
 
 Tests unchanged (no code change this task): `wacha` 50, `poc` 10. `katgpt-rs` untouched.
+
+### 2026-09-12 (Round 3 · Task 10) — Open-data/API documentation (`wacha/API.md`)
+
+Wrote `wacha/API.md` — the concrete answer to the brief's "promote open data" + "build networks"
+objectives, and to "would this ever actually get used beyond the demo."
+- **`/api/lookup` JSON contract** documented as a stable-enough public contract: full field table
+  (`query`, `segmentation[]{text,in_vocab}`, `entry|null`, `learner|null{simple,example,source}`,
+  `related[]{word,score,source,confidence,path[]}`) with a **real example spot-checked against the live
+  server 2026-09-12** (`q=แมว`) — verified the documented shape matches the actual response exactly
+  (all fields incl. the Task-7 `confidence` and Task-provenance `source`). Also documents the endpoints
+  (`/`, `/api/lookup`, `/healthz`), the Task-9 edge-case guarantees (always 200/404, deterministic, fast),
+  and the "build once at startup" note.
+- **Data-asset license table** so a third party can reuse each asset: `words_th.txt` CC0-1.0,
+  `tnc_freq.txt` CC0-1.0, `wordnet_synonyms.tsv` NICT-permissive, `learner_content.json` hand-authored
+  (`human_seed`). Plus vendored-code provenance (`datrie.rs` MIT, `graph.rs` AXIOM) and a "3 ways to reuse"
+  section (data only / self-host the API / use the crate).
+- **Referenced from `PITCH.md`** Q3 (deployment) as the open-data/build-on-this answer, and linked from
+  `wacha/README.md`.
+
+Docs only, no code change. `wacha` 50 tests / `poc` 10 still green; `katgpt-rs` untouched. This completes
+all non-optional Round 3 tasks (7–10); only Task 11 item 2 (real Typhoon 2, needs an API key) remains.
