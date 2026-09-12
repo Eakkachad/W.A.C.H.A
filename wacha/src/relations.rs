@@ -36,13 +36,38 @@ impl RelationEngine {
     /// directions so the graph walk treats them as undirected, which is what a
     /// user means by "related."
     pub fn from_dictionary(dict: &Dictionary) -> Self {
+        Self::build(dict, None)
+    }
+
+    /// Build the graph from the seed dictionary **plus** Thai WordNet synonym
+    /// relations, giving explainable related-words for ~29k words instead of
+    /// just the 20 seed headwords. Seed relations are added first (authoritative);
+    /// WordNet synonym edges are added afterward and de-duplicated against
+    /// existing edges so a seed-declared synonym isn't double-counted.
+    pub fn from_dictionary_with_wordnet(dict: &Dictionary, wordnet: &crate::wordnet::WordNet) -> Self {
+        Self::build(dict, Some(wordnet))
+    }
+
+    fn build(dict: &Dictionary, wordnet: Option<&crate::wordnet::WordNet>) -> Self {
+        use std::collections::HashSet;
         let mut graph = KnowledgeGraph::new();
         let mut triple_count = 0;
+        let syn_label = Relation::Synonym.thai_label();
+        // (subject_id, object_id) pairs already linked by a Synonym edge, so
+        // WordNet expansion never duplicates a seed-declared synonym or another
+        // WordNet edge.
+        let mut synonym_seen: HashSet<(usize, usize)> = HashSet::new();
+
         for entry in dict.all_entries() {
             for (rel, target) in &entry.relations {
                 let label = rel.thai_label();
+                let s = graph.add_entity(&entry.word);
+                let o = graph.add_entity(target);
                 graph.add_triple(&entry.word, label, target);
                 triple_count += 1;
+                if *rel == Relation::Synonym {
+                    synonym_seen.insert((s, o));
+                }
                 // Make symmetric relations bidirectional for traversal.
                 if matches!(
                     rel,
@@ -50,9 +75,26 @@ impl RelationEngine {
                 ) {
                     graph.add_triple(target, label, &entry.word);
                     triple_count += 1;
+                    if *rel == Relation::Synonym {
+                        synonym_seen.insert((o, s));
+                    }
                 }
             }
         }
+
+        // WordNet synonym expansion (optional). Synset co-membership → Synonym.
+        if let Some(wn) = wordnet {
+            for (a, b) in wn.synonym_pairs() {
+                let sa = graph.add_entity(a);
+                let sb = graph.add_entity(b);
+                if sa == sb || !synonym_seen.insert((sa, sb)) {
+                    continue;
+                }
+                graph.add_triple(a, syn_label, b);
+                triple_count += 1;
+            }
+        }
+
         Self { graph, triple_count }
     }
 

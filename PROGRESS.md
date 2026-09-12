@@ -26,6 +26,7 @@ files too and note it here — this log is the record of *that it changed*, thos
 | Vendor `Datrie` into `wacha` (drop the `katgpt-rs` path dependency) | **done** — zero external deps left; 38/38 tests | 2026-09-12 |
 | Web UI (optional) | **done** — dependency-free std::net server (`wacha-web`), verified by real requests | 2026-09-12 |
 | Typhoon 2 / direction 3 (offline-precomputed learner content) | **done** — static asset (20 words) + `gen-learner` tool; runtime is LLM-free; text currently `human_seed`, honestly labeled | 2026-09-12 |
+| Relation coverage via Thai WordNet (P2) | **done** — ~29k words gain real synonym relations; graph 24→29,281 entities, 52,545 triples | 2026-09-12 |
 | Day 2 — demo/submit | not started | — |
 
 **A real product crate now exists** (`wacha/`) in addition to the `poc/` feasibility harness. The
@@ -469,3 +470,54 @@ Then rebuild — the embedded asset updates to `"source":"typhoon-2"`. No runtim
 **Remaining:** `NEXT_STEPS.md` P2 (Thai WordNet relation expansion) is the next-highest-leverage item;
 Day-2 pitch materials. The four prioritized build tasks (relations fix, fast start, web UI, learner
 content) are now all done.
+
+### 2026-09-12 (P2) — Thai WordNet synonym expansion: 20 → ~29,000 words with real relations
+
+Closed the "encyclopedia / specialized knowledge" and "data bank at scale" gaps from `AGENT_HANDOFF.md`
+§7.5's scorecard. Before this, only the 20 hand-curated seed words had explainable relationships; any other
+word returned segmentation but an empty related-words panel. Now ~29k words do.
+
+**Data & honest scope.** Downloaded `wordnet_th.db` (Thai WordNet, NICT permissive license, verified
+2026-09-04; 11 MB SQLite). Inspected the schema: a single table `word_synset(synsetid, li)` — Thai lemma
+↔ Princeton WordNet synset membership. 91,070 real lemma rows (only 3 `'0'` placeholders).
+- **What I extracted:** synset co-membership → synonymy. 13,664 synsets have ≥2 real Thai lemmas =
+  synonym groups, covering **29,274 distinct words** / **26,907 pairwise synonym edges**.
+- **What I deliberately did NOT do:** this DB has *no* hypernym/hyponym (is-a) links — only synset
+  membership. Rather than fabricate a hierarchy that isn't in the data (same discipline as the 2026-09-12
+  seed-relation audit), I extracted **only genuine synonyms**, mapped to `Relation::Synonym`
+  (`มีความหมายเหมือนกับ`). Some inherent WordNet noise (e.g. near-duplicate typo variants) is left as-is
+  and labeled WordNet-sourced, not hand-cleaned across 13k groups.
+- **Validation that it's real:** the seed synonyms I'd hand-authored independently show up in WordNet too
+  — `สุนัข`+`หมา` share synset `02084071-n`, `ครู`+`อาจารย์` share `10694258-n`.
+
+**Shipping.** Generated `wacha/data/wordnet_synonyms.tsv` (13,664 groups, one synonym group per line,
+tab-separated lemmas; ~1 MB). We ship this derived asset, **not** the 11 MB source `.db` (gitignored). The
+regeneration SQL is documented in `wacha/src/wordnet.rs`.
+
+**Code.**
+- `wacha/src/wordnet.rs`: `WordNet` loader — embeds the TSV via `include_str!`, `from_tsv`/`embedded`,
+  `synonym_pairs()` (bidirectional, self-skipping). 4 tests (parses >10k groups, known สุนัข↔หมา pair
+  present, bidirectional/no-self, short/`0`/empty lines skipped).
+- `wacha/src/relations.rs`: refactored the graph builder into `build(dict, Option<&WordNet>)`;
+  `from_dictionary_with_wordnet` adds WordNet synonym edges *after* the seed triples, de-duplicated via a
+  `synonym_seen` set so **seed relations stay authoritative** and no edge is double-counted.
+- `lib.rs`: `pub mod wordnet`; both `Engine` build paths now use
+  `from_dictionary_with_wordnet(&dict, &WordNet::embedded())`. Runtime stays 100% deterministic/LLM-free —
+  this is a static data expansion parsed once at build time.
+
+**Verified on real data (5 non-seed words, `--data ../data`):**
+- graph grew 24 → **29,281 entities**, 65 → **52,545 triples**.
+- `รถยนต์` → `รถ`, `ยานยนต์`; `แพทย์` → `หมอฝึกหัด`, `แพทย์ฝึกหัด`;
+  `ผู้ครอบครอง` → `ผู้เป็นเจ้าของ`, `เจ้าของ`; `ข้อหา` ↔ `มลทิน` — each with an explanation edge
+  `X --มีความหมายเหมือนกับ--> Y`. All also segment correctly against the 62k list.
+- **Trie cache unaffected:** warm load still ~42.9 ms (WordNet touches the graph, not the trie). The
+  WordNet graph build adds ~0.4 s one-time (total `stats` process 0.49 s) — cheap vs. the trie, and gone
+  entirely on warm runs except the graph rebuild (which is in-memory, not cached — acceptable at ~0.4s).
+- 50 tests pass (46 lib + 4 gen-learner). `poc` 10/10. `katgpt-rs` untouched.
+
+**Note for the pitch:** this makes the "word bank → data bank" and "more than lookup" story concrete at
+scale — a judge can search tens of thousands of everyday Thai words and get a real, sourced, explainable
+synonym network, not just 20 demo words.
+
+**Remaining:** P3 (interactive graph visualization in `wacha-web`) is the last optional polish item; Day-2
+pitch materials. All P1/P2 data-and-correctness work is done.

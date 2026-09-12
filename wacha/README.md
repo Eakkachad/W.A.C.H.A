@@ -134,6 +134,10 @@ segmented: ครู
 
 - `words_th.txt` — 62,107 Thai words, **CC0-1.0** (PyThaiNLP, from NECTEC LEXiTRON).
 - `tnc_freq.txt` — Thai National Corpus frequencies, **CC0-1.0** (PyThaiNLP).
+- `data/wordnet_synonyms.tsv` — 13,664 synonym groups (~29k words) derived from **Thai WordNet**
+  (`wordnet_th.db`, Thai Computational Linguistic Laboratory / NICT, permissive license). We ship this
+  ~1MB derived TSV, not the 11MB source DB; regeneration SQL is in `src/wordnet.rs`. Only genuine
+  synonyms are extracted (the source has no is-a hierarchy — none is fabricated).
 - `graph.rs` — vendored from AXIOM (`neural-engines/AXIOM/crates/tle-axiom-gen/src/graph.rs`).
 - `datrie.rs` — vendored from `katgpt-tokenizer` (`katgpt-rs/crates/katgpt-tokenizer/src/datrie.rs`),
   MIT-licensed, with two fixes made here (a real panic bug + serde support for the trie cache) — see the

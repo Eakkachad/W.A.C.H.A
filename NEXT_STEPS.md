@@ -173,6 +173,13 @@ offline. See `AGENT_HANDOFF.md` §7.5 (P1) for the full rationale.
 
 ## Task 5 (P2 in `AGENT_HANDOFF.md` §7.5) — Expand relation coverage via Thai WordNet
 
+**✅ DONE (2026-09-12, verified on 5 non-seed words) — see `PROGRESS.md`.** Extracted synonym groups from
+`wordnet_th.db` (NICT) → `wacha/data/wordnet_synonyms.tsv` (13,664 groups, ~1MB, shipped instead of the
+11MB DB) → `wacha/src/wordnet.rs` loader → fed as `Synonym` edges into the graph at build time
+(`from_dictionary_with_wordnet`, seed relations authoritative). Graph grew 24→29,281 entities /
+65→52,545 triples; ~29k words now return explainable synonyms. Only synonyms extracted (the DB has no
+is-a links — not fabricated). Runtime stays deterministic/LLM-free. Task body below kept for context.
+
 **Why:** only the 20 hand-curated seed words have real relations today. A judge searching any of the
 other ~62,000 words in the list gets segmentation but no explainable relationships. `wordnet_th.db`
 (SQLite, permissive NICT license) was already found and license-checked on 2026-09-04 but never wired in

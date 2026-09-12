@@ -25,6 +25,7 @@ pub mod learner;
 pub mod relations;
 pub mod segmenter;
 pub mod tcc;
+pub mod wordnet;
 
 use dictionary::{Dictionary, Entry};
 use learner::{LearnerContent, LearnerStore};
@@ -80,7 +81,7 @@ impl Engine {
     {
         let (all_words, dict) = Self::assemble_dict(word_list, entries, freq_text);
         let segmenter = Segmenter::from_words(all_words);
-        let relations = RelationEngine::from_dictionary(&dict);
+        let relations = RelationEngine::from_dictionary_with_wordnet(&dict, &wordnet::WordNet::embedded());
         Self { dict, segmenter, relations, learner: LearnerStore::embedded() }
     }
 
@@ -102,7 +103,7 @@ impl Engine {
         // comes from the supplied segmenter. We still drain the iterator so the
         // dictionary headwords + entries are registered.
         let (_all_words, dict) = Self::assemble_dict(word_list, entries, freq_text);
-        let relations = RelationEngine::from_dictionary(&dict);
+        let relations = RelationEngine::from_dictionary_with_wordnet(&dict, &wordnet::WordNet::embedded());
         Self { dict, segmenter, relations, learner: LearnerStore::embedded() }
     }
 

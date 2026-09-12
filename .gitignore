@@ -4,5 +4,9 @@ target/
 # Generated Datrie trie cache (rebuilt from words_th.txt on demand)
 *.datrie.cache
 
+# Source WordNet SQLite DB (11MB, NICT license) — we ship the derived
+# wordnet_synonyms.tsv (~1MB) instead; re-fetch the .db only to regenerate it.
+wordnet_th.db
+
 # macOS
 .DS_Store
