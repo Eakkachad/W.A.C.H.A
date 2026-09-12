@@ -25,6 +25,10 @@ just "implemented and tests pass."
 
 ## Task 1 (do first — data-quality/credibility risk) — Audit the 20 seed dictionary entries
 
+**✅ DONE (2026-09-12, verified) — see `PROGRESS.md`.** 3 mislabels found and fixed (ครู/นักเรียน,
+อ่าน/เขียน, สุข/ความสุข), new `Relation::RelatedTo` + 2 regression tests added. Task body below kept for
+historical context, not something left to do.
+
 **Why this is first:** the whole pitch rests on the relationship graph being *correct*, not just
 technically working. One mislabeled relation was already found and not yet fixed:
 `ครู --ตรงข้ามกับ--> นักเรียน` ("teacher opposite-of student") is tagged as an antonym relation, but
@@ -57,6 +61,12 @@ the corrected relations.
 ---
 
 ## Task 2 — Decide and implement a fix for the 42-second cold-start build
+
+**✅ DONE (2026-09-12, verified) — see `PROGRESS.md`.** Went with the recommended serialize-to-disk
+option: cold 43.25-43.35s → warm ~10-12ms (~3,500-4,400×). Also: the `katgpt-tokenizer` fixes this task
+mentioned turned out to be uncommitted in a repo the user doesn't own, so `Datrie` was vendored directly
+into `wacha/src/datrie.rs` instead of staying a path dependency — `wacha` now has zero external
+dependencies beyond crates.io (`serde`, `postcard`). Task body below kept for historical context.
 
 **Context:** `Engine::build` takes 42.4 seconds on the real 62,106-word list (confirmed 2026-09-05, see
 `PROGRESS.md` and `AGENT_HANDOFF.md` §8). Root cause is in `katgpt-tokenizer`'s `Datrie` collision

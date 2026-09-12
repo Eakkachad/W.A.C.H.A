@@ -2,10 +2,13 @@
 //!
 //! Hybrid Thai dictionary engine for the ORST "เปิดคลังคำ พลิกคลังคิด" hackathon.
 //!
-//! Two of the user's own research assets, each used for what it's good at:
-//! - **Segmentation** ([`segmenter`]) — `katgpt-tokenizer`'s `Datrie` double-array
-//!   trie drives greedy longest-match Thai word segmentation, built directly from
-//!   the dictionary's own word list. OOV text falls back to whole Thai Character
+//! Two of the user's own research assets, each vendored as a single
+//! self-contained module (not a live dependency — this crate builds with
+//! nothing outside this repo) and used for what it's good at:
+//! - **Segmentation** ([`segmenter`]) — the vendored [`datrie::DatrieVocab`]
+//!   double-array trie (originally `katgpt-tokenizer`, MIT-licensed) drives
+//!   greedy longest-match Thai word segmentation, built directly from the
+//!   dictionary's own word list. OOV text falls back to whole Thai Character
 //!   Clusters ([`tcc`]), never raw codepoints.
 //! - **Explainable relationships** ([`relations`]) — AXIOM's vendored
 //!   [`graph::KnowledgeGraph`] (triple-store + Personalized PageRank + BFS) over
@@ -15,6 +18,7 @@
 //! *type a word → segment it → look up its definition → see related words with an
 //! explanation of the connection.*
 
+pub mod datrie;
 pub mod dictionary;
 pub mod graph;
 pub mod relations;
@@ -58,7 +62,50 @@ impl Engine {
     ///
     /// The segmenter's word list is the union of `word_list` and every
     /// dictionary headword, so known entries always segment as whole words.
+    ///
+    /// Note: building the segmenter's trie from the full 62k-word list is the
+    /// expensive step (~43s). Use [`Engine::build_with_cache`] for a demo to
+    /// pay that cost only once and load from disk thereafter.
     pub fn build<I, S>(word_list: I, entries: Vec<Entry>, freq_text: Option<&str>) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        let (all_words, dict) = Self::assemble_dict(word_list, entries, freq_text);
+        let segmenter = Segmenter::from_words(all_words);
+        let relations = RelationEngine::from_dictionary(&dict);
+        Self { dict, segmenter, relations }
+    }
+
+    /// Same as [`Engine::build`], but reuses an already-built (e.g. disk-cached)
+    /// `Segmenter` instead of reconstructing the trie. The caller is responsible
+    /// for ensuring the cached segmenter's word list matches `word_list` +
+    /// entries (the CLI does this by keying the cache on the word-list file).
+    pub fn build_from_segmenter<I, S>(
+        word_list: I,
+        entries: Vec<Entry>,
+        freq_text: Option<&str>,
+        segmenter: Segmenter,
+    ) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        // `word_list` is consumed only to build the dictionary side; the trie
+        // comes from the supplied segmenter. We still drain the iterator so the
+        // dictionary headwords + entries are registered.
+        let (_all_words, dict) = Self::assemble_dict(word_list, entries, freq_text);
+        let relations = RelationEngine::from_dictionary(&dict);
+        Self { dict, segmenter, relations }
+    }
+
+    /// Shared helper: fold a word list + entries + optional freq table into the
+    /// combined word vector (for the segmenter) and the populated `Dictionary`.
+    fn assemble_dict<I, S>(
+        word_list: I,
+        entries: Vec<Entry>,
+        freq_text: Option<&str>,
+    ) -> (Vec<String>, Dictionary)
     where
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
@@ -75,9 +122,7 @@ impl Engine {
         if let Some(ft) = freq_text {
             dict.load_frequencies(ft);
         }
-        let segmenter = Segmenter::from_words(all_words);
-        let relations = RelationEngine::from_dictionary(&dict);
-        Self { dict, segmenter, relations }
+        (all_words, dict)
     }
 
     /// A compact demo-ready engine: the curated seed entries only (no external

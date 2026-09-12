@@ -1,4 +1,5 @@
-//! Thai word segmenter: `katgpt-tokenizer`'s `Datrie` double-array trie drives a
+//! Thai word segmenter: the vendored `Datrie` double-array trie (`crate::datrie`,
+//! originally from `katgpt-tokenizer`) drives a
 //! greedy longest-match over a compiled word list. Where no dictionary word
 //! matches, it falls back to whole Thai Character Clusters (see [`crate::tcc`])
 //! instead of raw codepoints — the Day-0 bug fix.
@@ -6,11 +7,18 @@
 //! This is the "katgpt-rs's tokenizer reads the dictionary" half of the hybrid:
 //! the dictionary's own word list *is* the segmentation engine.
 
+use crate::datrie::DatrieVocab;
 use crate::tcc;
-use katgpt_tokenizer::DatrieVocab;
 use std::collections::HashMap;
 
 /// A segmenter built from a Thai word list.
+///
+/// The built `DatrieVocab` can be cached to disk (see [`Segmenter::save_cache`]
+/// / [`Segmenter::load_cache`]): building the trie from the full 62k-word list
+/// takes ~43s (Thai's narrow UTF-8 byte range causes heavy double-array
+/// collision cascades — see `PROGRESS.md` 2026-09-05), but a cached load is
+/// milliseconds. The cost is one-time *construction*, not per-query.
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct Segmenter {
     vocab: DatrieVocab,
     word_count: usize,
@@ -51,6 +59,34 @@ impl Segmenter {
         let word_count = vocab_map.len();
         let vocab = DatrieVocab::build(&vocab_map);
         Self { vocab, word_count }
+    }
+
+    /// Serialize the built segmenter (the double-array trie + word count) to a
+    /// compact binary blob via `postcard`. Write this to disk to skip the ~43s
+    /// rebuild on the next run.
+    pub fn to_cache_bytes(&self) -> Result<Vec<u8>, postcard::Error> {
+        postcard::to_stdvec(self)
+    }
+
+    /// Reconstruct a segmenter from bytes produced by [`Segmenter::to_cache_bytes`].
+    /// Milliseconds instead of the ~43s full build.
+    pub fn from_cache_bytes(bytes: &[u8]) -> Result<Self, postcard::Error> {
+        postcard::from_bytes(bytes)
+    }
+
+    /// Save the built segmenter to `path` (creates/overwrites the file).
+    pub fn save_cache(&self, path: &std::path::Path) -> std::io::Result<()> {
+        let bytes = self
+            .to_cache_bytes()
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        std::fs::write(path, bytes)
+    }
+
+    /// Load a segmenter from a cache file at `path`.
+    pub fn load_cache(path: &std::path::Path) -> std::io::Result<Self> {
+        let bytes = std::fs::read(path)?;
+        Self::from_cache_bytes(&bytes)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
     }
 
     /// Number of distinct words compiled into the trie.
@@ -191,5 +227,18 @@ mod tests {
         let seg = tiny_segmenter();
         assert!(seg.contains("แมว"));
         assert!(!seg.contains("ไดโนเสาร์"));
+    }
+
+    #[test]
+    fn cache_roundtrip_preserves_segmentation() {
+        let seg = tiny_segmenter();
+        let bytes = seg.to_cache_bytes().expect("serialize");
+        let restored = Segmenter::from_cache_bytes(&bytes).expect("deserialize");
+        // Same word count and identical segmentation after a round-trip.
+        assert_eq!(restored.word_count(), seg.word_count());
+        let a = seg.segment_words("นักเรียนอ่านหนังสือที่โรงเรียน");
+        let b = restored.segment_words("นักเรียนอ่านหนังสือที่โรงเรียน");
+        assert_eq!(a, b);
+        assert!(restored.contains("แมว"));
     }
 }

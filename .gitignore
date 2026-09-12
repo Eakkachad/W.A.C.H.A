@@ -1,5 +1,8 @@
 # Rust build artifacts
 target/
 
+# Generated Datrie trie cache (rebuilt from words_th.txt on demand)
+*.datrie.cache
+
 # macOS
 .DS_Store

@@ -44,7 +44,10 @@ impl RelationEngine {
                 graph.add_triple(&entry.word, label, target);
                 triple_count += 1;
                 // Make symmetric relations bidirectional for traversal.
-                if matches!(rel, Relation::Synonym | Relation::Antonym | Relation::SeeAlso) {
+                if matches!(
+                    rel,
+                    Relation::Synonym | Relation::Antonym | Relation::SeeAlso | Relation::RelatedTo
+                ) {
                     graph.add_triple(target, label, &entry.word);
                     triple_count += 1;
                 }

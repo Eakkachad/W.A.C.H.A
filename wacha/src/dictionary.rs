@@ -28,6 +28,12 @@ pub enum Relation {
     SeeAlso,
     /// category / domain — อยู่ในหมวด
     Category,
+    /// generic semantic association — เกี่ยวข้องกับ. Used for complementary role
+    /// pairs (ครู/นักเรียน), converse activities (อ่าน/เขียน), and derivational
+    /// forms (สุข/ความสุข) that are genuinely *related* but are NOT true lexical
+    /// synonyms or antonyms. Keeping these honest (rather than mislabeling them
+    /// as antonyms) is what a ราชบัณฑิตยสภา lexicographer would expect.
+    RelatedTo,
 }
 
 impl Relation {
@@ -39,6 +45,7 @@ impl Relation {
             Relation::IsA => "เป็นชนิดของ",
             Relation::SeeAlso => "ดูเพิ่มที่",
             Relation::Category => "อยู่ในหมวด",
+            Relation::RelatedTo => "เกี่ยวข้องกับ",
         }
     }
 }
@@ -148,7 +155,7 @@ pub fn seed_entries() -> Vec<Entry> {
         mk("เล็ก", "ว.", "มีขนาดย่อมกว่าปรกติ",
             &[(Antonym, "ใหญ่")]),
         mk("สุข", "น.", "ความสบายกายสบายใจ",
-            &[(Antonym, "ทุกข์"), (Synonym, "ความสุข")]),
+            &[(Antonym, "ทุกข์"), (RelatedTo, "ความสุข")]),
         mk("ทุกข์", "น.", "ความไม่สบายกายไม่สบายใจ",
             &[(Antonym, "สุข")]),
         mk("ครู", "น.", "ผู้สั่งสอนศิษย์; ผู้ถ่ายทอดความรู้",
@@ -156,7 +163,7 @@ pub fn seed_entries() -> Vec<Entry> {
         mk("อาจารย์", "น.", "ผู้สั่งสอนวิชาความรู้ในระดับสูง",
             &[(Synonym, "ครู"), (Category, "การศึกษา")]),
         mk("นักเรียน", "น.", "ผู้เรียนในโรงเรียน",
-            &[(Category, "การศึกษา"), (SeeAlso, "โรงเรียน"), (Antonym, "ครู")]),
+            &[(Category, "การศึกษา"), (SeeAlso, "โรงเรียน"), (RelatedTo, "ครู")]),
         mk("โรงเรียน", "น.", "สถานที่สำหรับสอนและเรียนหนังสือ",
             &[(Category, "การศึกษา"), (SeeAlso, "นักเรียน")]),
         mk("หนังสือ", "น.", "เอกสารที่เขียนหรือพิมพ์เป็นเล่มสำหรับอ่าน",
@@ -170,9 +177,9 @@ pub fn seed_entries() -> Vec<Entry> {
         mk("ภาษา", "น.", "เสียงหรือตัวหนังสือที่ใช้สื่อความหมายกัน",
             &[(SeeAlso, "คำ"), (Category, "การศึกษา")]),
         mk("อ่าน", "ก.", "ดูตัวหนังสือแล้วเข้าใจความหมาย; ออกเสียงตามตัวหนังสือ",
-            &[(SeeAlso, "หนังสือ"), (Antonym, "เขียน")]),
+            &[(SeeAlso, "หนังสือ"), (RelatedTo, "เขียน")]),
         mk("เขียน", "ก.", "ทำให้เป็นตัวหนังสือหรือรูปด้วยเครื่องมือ",
-            &[(Antonym, "อ่าน"), (SeeAlso, "หนังสือ")]),
+            &[(RelatedTo, "อ่าน"), (SeeAlso, "หนังสือ")]),
     ]
 }
 
@@ -222,5 +229,48 @@ mod tests {
         }
         // Most relations should point at real headwords (sanity, not strict).
         assert!(resolved * 2 >= total, "too many dangling relation targets");
+    }
+
+    #[test]
+    fn antonyms_are_only_true_lexical_opposites() {
+        // Guard against the 2026-09-12 fix regressing: complementary role pairs
+        // (ครู/นักเรียน), converse activities (อ่าน/เขียน), and derivations
+        // (สุข/ความสุข) must NOT be tagged Antonym — they are RelatedTo. Only
+        // genuine gradable/complementary opposites may be Antonym.
+        let allowed_antonym_pairs: std::collections::HashSet<(&str, &str)> = [
+            ("ใหญ่", "เล็ก"),
+            ("เล็ก", "ใหญ่"),
+            ("สุข", "ทุกข์"),
+            ("ทุกข์", "สุข"),
+        ]
+        .into_iter()
+        .collect();
+
+        for e in seed_entries() {
+            for (rel, tgt) in &e.relations {
+                if *rel == Relation::Antonym {
+                    assert!(
+                        allowed_antonym_pairs.contains(&(e.word.as_str(), tgt.as_str())),
+                        "'{} ตรงข้ามกับ {}' is not a true lexical antonym — \
+                         use Relation::RelatedTo instead",
+                        e.word,
+                        tgt
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn known_role_pair_is_relatedto_not_antonym() {
+        // The specific bug NEXT_STEPS.md Task 1 flagged.
+        let entries = seed_entries();
+        let nakrian = entries.iter().find(|e| e.word == "นักเรียน").unwrap();
+        let (rel, _) = nakrian
+            .relations
+            .iter()
+            .find(|(_, t)| t == "ครู")
+            .expect("นักเรียน should still relate to ครู");
+        assert_eq!(*rel, Relation::RelatedTo, "ครู/นักเรียน must be RelatedTo, not Antonym");
     }
 }

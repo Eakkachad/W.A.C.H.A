@@ -21,8 +21,9 @@ files too and note it here — this log is the record of *that it changed*, thos
 | Day 0 — verify Typhoon 2 access | not started (direction 3, optional) | — |
 | Day 1 — build (hybrid vertical slice) | **done** (`wacha/` crate, CLI, 29 tests) | 2026-09-04 |
 | Verification pass — actually ran the built binary, not just the tests | done — found a real 42s cold-start bug (see log) | 2026-09-05 |
-| Day 0/1 — fix or plan around the 42s Datrie build-time cost | not started — see `NEXT_STEPS.md` Task 2 | — |
-| Data-quality audit of 20 seed relations (found: ครู/นักเรียน mislabeled as antonyms) | not started — see `NEXT_STEPS.md` Task 1 | 2026-09-05 |
+| Day 0/1 — fix or plan around the 42s Datrie build-time cost | **done** — trie cache: 43.35s → 9.7ms (~4400×) | 2026-09-12 |
+| Data-quality audit of 20 seed relations (found: ครู/นักเรียน mislabeled as antonyms) | **done** — relabeled 3, added RelatedTo + 2 regression tests | 2026-09-12 |
+| Vendor `Datrie` into `wacha` (drop the `katgpt-rs` path dependency) | **done** — zero external deps left; 38/38 tests | 2026-09-12 |
 | Web UI (optional) | not started — see `NEXT_STEPS.md` Task 3 | — |
 | Typhoon 2 / direction 3 (optional) | not started — see `NEXT_STEPS.md` Task 4 | — |
 | Day 2 — demo/submit | not started | — |
@@ -218,3 +219,95 @@ relative-path breakage. Did:
 
 **No functional change** — this was a naming/branding pass only. Nothing in `NEXT_STEPS.md`'s task list
 changed as a result; the crate path in its instructions now reads `wacha/` instead of `dict-engine/`.
+
+### 2026-09-12 — NEXT_STEPS Tasks 1 & 2 done: seed-relation audit + 42s cold-start fixed
+
+Executed the two priority tasks from `NEXT_STEPS.md`, verifying each by actually running the code per the
+project convention.
+
+**Task 1 — seed relation audit (data-quality/credibility).** Reviewed all 20 seed entries in
+`wacha/src/dictionary.rs` against real Thai lexical semantics. Found and fixed three mislabels (the
+`ครู/นักเรียน` one was already flagged; the other two are the same error class):
+- `ครู ตรงข้ามกับ นักเรียน` → **`เกี่ยวข้องกับ`** (complementary role pair, not a lexical antonym).
+- `อ่าน ตรงข้ามกับ เขียน` → **`เกี่ยวข้องกับ`** (converse activities, not true antonyms — RID doesn't
+  treat them as คำตรงข้าม).
+- `สุข มีความหมายเหมือนกับ ความสุข` → **`เกี่ยวข้องกับ`** (ความสุข is the nominalized derivation of สุข,
+  not a synonym).
+- Added a new `Relation::RelatedTo` variant (label `เกี่ยวข้องกับ`), made it bidirectional in the graph.
+- **Kept as defensible to a lexicographer:** `ใหญ่↔เล็ก`, `สุข↔ทุกข์` (true antonyms); `สุนัข↔หมา`,
+  `ครู↔อาจารย์` (genuine synonyms); all `เป็นชนิดของ`/`อยู่ในหมวด`/`ดูเพิ่มที่` relations.
+- Added 2 regression tests (`antonyms_are_only_true_lexical_opposites`,
+  `known_role_pair_is_relatedto_not_antonym`) so a future edit can't silently reintroduce a wrong antonym.
+- **Verified in real CLI output** (`wacha lookup ครู`): now shows
+  `ครู --เกี่ยวข้องกับ--> นักเรียน` (was `--ตรงข้ามกับ-->`). `lookup อ่าน` shows
+  `อ่าน --เกี่ยวข้องกับ--> เขียน`. 31 tests pass at this point.
+
+**Task 2 — the 42s cold-start build (chose option 1, serialization — the preferred fix).**
+- Reproduced the baseline first: `cargo run --release --example repro` → **engine built in 43.49s**,
+  while `segment()` is 3.6µs (single word) / 24µs (sentence). Confirmed it's purely one-time trie
+  *construction* cost, not per-query.
+- Made the built segmenter serializable and cache it to disk:
+  - `katgpt-tokenizer/src/datrie.rs`: added `#[derive(Serialize, Deserialize)]` to `Datrie` and
+    `DatrieVocab`. **Additive only** — no existing method signature or behavior changed; `serde` was
+    already a hard (non-optional) dependency of that crate. (Same shared-crate caution as the 2026-09-04
+    `grow_to` fix: this crate is also used by the unrelated Green Mind `mango-a100` track. Re-ran its
+    tests: 16/16 still pass.)
+  - `wacha`: added `postcard = 1.1.3` (already in the workspace lockfile) + `serde`. `Segmenter` now
+    derives serde and has `to_cache_bytes`/`from_cache_bytes`/`save_cache`/`load_cache`. `Engine` gained
+    `build_from_segmenter` (+ an `assemble_dict` refactor) so it can reuse a cached trie without
+    rebuilding. CLI `--data` now writes `words_th.datrie.cache` (7.0 MB) on first build and reloads it
+    when present and newer than `words_th.txt` (mtime-keyed freshness). Added `*.datrie.cache` to
+    `.gitignore` and a cache round-trip test.
+- **Verified with real before/after numbers on the 62,106-word list:**
+  - RUN 1 (cold): `engine built in 43.354s`, then `wrote segmenter cache`.
+  - RUN 2 (warm): `loaded segmenter from cache … in 9.72ms (skipped ~43s trie build)`; total process wall
+    time `0.02s` via `/usr/bin/time`. **~4,400× faster cold start.**
+  - Cache invalidation confirmed: `touch words_th.txt` → next run logs `building trie from scratch` and
+    re-caches.
+- This also resolves the worst case `NEXT_STEPS` flagged (one-shot-CLI-per-word rebuilding every time) —
+  each such invocation is now ~0.02s, not 43s. The guardrail "never restart mid-demo" is no longer
+  load-bearing (though still good hygiene).
+
+**Test state:** `wacha` 32/32 pass, `katgpt-tokenizer` 16/16 pass (with new derives), `poc` 10/10 pass —
+all three green.
+
+**Next action (optional, lower priority):** `NEXT_STEPS.md` Task 3 (minimal web UI over the `Engine` API)
+and Task 4 (Typhoon 2 AI-simplified definitions) remain unstarted — both explicitly optional. The core
+submission (directions 1+2, now with correct relations and a fast start) is in good shape.
+
+### 2026-09-12 — Verification pass on the Task 1+2 report, and a real gap it found
+
+**Re-verified Task 1+2's completion report by actually running everything (per this project's
+convention), not trusting the summary:**
+- Ran `cargo test` in `wacha` (32/32 at the time), `poc` (10/10), and `katgpt-tokenizer` with
+  `--features datrie_vocab` (16/16) — all matched the report.
+- Deleted `data/words_th.datrie.cache` and timed a genuine cold run: **43.25s** (report said 43.35s,
+  matches). Timed the following warm run: **12.44ms** (report said 9.7ms — close enough, same order of
+  magnitude, still a ~3,500× speedup). Total process wall time 0.02-0.03s either way, as reported.
+- Confirmed all three relabeled relations live via the CLI: `ครู --เกี่ยวข้องกับ--> นักเรียน`,
+  `อ่าน --เกี่ยวข้องกับ--> เขียน`, `สุข --เกี่ยวข้องกับ--> ความสุข`.
+
+**Gap the report didn't mention:** both fixes made to `katgpt-tokenizer/src/datrie.rs` — the 2026-09-04
+`grow_to` panic fix *and* today's serde derives — existed only as **uncommitted working-tree changes** in
+the `katgpt-rs` repo (`git log` confirmed the last real commit touching that file predates both fixes).
+Since `katgpt-rs` is not this project's repository (user confirmed: "katgpt ไม่ใช่ repo ฉัน ฉันต้องการ
+จัดการแค่ wacha"), committing there wasn't the right fix. Instead:
+
+**Vendored `Datrie`/`DatrieVocab` directly into `wacha/src/datrie.rs`** (same treatment `graph.rs` already
+got from AXIOM) — dropped only `DatrieTreeIndex` (T2, an unrelated ToaST-tokenizer feature this project
+never used) and its `toast_types` dependency. Removed the `katgpt-tokenizer` path dependency from
+`wacha/Cargo.toml` entirely.
+
+**Verified, not just implemented:**
+- `cargo tree` in `wacha` no longer shows `katgpt-tokenizer` anywhere — the dependency is fully gone.
+- `cargo test`: **38/38 pass** (32 existing + 6 new `datrie::tests`, including a new regression test —
+  `datrie_handles_collision_growth_past_array_end` — that reproduces the exact collision-cascade shape
+  that tripped the original `grow_to` bug, so it can never silently regress). Zero warnings.
+- The **pre-existing cache file** (`words_th.datrie.cache`, built by the old path-dependency version) was
+  loaded successfully by the vendored code with no regeneration needed — confirms postcard's binary
+  format is unaffected by the module-path change, so nobody has to pay the 43s rebuild again just because
+  of this refactor.
+
+`wacha` now builds and runs with **zero dependencies outside this repository** (`serde` and `postcard` are
+the only external crates left, both from crates.io, not a local path). This fully retires the fragility
+risk found above — there is no longer any external working tree whose state `wacha` depends on.

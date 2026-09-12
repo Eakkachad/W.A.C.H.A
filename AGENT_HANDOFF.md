@@ -1,7 +1,7 @@
 # AGENT HANDOFF: วาจา (WACHA) — Dictionary Reimagined Hackathon (เปิดคลังคำ พลิกคลังคิด)
 
-**Document version:** 2.2 (hybrid architecture locked in; Day-0 blockers cleared + core vertical slice built; verified with a real 42s cold-start finding)
-**Date of creation:** 2026-09-03 · **Last updated:** 2026-09-05
+**Document version:** 2.4 (hybrid locked in; vertical slice built; 42s cold-start FIXED via trie cache; seed relations audited/corrected; `Datrie` vendored — zero external dependencies left)
+**Date of creation:** 2026-09-03 · **Last updated:** 2026-09-12
 **Project workspace:** [`dict-hackathon/`](file:///Users/wuttichaimaneesangsakorn/Eak_ject/Reserch/dict-hackathon)
 **Organizer:** สำนักงานราชบัณฑิตยสภา (Office of the Royal Society of Thailand, ORST)
 **Format:** Hackathon, 2 days / 1 night, 10 teams of 2-4
@@ -21,8 +21,9 @@ is searched, accessed, and reused (education / research / language innovation), 
 
 The chosen differentiator is a **hybrid of two of the user's own research assets**, each used only for
 the part it's actually good at:
-- **`katgpt-rs`'s tokenizer primitives** (`katgpt-tokenizer`'s `Datrie` + `BpeTrainer`) — segments and
-  normalizes Thai text, literally making the dictionary's own word list the engine that reads Thai.
+- **`katgpt-rs`'s tokenizer primitives** (`Datrie`, vendored into `wacha/src/datrie.rs` — see §3) —
+  segments and normalizes Thai text, literally making the dictionary's own word list the engine that
+  reads Thai.
 - **AXIOM's `KnowledgeGraph`** (vendored standalone from `crates/tle-axiom-gen/src/graph.rs`, NOT the
   rest of AXIOM) — a triple-store + Personalized PageRank + BFS-subgraph engine, populated directly with
   structured word-relationship triples (`add_triple(subject, relation, object)`), giving an explainable
@@ -60,7 +61,8 @@ Two research passes preceded the build:
 
 | Decision | Why | Don't relitigate this without new evidence |
 |---|---|---|
-| Segmentation/tokenizer layer = `katgpt-tokenizer`'s `Datrie` (double-array trie) + `BpeTrainer`, fed by a compiled Thai word list | Both are real, standalone, working code today — no LLM dependency. `BpeTrainer::train(corpus, vocab_size) -> BpeTokenizer` is a clean, tested API. `Datrie` is a generic byte-key trie (Aoe 1989 double-array structure) fast enough to build a longest-match dictionary segmenter directly from RID-derived word data — the dictionary becomes the tokenizer. This is the genuine, demoable "why us" story. | Re-derive only if `katgpt-tokenizer` turns out to not build standalone (check Day 0). |
+| Segmentation/tokenizer layer = `Datrie` (double-array trie), fed by a compiled Thai word list | Real, standalone, working code today — no LLM dependency. `Datrie` is a generic byte-key trie (Aoe 1989 double-array structure) fast enough to build a longest-match dictionary segmenter directly from real word data — the dictionary becomes the tokenizer. This is the genuine, demoable "why us" story. | Re-derive only if the vendored code turns out to not build standalone (it does — verified 2026-09-12). |
+| **`Datrie` is vendored into `wacha/src/datrie.rs`, not a live path dependency on `katgpt-rs`** — same treatment as AXIOM's `graph.rs` | Decided 2026-09-12: `katgpt-rs` is not this project's repository, and two real fixes made to its `datrie.rs` (the 2026-09-04 `grow_to` panic fix, and the 2026-09-12 serde derives for the trie cache) existed only as **uncommitted working-tree changes** in that repo — found during verification, a real fragility risk (any `git stash`/`checkout`/`pull` there could silently erase them and reintroduce both bugs with no obvious error). Vendoring removes the dependency entirely; `wacha` now builds with nothing outside this repo. Confirmed: `cargo tree` shows no `katgpt-tokenizer`; the old cache file (built by the pre-vendor version) still loads correctly (postcard's binary format didn't change, only the Rust module path did); 38/38 tests pass, zero warnings. | Don't reintroduce the path dependency. If a future fix is needed to the trie logic, make it directly in `wacha/src/datrie.rs` — there is no upstream to sync with or protect. |
 | Generation/reasoning layer (AI-simplified definitions, examples, Q&A) = call an existing open Thai LLM (**Typhoon 2**, SCB 10X, open weights 1B–70B on Llama3/Qwen2; SEA-LION as a fallback), **not** `katgpt-transformer` | Confirmed this session by reading `katgpt-rs/examples/kimi_k3_4b_hello_world.rs` directly: it only runs **random-init weights** — the file's own doc comment says output is "gibberish, not real text." No safetensors loader exists anywhere in the repo for a real checkpoint, except one test gated behind an external Gemma2-2B file (`WEAVER_CHECKPOINT_PATH`) that isn't even present in this workspace. Building a working loader + correct forward pass for a real model from scratch would consume the entire 2-day budget on infrastructure instead of product. | Don't attempt real-checkpoint inference in `katgpt-transformer`/`katgpt-forward` during the hackathon itself — see Guardrails. |
 | `katgpt-speculative` / `katgpt-quant` / `katgpt-hla` are **out of scope** for this track | They exist to speed up LLM generation that doesn't work yet for this use case (see row above) — nothing to speed up. These are the Green Mind track's assets, not this one's. | — |
 | **AXIOM's `graph.rs` only** (triple-store + Personalized PageRank + BFS-subgraph) is vendored as the explainable-relationship layer — **the rest of AXIOM (VSA, `tle-axiom-gen`'s text decomposition/QA engine) is out of scope** | `graph.rs` (666 lines) has zero dependencies beyond `std::collections` and no English-specific text processing — confirmed by direct source read (2026-09-04). It's populated via `add_triple(subject, relation, object)`, built from our own dictionary-derived triples, never through AXIOM's own `decompose_sentence()`/`extract_query_entities()`. Those latter functions are where AXIOM's actual known weaknesses live: self-labeled **"forensic archive"** (per `knowledge-base/local-inventory/neural-engines-workspace.md`), English-only today (Thai "planned"), ~30%-noisy decomposition, 52-point find-vs-select gap. None of that is exercised by this hybrid. | Don't pull in `tle-axiom-gen` as a crate dependency (drags in `tle-vsa`/`tle-vsa-lm`/`tle-afc`/`tle-ghrr`/`tle-neural-core`) — copy just `graph.rs` into this project. Don't call any of AXIOM's decompose/QA functions on Thai text — that reintroduces every known weakness this design avoids. |
@@ -72,9 +74,8 @@ Adapting the "what transfers" framing from the Green Mind track's planning proce
 equally safe to invest in ahead of a 2-day event where the organizers may hand out their own seed data.
 
 **Safe to build/verify before the event (won't be wasted):**
-- Confirm `katgpt-tokenizer` builds and runs standalone (`cargo build -p katgpt-tokenizer`) outside the
-  full `katgpt-rs` workspace, and prototype the `Datrie`-based longest-match segmentation loop against a
-  small, hand-typed Thai word list (proof of algorithm, not final data).
+- ~~Confirm `katgpt-tokenizer` builds and runs standalone~~ — **done, then superseded**: `Datrie` is now
+  vendored directly into `wacha/src/datrie.rs` (§3), so this item no longer applies as originally framed.
 - Resolve the data-source question (§6) — this is pure research/legal-check work, not data-shaped work,
   so it doesn't get invalidated by whatever the event provides.
 - Get Typhoon 2 (or SEA-LION) generation access working end-to-end on a throwaway prompt, so it's a known
@@ -158,13 +159,18 @@ Recommended scope for 2 days: (1) + (2) as the core submission. Add (3) only if 
   likely on self-reported-benchmark grounds) — solid but not bulletproof; hedge appropriately in a pitch.
 - **Don't confuse this track with Green Mind AI 2026.** Different event, different hardware assumptions,
   different codebase parts of `katgpt-rs` are relevant (tokenizer here, speculative-decoding/quant there).
-- **Never restart `wacha`'s process between demo interactions, and never build it per-request.**
-  Confirmed 2026-09-05: building the `Datrie` from the real 62,106-word list takes **42.4 seconds**
-  (Aoe's double-array collision resolution degrades badly on Thai's narrow UTF-8 byte range — every word
-  shares the same lead byte, so tens of thousands of entries collide at the same few shallow trie nodes).
-  Once built, lookups are microsecond-fast — this is a one-time cost. Architect the demo as one
-  long-running process (REPL, or a web server built once at startup), started well before judges see it,
-  never a one-shot CLI call or serverless/lambda-per-request design. See `PROGRESS.md`'s 2026-09-05 entry.
+- **The `Datrie` build from the real 62k-word list is a ~43s one-time cost — now cached to disk, so this
+  is no longer a live-demo hazard (but know why the cache exists).**
+  Confirmed 2026-09-05 and re-measured 2026-09-12: building the `Datrie` from the real 62,106-word list
+  takes **~43 seconds** (Aoe's double-array collision resolution degrades badly on Thai's narrow UTF-8
+  byte range — every word shares the same lead byte, so tens of thousands of entries collide at the same
+  few shallow trie nodes). **Fixed 2026-09-12:** the CLI now serializes the built segmenter to
+  `DIR/words_th.datrie.cache` and reloads it in **~10ms** on subsequent runs (~4,400× faster; verified
+  with real before/after numbers in `PROGRESS.md` 2026-09-12). The cache is mtime-keyed on the word list.
+  So a one-shot CLI call is now ~0.02s, not 43s. The old "never restart the process mid-demo" advice is
+  still good hygiene but is no longer load-bearing. If you build a *new* entry point (e.g. a web server),
+  still prefer building/loading the engine once at startup, not per-request — and delete the
+  `.datrie.cache` if you ever suspect it's stale (editing the word list auto-invalidates it).
 
 ## 9. Handoff protocol (how sessions/agents stay in sync)
 
@@ -197,9 +203,10 @@ time.
   `cargo run -- --data ../data lookup แมว` from inside it, or `cargo test`.
 - **Data (CC0): `dict-hackathon/data/`** — `words_th.txt` (62,107 words), `tnc_freq.txt` (frequencies).
 - Feasibility harness (not the product): `dict-hackathon/poc/`.
-- Source material to reuse: `katgpt-rs/crates/katgpt-tokenizer/` (`Datrie`, `DatrieVocab`, `BpeTrainer`);
-  `neural-engines/AXIOM/crates/tle-axiom-gen/src/graph.rs` (`KnowledgeGraph` — vendor this one file only,
-  see §3/§8).
+- Vendored source (no live external dependency): `wacha/src/datrie.rs` (originally
+  `katgpt-rs/crates/katgpt-tokenizer/src/datrie.rs`) and `wacha/src/graph.rs` (originally
+  `neural-engines/AXIOM/crates/tle-axiom-gen/src/graph.rs`) — see §3 for why both are vendored copies, not
+  path dependencies.
 - Research: [`knowledge-base/topics/thai-dictionary-hackathon.md`](../knowledge-base/topics/thai-dictionary-hackathon.md)
   (full cited findings), [`knowledge-base/local-inventory/katgpt-rs.md`](../knowledge-base/local-inventory/katgpt-rs.md)
   and [`knowledge-base/local-inventory/neural-engines-workspace.md`](../knowledge-base/local-inventory/neural-engines-workspace.md)

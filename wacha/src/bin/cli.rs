@@ -15,9 +15,10 @@
 //! `tnc_freq.txt` (word<TAB>count). Both are CC0 PyThaiNLP corpora (see
 //! dictionary.rs provenance).
 
-use wacha::{dictionary::seed_entries, segmenter::Token, Engine, Lookup};
+use wacha::{dictionary::seed_entries, segmenter::{Segmenter, Token}, Engine, Lookup};
 use std::env;
 use std::fs;
+use std::time::Instant;
 use std::io::{self, BufRead, Write};
 use std::path::Path;
 
@@ -109,10 +110,66 @@ fn build_engine(data_dir: Option<&str>) -> Result<Engine, String> {
                 words_path.display(),
                 if freq_txt.is_some() { " (+ frequencies)" } else { "" }
             );
+
+            // Trie cache: building the 62k-word Datrie takes ~43s (see
+            // PROGRESS.md 2026-09-05). Cache the built segmenter next to the
+            // word list and reload it (milliseconds) when the cache is present
+            // and newer than the word list. This turns the 43s cold start into
+            // a one-time cost.
+            let cache_path = Path::new(dir).join("words_th.datrie.cache");
+            let cache_fresh = is_cache_fresh(&cache_path, &words_path);
+
             // Seed entries always included so the relationship graph is populated
             // even against the bare word list (which carries no relations).
-            Ok(Engine::build(word_list, seed_entries(), freq_txt.as_deref()))
+            if cache_fresh {
+                match Segmenter::load_cache(&cache_path) {
+                    Ok(seg) => {
+                        let t = Instant::now();
+                        let engine = Engine::build_from_segmenter(
+                            word_list,
+                            seed_entries(),
+                            freq_txt.as_deref(),
+                            seg,
+                        );
+                        eprintln!(
+                            "loaded segmenter from cache {} in {:?} (skipped ~43s trie build)",
+                            cache_path.display(),
+                            t.elapsed()
+                        );
+                        return Ok(engine);
+                    }
+                    Err(e) => {
+                        eprintln!("cache load failed ({e}); rebuilding from scratch");
+                    }
+                }
+            }
+
+            eprintln!("building trie from scratch (first run is slow, ~40s for 62k words)…");
+            let t = Instant::now();
+            let engine = Engine::build(word_list, seed_entries(), freq_txt.as_deref());
+            eprintln!("engine built in {:?}", t.elapsed());
+            // Persist the built segmenter for next time (best-effort).
+            match engine.segmenter().save_cache(&cache_path) {
+                Ok(()) => eprintln!("wrote segmenter cache to {}", cache_path.display()),
+                Err(e) => eprintln!("warning: could not write cache ({e})"),
+            }
+            Ok(engine)
         }
+    }
+}
+
+/// A cache is usable if it exists and is at least as new as the word-list file
+/// it was built from (so editing the word list invalidates a stale cache).
+fn is_cache_fresh(cache_path: &Path, words_path: &Path) -> bool {
+    let (Ok(cache_meta), Ok(words_meta)) = (fs::metadata(cache_path), fs::metadata(words_path))
+    else {
+        return false;
+    };
+    match (cache_meta.modified(), words_meta.modified()) {
+        (Ok(cache_m), Ok(words_m)) => cache_m >= words_m,
+        // If mtimes are unavailable, fall back to "exists" (still better than a
+        // guaranteed 43s rebuild).
+        _ => true,
     }
 }
 
