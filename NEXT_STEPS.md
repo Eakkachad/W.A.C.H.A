@@ -290,6 +290,11 @@ against at least one known-bad and one known-good real pair; a real random-sampl
 
 ## Task 8 — Pitch materials
 
+**✅ DONE (2026-09-12) — `dict-hackathon/PITCH.md`.** Thai 2–3 min script leading with the §1 positioning;
+Q&A with real answers to 6 hard questions (WordNet reliability answer uses Task 7's measured 84.2%); demo
+word list (`ครู`/`สุนัข`/`รถยนต์`/`ข้อหา` + bonus) with real output captured live and re-verified. Task body
+below kept for context.
+
 **Why:** the positioning in `AGENT_HANDOFF.md` §1 (modelless, deterministic, explainable — "not an AI
 chatbot wearing a dictionary costume") is strong but currently only exists as internal documentation.
 Nobody has written down what to actually say to judges.

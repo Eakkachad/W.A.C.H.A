@@ -35,6 +35,8 @@ is the explicit purpose of this file and the others below.
    ~42s the first time** (see `AGENT_HANDOFF.md` §8) — that's expected, not a hang; don't kill it early.
 6. **[poc/](./poc)** — the original feasibility proof-of-concept code (Rust), kept for provenance —
    superseded by `wacha/` for anything except historical reference.
+7. **[PITCH.md](./PITCH.md)** — the demo/presentation script (Thai): 2–3 min pitch leading with the
+   positioning, honest Q&A for hard questions, and a pre-verified demo word list with real output.
 7. Background research (not this-project-scoped, but cited and reusable): [`../knowledge-base/topics/thai-dictionary-hackathon.md`](../knowledge-base/topics/thai-dictionary-hackathon.md).
 
 ## One-line orientation

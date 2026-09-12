@@ -29,11 +29,10 @@ files too and note it here — this log is the record of *that it changed*, thos
 | Relation coverage via Thai WordNet (P2) | **done** — ~29k words gain real synonym relations; graph 24→29,281 entities, 52,545 triples | 2026-09-12 |
 | Interactive relationship graph in `wacha-web` (P3) | **done** — SVG radial graph, click-to-explore; client-side only; opened in a real browser | 2026-09-12 |
 | WordNet confidence signal + measured precision (Round 3 · Task 7, P0) | **done** — degree-based Confirmed/Unverified marker in CLI+web; real 120-pair sample = **84.2%** precision | 2026-09-12 |
-| Round 3 Task 7 — confidence-tag WordNet relations + real error-rate sample | not started (handed to another agent to execute) | 2026-09-12 |
-| Round 3 Task 8 — pitch materials (`PITCH.md`) | not started | — |
+| Round 3 Task 8 — pitch materials (`PITCH.md`) | **done** — Thai script (leads with §1) + honest Q&A + pre-verified demo word list | 2026-09-12 |
 | Round 3 Task 9 — demo rehearsal + adversarial-query test | not started | — |
 | Round 3 Task 10 — open-data/API documentation | not started | — |
-| Round 3 Task 11 (optional) — resolve uncommitted `--host` change; real Typhoon 2 if API access found | not started | — |
+| Round 3 Task 11 (optional) — real Typhoon 2 if API access found (`--host` part **done**, `bec54b8`) | mostly done | 2026-09-12 |
 | Day 2 — demo/submit | not started | — |
 
 **A real product crate now exists** (`wacha/`) in addition to the `poc/` feasibility harness. The
@@ -755,3 +754,22 @@ genuinely wrong (`คร่ำเคร่ง/ห่อหุ้ม`). This is T
 reproduced — the value wacha adds is labeling it, not hiding it.
 
 **Tests:** 50 pass (`wacha`), incl. the 3 new confidence tests; `poc` 10/10; `katgpt-rs` untouched.
+
+### 2026-09-12 (Round 3 · Task 8) — PITCH.md written
+
+Wrote `dict-hackathon/PITCH.md` — the first time the §1 positioning exists as something to *say to judges*,
+not just internal doc. Three required parts, all present:
+- **Thai spoken script (2–3 min)** that opens with the positioning line ("วาจา ไม่ใช่แชตบอต AI ที่ใส่ชุด
+  พจนานุกรม — modelless / deterministic / explainable"), then problem (ORST brief) → hybrid architecture
+  (one line each: Datrie segmenter + AXIOM graph) → honest scope (offline-precomputed AI; WordNet at a
+  **measured 84.2%** precision, stated as rigor, not hidden) → close.
+- **Q&A with real answers** to 6 hard questions: why-not-just-LLM, WordNet reliability (Task 7's 84.2% goes
+  here), deployment path, where-AI-actually-is, why-only-20-seed-words, katgpt-transformer. No deflections.
+- **Pre-verified demo word list** (`ครู`, `สุนัข`, `รถยนต์`, `ข้อหา` + `เด็กน้อย…` bonus) with **real output
+  captured from the live server 2026-09-12**, each with what to say. `ข้อหา` is deliberately included to
+  preempt "let me try my own word" — it shows the confidence flag catching WordNet's own `ข้อหา/มลทิน`
+  artifact honestly. Re-verified the `รถ`=confirmed / `ยานยนต์`=unverified / `มลทิน`=unverified claims
+  against live `/api/lookup` before finalizing (they match).
+
+No code change; docs only. Remaining Round 3: Task 9 (demo rehearsal + adversarial battery), Task 10
+(API/licenses doc), Task 11 item 2 (real Typhoon 2 if access).
