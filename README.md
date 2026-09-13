@@ -18,6 +18,10 @@ the work up cold — that is the explicit purpose of this file and the others be
 
 ## Read these first, in order
 
+0. **[BIBLE.md](./BIBLE.md)** — the complete, self-contained reference: problem background with full
+   citations, solution rationale, architecture (with a Mermaid diagram), every mathematical/algorithmic
+   principle used explained in detail, verified results, and an honest impact/novelty assessment. Read
+   this first if you want the whole picture in one file; the rest below are the living/working documents.
 1. **[AGENT_HANDOFF.md](./AGENT_HANDOFF.md)** — mission, the hybrid architecture and *why* each decision
    was made (with what evidence), guardrails (mistakes already ruled out — don't re-litigate these without
    new evidence), where every source file lives.
@@ -38,6 +42,8 @@ the work up cold — that is the explicit purpose of this file and the others be
    superseded by `wacha/` for anything except historical reference.
 7. **[PITCH.md](./PITCH.md)** — the demo/presentation script (Thai): 2–3 min pitch leading with the
    positioning, honest Q&A for hard questions, and a pre-verified demo word list with real output.
+   **[PITCH_DECK.md](./PITCH_DECK.md)** — the slide-by-slide deck draft (10 slides + a 5-page Q&A-only
+   appendix), each slide with its content, a punchline, a speaker note, and anticipated hard questions.
 8. Background research (not this-project-scoped, but cited and reusable): [`../knowledge-base/topics/thai-dictionary-hackathon.md`](../knowledge-base/topics/thai-dictionary-hackathon.md).
 
 ## One-line orientation
