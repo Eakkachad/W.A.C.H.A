@@ -106,13 +106,24 @@ impl RelationEngine {
         let mut seed_edges: HashSet<(usize, usize)> = HashSet::new();
 
         for entry in dict.all_entries() {
+            // An entry's relations count as hand-verified (`seed_edges`) ONLY if
+            // the entry itself is seed-sourced. Merged Kaikki/other entries also
+            // carry `relations` (Wiktionary synonyms etc.) — those are
+            // auto-extracted and must NOT be tagged [ตรวจแล้ว], or we'd falsely
+            // claim a lexicographer verified them (credibility bug, 2026-09-13).
+            let is_seed_entry = entry
+                .senses
+                .iter()
+                .any(|s| s.provenance.source == crate::dictionary::Source::HumanSeed);
             for (rel, target) in &entry.relations {
                 let label = rel.thai_label();
                 let s = graph.add_entity(&entry.headword);
                 let o = graph.add_entity(target);
                 graph.add_triple(&entry.headword, label, target);
                 triple_count += 1;
-                seed_edges.insert((s, o));
+                if is_seed_entry {
+                    seed_edges.insert((s, o));
+                }
                 if *rel == Relation::Synonym {
                     synonym_seen.insert((s, o));
                 }
@@ -123,7 +134,9 @@ impl RelationEngine {
                 ) {
                     graph.add_triple(target, label, &entry.headword);
                     triple_count += 1;
-                    seed_edges.insert((o, s));
+                    if is_seed_entry {
+                        seed_edges.insert((o, s));
+                    }
                     if *rel == Relation::Synonym {
                         synonym_seen.insert((o, s));
                     }
@@ -352,6 +365,43 @@ mod tests {
             dict.insert(e);
         }
         RelationEngine::from_dictionary(&dict)
+    }
+
+    #[test]
+    fn non_seed_entry_relations_are_not_tagged_seed() {
+        // Credibility bug (2026-09-13): a merged Kaikki entry's relations were
+        // wrongly tagged [ตรวจแล้ว]/seed. Build a Kaikki-sourced entry for a
+        // NON-seed headword with a synonym, and assert the relation reads as
+        // WordNet, not Seed.
+        use crate::dictionary::{Entry, License, Pos, Provenance, Relation, Sense, Source};
+        let mut dict = Dictionary::new();
+        for e in seed_entries() {
+            dict.insert(e);
+        }
+        let mut kaikki = Entry::headword_only("บ้านทดสอบ");
+        kaikki.senses.push(Sense {
+            pos: Some(Pos::Nam),
+            subject: None,
+            register: None,
+            definition: "ที่อยู่อาศัย (Kaikki)".into(),
+            examples: vec![],
+            classifiers: vec![],
+            provenance: Provenance {
+                source: Source::Kaikki,
+                license: License::CcBySa,
+                confidence: RelationConfidence::Unverified,
+            },
+        });
+        kaikki.relations.push((Relation::Synonym, "เรือนทดสอบ".into()));
+        dict.insert(kaikki);
+        let eng = RelationEngine::from_dictionary(&dict);
+        let rel = eng.related("บ้านทดสอบ", 5);
+        let syn = rel.iter().find(|r| r.word == "เรือนทดสอบ").expect("synonym present");
+        assert_eq!(
+            syn.source,
+            RelationSource::WordNet,
+            "a Kaikki entry's relation must NOT be tagged Seed [ตรวจแล้ว]"
+        );
     }
 
     #[test]

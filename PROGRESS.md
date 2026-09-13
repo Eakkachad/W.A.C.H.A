@@ -1166,3 +1166,18 @@ rebuild mid-demo. Fixed with a content hash.
 cache-safe multi-source ingestion path," up from "20 definitions." Remaining R5: Task 4 (Sense-node graph,
 kills the 8,879 false links), 6 (ศัพท์บัญญัติ), 7 (citation), 8 (RID stub + runbook), 9 (UI/licence), 10
 (re-measure pitch); 11 optional.
+
+### 2026-09-13 (Round 5 · fix) — provenance mislabel: Kaikki relations wrongly tagged [ตรวจแล้ว]
+
+**Credibility bug found after Task 3** (worse than a feature bug): once Kaikki entries were merged, the
+relation-graph build loop marked **every** entry's `relations` as `seed_edges`, so a non-seed word like
+`บ้าน` showed its auto-extracted WordNet synonyms (หย้าว, เหย้า, คฤห, คหัฐ…) as **`seed` / [ตรวจแล้ว]** —
+a false claim that a lexicographer had hand-verified them.
+
+Fix (`relations.rs`): an entry's relations count as `seed_edges` **only if the entry is HumanSeed-sourced**
+(`entry.senses.any(|s| s.provenance.source == HumanSeed)`). Kaikki/other entries' relations still enter the
+graph but read as `wordnet` (auto-extracted), matching their honest provenance.
+
+**Verified live:** `บ้าน` related now all `wordnet/confirmed` (was `seed`); `ครู→อาจารย์` still correctly
+`seed` (real hand-verified relation preserved). 68 tests pass (1 new:
+`non_seed_entry_relations_are_not_tagged_seed`).
