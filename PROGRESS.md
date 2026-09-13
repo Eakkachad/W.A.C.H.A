@@ -1228,3 +1228,45 @@ from "could not verify" to the corrected attribution) + §6.4; `PITCH_DECK.md` h
 remaining "Milne" occurrence is now a *correction/negation* ("mis-attributed… corrected"), not an
 assertion — the false attribution no longer survives anywhere; the traceable record of the fix does.
 68 wacha tests / 10 poc tests still pass (comment-only change).
+
+### 2026-09-13 (Round 5 · Task 4) — Sense-node relation graph: false 2-hop links 150,018 → 0
+
+Rebuilt the relationship engine around **sense groups** so two words are related *iff they share a sense
+group* — cross-synset leakage is now structurally impossible instead of hand-patched. (Expanded scope as
+directed: provenance moved to read from `Provenance.source`; false-pair count measured across BOTH sources.)
+
+**The bug, measured across both sources (not just WordNet):** the old flat word↔word graph, once Kaikki
+was merged, produced **150,018** 2-hop pairs that share no sense at all (the pre-Kaikki WordNet-only figure
+was 8,879). `ครอบครัว → บ้าน → บ้านเกิด` was the canonical leak (บ้าน sits in 9 WordNet synsets + Kaikki).
+
+**New model (`relations.rs` rewritten):** an interned-word + `SenseGroup` structure. Two-tier edges:
+- **Tier 1 (typed, curated):** seed/RID entry relations → 2-member sense groups keeping the relation label,
+  tagged `Seed`.
+- **Tier 2:** each WordNet **synset** (from the new synset-id-keyed `wordnet_synsets.tsv`, re-extracted
+  keeping `synsetid`) → one group tagged `WordNet`; each Kaikki entry's synonym/related list → one group
+  tagged `Wiktionary`; ศัพท์บัญญัติ entries → `CoinedWord` (wired now for Task 6).
+- `related(X)` = union of other members of X's sense groups, ranked by (# shared groups, source rank,
+  word). **A word can only be reached through a shared sense group → no cross-sense hops.**
+
+**Provenance now read from source, not guessed:** `RelationSource` gained `Wiktionary` + `CoinedWord`;
+`RelationSource::from_source(Provenance.source)` maps them. Confidence: Seed/CoinedWord always Confirmed;
+an isolated WordNet/Wiktionary pair (both endpoints in only that one group) = Unverified.
+
+**Verified (real):**
+- **False cross-sense pairs = 0.** Sampled 400 random words against the live engine, checked all 378
+  returned related pairs against the actual synset/Kaikki membership sets — **0** share no sense group
+  (was 150,018). Structural, not sampled-lucky.
+- `ครอบครัว` → `ที่บ้าน, บ้าน` — **บ้านเกิด gone** (regression test `crop_krua_does_not_return_ban_koet`).
+- `บ้าน` → `เรือน [WordNet, synset 03259505-n]`, `กระท่อม/กว้าน [Wiktionary]` — sources distinguished;
+  `บ้าน→หย้าว` tagged **Wiktionary** (regression test `ban_hyao_is_tagged_wiktionary_not_wordnet`; หย้าว is
+  a Kaikki synonym, not a WordNet synset co-member).
+- `ครู → อาจารย์ [ตรวจแล้ว]` preserved. Graph: 57,007 sense+word nodes / 72,449 memberships. 71 tests
+  (3 new); poc 10/10; katgpt-rs untouched.
+
+**84.2% honesty (per acceptance — PITCH quotes it on stage):** that figure was sampled from the 26,242
+**direct 1-hop** WordNet pairs and never described multi-hop output. Before Task 4 the UI showed multi-hop
+results the 84.2% didn't cover — so quoting it was not yet honest. **After Task 4, all displayed relations
+are 1-hop-through-a-shared-sense** (same-synset co-membership), which is exactly the population the 84.2%
+was measured on — so the figure now describes the shown output honestly for the first time. State it as
+"84.2% of the WordNet-derived synonym relations we show" — and it only covers the WordNet tier (seed = 100%
+audited; Wiktionary/CoinedWord tiers are separately provenance-tagged, not covered by that number).

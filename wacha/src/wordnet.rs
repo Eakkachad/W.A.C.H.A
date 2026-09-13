@@ -28,20 +28,28 @@
 /// `   WHERE li!='0' AND li!='' GROUP BY synsetid HAVING COUNT(*)>=2`
 /// `   ORDER BY synsetid;" > data/wordnet_synonyms.tsv`
 const SYNONYMS_TSV: &str = include_str!("../data/wordnet_synonyms.tsv");
+/// Synset-id-keyed asset: `<synsetid>\t<word>\t<word>…` per line. Keeping the
+/// synset id lets the graph route relations through a per-synset **Sense node**
+/// (Task 4), which makes cross-synset 2-hop leakage structurally impossible.
+const SYNSETS_TSV: &str = include_str!("../data/wordnet_synsets.tsv");
 
 /// A parsed store of WordNet synonym groups.
 #[derive(Debug, Clone, Default)]
 pub struct WordNet {
     /// Each inner vec is one synonym group (>=2 Thai lemmas that share a synset).
     groups: Vec<Vec<String>>,
+    /// Same groups, but each tagged with its Princeton WordNet synset id.
+    /// `(synset_id, members)`. Members are pruned identically to `groups`.
+    synsets: Vec<(String, Vec<String>)>,
 }
 
 impl WordNet {
-    /// Parse the embedded default asset. Never panics — a malformed/empty asset
-    /// just yields fewer (or zero) groups; the relationship layer degrades
-    /// gracefully to the seed relations only.
+    /// Parse the embedded default assets (both the legacy flat groups and the
+    /// synset-id-keyed synsets). Never panics.
     pub fn embedded() -> Self {
-        Self::from_tsv(SYNONYMS_TSV)
+        let mut wn = Self::from_tsv(SYNONYMS_TSV);
+        wn.synsets = parse_synsets(SYNSETS_TSV);
+        wn
     }
 
     /// Parse synonym groups from a TSV string (one group per line, tab-separated
@@ -73,7 +81,7 @@ impl WordNet {
                 groups.push(words);
             }
         }
-        Self { groups }
+        Self { groups, synsets: Vec::new() }
     }
 
     /// Empty WordNet (no expansion).
@@ -89,6 +97,12 @@ impl WordNet {
     /// The synonym groups.
     pub fn groups(&self) -> &[Vec<String>] {
         &self.groups
+    }
+
+    /// Synset-id-keyed groups `(synset_id, members)` — the Task 4 graph builds a
+    /// Sense node per entry here. Members are pruned identically to `groups`.
+    pub fn synsets(&self) -> &[(String, Vec<String>)] {
+        &self.synsets
     }
 
     /// Iterate directed synonym pairs `(a, b)` to add to the graph. For each
@@ -140,6 +154,32 @@ fn prune_suppressed(words: &mut Vec<String>) {
         }
     }
     prune_ambiguous_members(words);
+}
+
+/// Parse the synset-id-keyed TSV (`<synsetid>\t<word>…`) with the same member
+/// pruning as `from_tsv`. Skips groups that fall below 2 members after pruning.
+fn parse_synsets(tsv: &str) -> Vec<(String, Vec<String>)> {
+    let mut out = Vec::new();
+    for line in tsv.lines() {
+        let line = line.trim_end_matches(['\r', '\n']);
+        if line.is_empty() {
+            continue;
+        }
+        let mut fields = line.split('\t');
+        let Some(id) = fields.next() else { continue };
+        let mut words: Vec<String> = Vec::new();
+        for w in fields {
+            let w = w.trim();
+            if !w.is_empty() && w != "0" && !words.iter().any(|e| e == w) {
+                words.push(w.to_string());
+            }
+        }
+        prune_suppressed(&mut words);
+        if words.len() >= 2 {
+            out.push((id.to_string(), words));
+        }
+    }
+    out
 }
 
 /// One-off sense-disambiguation for a genuinely ambiguous Thai abbreviation that

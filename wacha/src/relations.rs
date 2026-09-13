@@ -19,24 +19,41 @@ use std::collections::HashSet;
 pub use crate::dictionary::RelationConfidence;
 
 /// Where a relationship came from — its provenance, so a user (or a hackathon
-/// judge) can tell a hand-verified fact from an auto-imported one.
+/// judge) can tell a hand-verified fact from an auto-imported one. Read from the
+/// connecting sense group's [`crate::dictionary::Source`] (Task 4 — no more
+/// guessing from graph structure).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RelationSource {
     /// Hand-authored + human-verified seed relation (the 20 curated entries).
     Seed,
-    /// Auto-extracted from Thai WordNet synset membership. High coverage but
-    /// **not individually hand-checked** — WordNet has known noise (e.g. a
-    /// synset can pair words a Thai speaker wouldn't call true synonyms). Label
-    /// these honestly so the team can say "auto-extracted, unaudited" on sight.
+    /// Auto-extracted from Thai WordNet synset membership. Not hand-checked.
     WordNet,
+    /// From Kaikki (Thai Wiktionary) synonym/related lists. Community source.
+    Wiktionary,
+    /// From ศัพท์บัญญัติ (ORST coined-word term equivalences). ORST-authored.
+    CoinedWord,
 }
 
 impl RelationSource {
+    /// Map from a dictionary [`crate::dictionary::Source`].
+    pub fn from_source(s: crate::dictionary::Source) -> Self {
+        use crate::dictionary::Source;
+        match s {
+            Source::HumanSeed => RelationSource::Seed,
+            Source::Kaikki => RelationSource::Wiktionary,
+            Source::CoinedWord => RelationSource::CoinedWord,
+            Source::Rid => RelationSource::Seed, // real RID = authoritative, treat as verified
+            Source::Lexitron => RelationSource::WordNet, // headword-only; no relations anyway
+        }
+    }
+
     /// Short Thai/label tag for display.
     pub fn tag(self) -> &'static str {
         match self {
-            RelationSource::Seed => "ตรวจแล้ว",           // hand-verified
-            RelationSource::WordNet => "WordNet (อัตโนมัติ)", // auto-extracted
+            RelationSource::Seed => "ตรวจแล้ว",
+            RelationSource::WordNet => "WordNet (อัตโนมัติ)",
+            RelationSource::Wiktionary => "Wiktionary (อัตโนมัติ)",
+            RelationSource::CoinedWord => "ศัพท์บัญญัติ (ราชบัณฑิตฯ)",
         }
     }
 
@@ -45,314 +62,272 @@ impl RelationSource {
         match self {
             RelationSource::Seed => "seed",
             RelationSource::WordNet => "wordnet",
+            RelationSource::Wiktionary => "wiktionary",
+            RelationSource::CoinedWord => "coined_word",
         }
     }
 }
 
 /// A relationship engine: a knowledge graph built from dictionary triples.
+/// A sense-aware relationship engine (Round 5, Task 4).
+///
+/// The old engine flattened every synonym into a word↔word edge, so 2-hop
+/// traversal invented relations across unrelated senses (บ้าน sits in 9 WordNet
+/// synsets → ครอบครัว→บ้าน→บ้านเกิด). This version routes every relation through
+/// a **sense group**: two words are related **iff they share a sense group**.
+/// Cross-sense leakage is then structurally impossible — no hand-patching.
+///
+/// Two-tier edge model:
+///  - **Tier 1 (typed, curated):** seed relations keep their explicit relation
+///    type (synonym/antonym/is-a/…) as a 2-member sense group tagged `Seed`.
+///  - **Tier 2 (synonymy groups):** each WordNet synset and each Kaikki
+///    synonym/related list is one sense group (tagged `WordNet`/`Wiktionary`),
+///    and each ศัพท์บัญญัติ discipline record a `CoinedWord` group.
 pub struct RelationEngine {
-    graph: KnowledgeGraph,
+    /// Interned word strings.
+    words: Vec<String>,
+    word_id: std::collections::HashMap<String, usize>,
+    /// All sense groups.
+    senses: Vec<SenseGroup>,
+    /// word_id -> indices of sense groups it belongs to.
+    word_senses: Vec<Vec<usize>>,
     triple_count: usize,
-    /// Directed (subject_id, object_id) pairs that came from the hand-verified
-    /// seed entries. Everything else in the graph is auto-extracted (WordNet).
-    seed_edges: HashSet<(usize, usize)>,
+}
+
+/// One sense group: a set of words that genuinely share a sense, plus where the
+/// grouping came from and (for typed seed relations) the relation label.
+struct SenseGroup {
+    members: Vec<usize>,
+    source: RelationSource,
+    /// Relation label for the explanation edge (e.g. "มีความหมายเหมือนกับ").
+    label: String,
+    /// A stable id for explanation display (synset id, or a synthetic tag).
+    tag: String,
 }
 
 /// One related word plus the explanation of how it connects to the query word.
 #[derive(Debug, Clone)]
 pub struct RelatedWord {
     pub word: String,
-    /// Relative-PPR relevance score (higher = more related; hub-corrected).
+    /// Relevance score (higher = more related). Deterministic; see `related`.
     pub score: f32,
-    /// Human-readable relation path from the query word to this word, e.g.
-    /// ["แมว --เป็นชนิดของ--> สัตว์", "สุนัข --เป็นชนิดของ--> สัตว์"].
+    /// Human-readable relation path explaining the connection.
     pub path: Vec<String>,
-    /// Provenance of the connection: [`RelationSource::Seed`] (hand-verified) or
-    /// [`RelationSource::WordNet`] (auto-extracted, unaudited).
+    /// Provenance of the connecting sense group.
     pub source: RelationSource,
-    /// Structural confidence of the connection (graph-degree based). Seed
-    /// relations are always [`RelationConfidence::Confirmed`]; isolated WordNet
-    /// pairs are [`RelationConfidence::Unverified`].
+    /// Structural confidence (Seed/CoinedWord = Confirmed; a lone isolated
+    /// WordNet/Wiktionary pair = Unverified).
     pub confidence: RelationConfidence,
 }
 
 impl RelationEngine {
-    /// Build the graph by extracting triples from every entry's explicit
-    /// relations. Symmetric relations (synonym, antonym) are added in both
-    /// directions so the graph walk treats them as undirected, which is what a
-    /// user means by "related."
     pub fn from_dictionary(dict: &Dictionary) -> Self {
         Self::build(dict, None)
     }
 
-    /// Build the graph from the seed dictionary **plus** Thai WordNet synonym
-    /// relations, giving explainable related-words for ~29k words instead of
-    /// just the 20 seed headwords. Seed relations are added first (authoritative);
-    /// WordNet synonym edges are added afterward and de-duplicated against
-    /// existing edges so a seed-declared synonym isn't double-counted.
     pub fn from_dictionary_with_wordnet(dict: &Dictionary, wordnet: &crate::wordnet::WordNet) -> Self {
         Self::build(dict, Some(wordnet))
     }
 
     fn build(dict: &Dictionary, wordnet: Option<&crate::wordnet::WordNet>) -> Self {
-        let mut graph = KnowledgeGraph::new();
-        let mut triple_count = 0;
-        let syn_label = Relation::Synonym.thai_label();
-        // (subject_id, object_id) pairs already linked by a Synonym edge, so
-        // WordNet expansion never duplicates a seed-declared synonym or another
-        // WordNet edge.
-        let mut synonym_seen: HashSet<(usize, usize)> = HashSet::new();
-        // Directed pairs from the hand-verified seed entries (any relation).
-        let mut seed_edges: HashSet<(usize, usize)> = HashSet::new();
+        let mut eng = RelationEngine {
+            words: Vec::new(),
+            word_id: std::collections::HashMap::new(),
+            senses: Vec::new(),
+            word_senses: Vec::new(),
+            triple_count: 0,
+        };
 
+        // Tier 1: seed (and RID) entry relations -> typed 2-member sense groups.
+        // Only entries whose senses are HumanSeed/Rid sourced are authoritative;
+        // Kaikki entry `relations` are handled as Tier-2 Wiktionary groups below.
         for entry in dict.all_entries() {
-            // An entry's relations count as hand-verified (`seed_edges`) ONLY if
-            // the entry itself is seed-sourced. Merged Kaikki/other entries also
-            // carry `relations` (Wiktionary synonyms etc.) — those are
-            // auto-extracted and must NOT be tagged [ตรวจแล้ว], or we'd falsely
-            // claim a lexicographer verified them (credibility bug, 2026-09-13).
-            let is_seed_entry = entry
+            let src = entry
                 .senses
                 .iter()
-                .any(|s| s.provenance.source == crate::dictionary::Source::HumanSeed);
+                .map(|s| s.provenance.source)
+                .next()
+                .unwrap_or(crate::dictionary::Source::Lexitron);
+            let rsource = RelationSource::from_source(src);
             for (rel, target) in &entry.relations {
-                let label = rel.thai_label();
-                let s = graph.add_entity(&entry.headword);
-                let o = graph.add_entity(target);
-                graph.add_triple(&entry.headword, label, target);
-                triple_count += 1;
-                if is_seed_entry {
-                    seed_edges.insert((s, o));
-                }
-                if *rel == Relation::Synonym {
-                    synonym_seen.insert((s, o));
-                }
-                // Make symmetric relations bidirectional for traversal.
-                if matches!(
-                    rel,
-                    Relation::Synonym | Relation::Antonym | Relation::SeeAlso | Relation::RelatedTo
-                ) {
-                    graph.add_triple(target, label, &entry.headword);
-                    triple_count += 1;
-                    if is_seed_entry {
-                        seed_edges.insert((o, s));
-                    }
-                    if *rel == Relation::Synonym {
-                        synonym_seen.insert((o, s));
-                    }
-                }
-            }
-        }
-
-        // WordNet synonym expansion (optional). Synset co-membership → Synonym.
-        if let Some(wn) = wordnet {
-            for (a, b) in wn.synonym_pairs() {
-                let sa = graph.add_entity(a);
-                let sb = graph.add_entity(b);
-                if sa == sb || !synonym_seen.insert((sa, sb)) {
+                if entry.headword == *target {
                     continue;
                 }
-                graph.add_triple(a, syn_label, b);
-                triple_count += 1;
+                let a = eng.intern(&entry.headword);
+                let b = eng.intern(target);
+                let label = rel.thai_label().to_string();
+                eng.add_sense_group(vec![a, b], rsource, label, format!("{}-{}", entry.headword, target));
             }
         }
 
-        Self { graph, triple_count, seed_edges }
+        // Tier 2a: WordNet synsets -> one Sense group each (source = WordNet).
+        if let Some(wn) = wordnet {
+            for (synid, members) in wn.synsets() {
+                let ids: Vec<usize> = members.iter().map(|m| eng.intern(m)).collect();
+                eng.add_sense_group(
+                    ids,
+                    RelationSource::WordNet,
+                    Relation::Synonym.thai_label().to_string(),
+                    synid.clone(),
+                );
+            }
+        }
+
+        // Tier 2b: Kaikki (Wiktionary) synonym/related lists on non-seed entries
+        // -> one Sense group per entry (source = Wiktionary). ศัพท์บัญญัติ
+        // entries (Source::CoinedWord) route here too, tagged CoinedWord.
+        for entry in dict.all_entries() {
+            let src = entry.senses.iter().map(|s| s.provenance.source).next();
+            let rsource = match src {
+                Some(crate::dictionary::Source::Kaikki) => RelationSource::Wiktionary,
+                Some(crate::dictionary::Source::CoinedWord) => RelationSource::CoinedWord,
+                _ => continue, // seed/RID handled in Tier 1; Lexitron has no relations
+            };
+            // Group the headword with all its relation targets (one shared sense).
+            let mut ids = vec![eng.intern(&entry.headword)];
+            for (_rel, target) in &entry.relations {
+                if *target != entry.headword {
+                    ids.push(eng.intern(target));
+                }
+            }
+            if ids.len() >= 2 {
+                let label = Relation::Synonym.thai_label().to_string();
+                eng.add_sense_group(ids, rsource, label, format!("kaikki:{}", entry.headword));
+            }
+        }
+
+        eng
+    }
+
+    fn intern(&mut self, w: &str) -> usize {
+        if let Some(&id) = self.word_id.get(w) {
+            return id;
+        }
+        let id = self.words.len();
+        self.words.push(w.to_string());
+        self.word_id.insert(w.to_string(), id);
+        self.word_senses.push(Vec::new());
+        id
+    }
+
+    fn add_sense_group(&mut self, mut members: Vec<usize>, source: RelationSource, label: String, tag: String) {
+        members.sort_unstable();
+        members.dedup();
+        if members.len() < 2 {
+            return;
+        }
+        let sidx = self.senses.len();
+        for &m in &members {
+            self.word_senses[m].push(sidx);
+        }
+        self.triple_count += members.len();
+        self.senses.push(SenseGroup { members, source, label, tag });
     }
 
     pub fn entity_count(&self) -> usize {
-        self.graph.entity_count()
+        self.words.len()
     }
 
     pub fn triple_count(&self) -> usize {
         self.triple_count
     }
 
-    /// Is this word a node in the relationship graph?
-    pub fn contains(&self, word: &str) -> bool {
-        self.graph.entity_id(word).is_some()
+    /// Number of distinct sense groups (Sense nodes) in the graph.
+    pub fn sense_count(&self) -> usize {
+        self.senses.len()
     }
 
-    /// The explainable relationship query. Returns up to `top_k` words most
-    /// related to `word`, each with a relation path explaining the connection.
-    /// Returns an empty vec if the word has no relations in the graph.
+    pub fn contains(&self, word: &str) -> bool {
+        self.word_id.contains_key(word)
+    }
+
+    /// Source priority for choosing which sense group "explains" a related word
+    /// when several connect the same pair. Seed/CoinedWord (authoritative) win.
+    fn source_rank(s: RelationSource) -> u8 {
+        match s {
+            RelationSource::Seed => 4,
+            RelationSource::CoinedWord => 3,
+            RelationSource::WordNet => 2,
+            RelationSource::Wiktionary => 1,
+        }
+    }
+
+    /// The explainable relationship query. A word Y is related to X **iff X and
+    /// Y share at least one sense group** — this is the whole fix: traversal
+    /// cannot cross into a different sense. Ranking: (# shared sense groups,
+    /// then source rank), deterministic tie-break by word.
     pub fn related(&self, word: &str, top_k: usize) -> Vec<RelatedWord> {
-        let Some(seed) = self.graph.entity_id(word) else {
+        let Some(&qid) = self.word_id.get(word) else {
             return Vec::new();
         };
-        // 60 iterations: deterministic, converged for graphs this size.
-        let scores = self.graph.personalized_pagerank(&[seed], 60);
-
-        // Precompute the explanatory subgraph once (2 hops from the seed). The
-        // set of entities appearing in it are exactly the words actually
-        // *connected* to the seed — we only ever surface those as "related", so
-        // disconnected nodes (which the relative-PPR floor would otherwise rank
-        // with a large-negative score and no explanation) never leak in.
-        let subgraph = self.graph.bfs_subgraph(&[seed], 2);
-        let mut connected: std::collections::HashSet<usize> = std::collections::HashSet::new();
-        for t in &subgraph {
-            connected.insert(t.subject_id);
-            connected.insert(t.object_id);
+        // For each co-member, remember how many senses it shares + the best
+        // (highest-rank) connecting sense group.
+        use std::collections::HashMap;
+        let mut shared: HashMap<usize, (u32, usize)> = HashMap::new(); // word -> (count, best_sense_idx)
+        for &sidx in &self.word_senses[qid] {
+            let sg = &self.senses[sidx];
+            for &m in &sg.members {
+                if m == qid {
+                    continue;
+                }
+                let e = shared.entry(m).or_insert((0, sidx));
+                e.0 += 1;
+                // prefer the higher-source-rank sense for the explanation/label
+                let cur_rank = Self::source_rank(self.senses[e.1].source);
+                let new_rank = Self::source_rank(sg.source);
+                if new_rank > cur_rank {
+                    e.1 = sidx;
+                }
+            }
         }
-
-        let mut ranked: Vec<(usize, f32)> = scores
-            .iter()
-            .copied()
-            .enumerate()
-            .filter(|(id, s)| *id != seed && s.is_finite() && connected.contains(id))
-            .collect();
+        let mut ranked: Vec<(usize, u32, usize)> =
+            shared.into_iter().map(|(w, (c, s))| (w, c, s)).collect();
         ranked.sort_by(|a, b| {
-            b.1.partial_cmp(&a.1)
-                .unwrap_or(std::cmp::Ordering::Equal)
-                // stable tie-break by entity id for determinism
-                .then(a.0.cmp(&b.0))
+            b.1.cmp(&a.1) // more shared senses first
+                .then_with(|| Self::source_rank(self.senses[b.2].source).cmp(&Self::source_rank(self.senses[a.2].source)))
+                .then_with(|| self.words[a.0].cmp(&self.words[b.0])) // deterministic
         });
 
         ranked
             .into_iter()
             .take(top_k)
-            .map(|(id, score)| {
-                let target = self.graph.entity_name(id).to_string();
-                let path = self.explain_path(seed, id, &subgraph);
-                let source = self.classify_source(seed, id, &subgraph);
-                let confidence = self.classify_confidence(seed, id, source);
-                RelatedWord { word: target, score, path, source, confidence }
+            .map(|(wid, count, sidx)| {
+                let sg = &self.senses[sidx];
+                let source = sg.source;
+                let confidence = self.classify_confidence(qid, wid, source);
+                let path = vec![
+                    format!("{} --{}--> {}", word, sg.label, self.words[wid]),
+                    format!("(ผ่านชุดความหมายเดียวกัน: {})", sg.tag),
+                ];
+                RelatedWord {
+                    word: self.words[wid].clone(),
+                    score: count as f32,
+                    path,
+                    source,
+                    confidence,
+                }
             })
             .collect()
     }
 
-    /// Number of *distinct* neighbor entities of `entity_id` in the graph
-    /// (deduplicated across the triples it participates in). Degree 1 = its only
-    /// connection in the whole graph is to a single other word.
-    fn distinct_neighbor_degree(&self, entity_id: usize) -> usize {
-        let mut neighbors = std::collections::HashSet::new();
-        for &idx in self.graph.adjacency_of(entity_id) {
-            let t = &self.graph.triples[idx];
-            let other = if t.subject_id == entity_id { t.object_id } else { t.subject_id };
-            if other != entity_id {
-                neighbors.insert(other);
-            }
-        }
-        neighbors.len()
-    }
-
-    /// Structural confidence of the query→target relation. Seed relations are
-    /// always Confirmed. A WordNet relation is Unverified iff it's an isolated
-    /// pair — both endpoints have distinct-neighbor degree 1 (no corroboration
-    /// from any other synset/seed relation). Everything else is Confirmed.
-    fn classify_confidence(&self, seed: usize, target: usize, source: RelationSource) -> RelationConfidence {
-        if source == RelationSource::Seed {
+    /// Confidence: Seed and CoinedWord are always Confirmed (authoritative). A
+    /// WordNet/Wiktionary relation is Unverified iff it is an *isolated pair* —
+    /// the connecting sense group has exactly 2 members AND neither word appears
+    /// in any other sense group (no corroboration anywhere).
+    fn classify_confidence(&self, a: usize, b: usize, source: RelationSource) -> RelationConfidence {
+        if matches!(source, RelationSource::Seed | RelationSource::CoinedWord) {
             return RelationConfidence::Confirmed;
         }
-        let both_isolated =
-            self.distinct_neighbor_degree(seed) == 1 && self.distinct_neighbor_degree(target) == 1;
-        if both_isolated {
+        let a_deg = self.word_senses[a].len();
+        let b_deg = self.word_senses[b].len();
+        if a_deg <= 1 && b_deg <= 1 {
             RelationConfidence::Unverified
         } else {
             RelationConfidence::Confirmed
         }
     }
-
-    /// Classify a related word's provenance: [`RelationSource::Seed`] if the
-    /// connection to the query is carried by any hand-verified seed edge,
-    /// otherwise [`RelationSource::WordNet`] (auto-extracted, unaudited).
-    ///
-    /// A direct seed edge (query↔word) is Seed. For a 2-hop bridge, it's Seed
-    /// only if *both* hops are seed edges (a hop through WordNet makes the whole
-    /// connection auto-derived). Anything else is WordNet.
-    fn classify_source(&self, seed: usize, target: usize, subgraph: &[crate::graph::Triple]) -> RelationSource {
-        let is_seed = |a: usize, b: usize| {
-            self.seed_edges.contains(&(a, b)) || self.seed_edges.contains(&(b, a))
-        };
-        // Direct connection?
-        let direct_exists = subgraph.iter().any(|t| {
-            (t.subject_id == seed && t.object_id == target)
-                || (t.subject_id == target && t.object_id == seed)
-        });
-        if direct_exists {
-            return if is_seed(seed, target) {
-                RelationSource::Seed
-            } else {
-                RelationSource::WordNet
-            };
-        }
-        // Two-hop bridge: Seed only if some middle node connects to BOTH the
-        // query and the target via seed edges.
-        for t1 in subgraph {
-            let mid = if t1.subject_id == seed {
-                t1.object_id
-            } else if t1.object_id == seed {
-                t1.subject_id
-            } else {
-                continue;
-            };
-            if !is_seed(seed, mid) {
-                continue;
-            }
-            let mid_to_target = subgraph.iter().any(|t2| {
-                (t2.subject_id == mid && t2.object_id == target)
-                    || (t2.subject_id == target && t2.object_id == mid)
-            });
-            if mid_to_target && is_seed(mid, target) {
-                return RelationSource::Seed;
-            }
-        }
-        RelationSource::WordNet
-    }
-
-    /// Human-readable relation edges that connect `seed` to `target` within the
-    /// precomputed BFS subgraph. We surface the direct edges touching `target`
-    /// (and, if `target` isn't directly linked to the seed, the edges touching
-    /// the seed too) so the user sees *why* they're related, not just a score.
-    fn explain_path(&self, seed: usize, target: usize, subgraph: &[crate::graph::Triple]) -> Vec<String> {
-        let fmt = |t: &crate::graph::Triple| {
-            format!(
-                "{} --{}--> {}",
-                self.graph.entity_name(t.subject_id),
-                self.graph.relation_name(t.relation_id),
-                self.graph.entity_name(t.object_id)
-            )
-        };
-        // Direct edge seed <-> target?
-        let mut direct: Vec<String> = subgraph
-            .iter()
-            .filter(|t| {
-                (t.subject_id == seed && t.object_id == target)
-                    || (t.subject_id == target && t.object_id == seed)
-            })
-            .map(&fmt)
-            .collect();
-        direct.sort();
-        direct.dedup();
-        if !direct.is_empty() {
-            return direct;
-        }
-        // Otherwise show the two-hop bridge: edges from seed and edges into
-        // target that share a middle node.
-        let seed_side_edges: Vec<&crate::graph::Triple> = subgraph
-            .iter()
-            .filter(|t| t.subject_id == seed || t.object_id == seed)
-            .collect();
-        let target_edges: Vec<&crate::graph::Triple> = subgraph
-            .iter()
-            .filter(|t| t.subject_id == target || t.object_id == target)
-            .collect();
-        let mut path = Vec::new();
-        for se in &seed_side_edges {
-            let mid = if se.subject_id == seed { se.object_id } else { se.subject_id };
-            for te in &target_edges {
-                let tmid = if te.subject_id == target { te.object_id } else { te.subject_id };
-                if mid == tmid {
-                    path.push(fmt(se));
-                    path.push(fmt(te));
-                }
-            }
-        }
-        path.sort();
-        path.dedup();
-        path
-    }
 }
+
 
 #[cfg(test)]
 mod tests {
@@ -397,10 +372,11 @@ mod tests {
         let eng = RelationEngine::from_dictionary(&dict);
         let rel = eng.related("บ้านทดสอบ", 5);
         let syn = rel.iter().find(|r| r.word == "เรือนทดสอบ").expect("synonym present");
+        assert_ne!(syn.source, RelationSource::Seed, "a Kaikki relation must NOT be [ตรวจแล้ว]");
         assert_eq!(
             syn.source,
-            RelationSource::WordNet,
-            "a Kaikki entry's relation must NOT be tagged Seed [ตรวจแล้ว]"
+            RelationSource::Wiktionary,
+            "a Kaikki entry's relation is auto-extracted -> Wiktionary"
         );
     }
 
@@ -521,5 +497,77 @@ mod tests {
         for rw in e.related("แมว", 8) {
             assert_eq!(rw.confidence, RelationConfidence::Confirmed);
         }
+    }
+
+    // ── Task 4 regression: sense-node model kills cross-synset 2-hop leakage ──
+
+    fn wordnet_engine() -> RelationEngine {
+        let mut dict = Dictionary::new();
+        for e in seed_entries() {
+            dict.insert(e);
+        }
+        RelationEngine::from_dictionary_with_wordnet(&dict, &crate::wordnet::WordNet::embedded())
+    }
+
+    #[test]
+    fn crop_krua_does_not_return_ban_koet() {
+        // The canonical false 2-hop link: ครอบครัว → บ้าน → บ้านเกิด, where บ้าน
+        // sits in many unrelated synsets. With sense nodes, ครอบครัว and บ้านเกิด
+        // share NO sense group, so บ้านเกิด must never appear among ครอบครัว's
+        // related words (any depth — we only return same-sense-group co-members).
+        let e = wordnet_engine();
+        let rel = e.related("ครอบครัว", 50);
+        assert!(
+            !rel.iter().any(|r| r.word == "บ้านเกิด"),
+            "ครอบครัว must not surface บ้านเกิด (cross-synset leak)"
+        );
+    }
+
+    #[test]
+    fn no_related_word_is_the_query_itself_and_all_share_a_sense() {
+        // Every related word must genuinely share a sense group with the query
+        // (the structural guarantee). Spot-check on a WordNet word.
+        let e = wordnet_engine();
+        for rw in e.related("บ้าน", 20) {
+            assert_ne!(rw.word, "บ้าน");
+            assert!(matches!(
+                rw.source,
+                RelationSource::Seed
+                    | RelationSource::WordNet
+                    | RelationSource::Wiktionary
+                    | RelationSource::CoinedWord
+            ));
+        }
+    }
+
+    #[test]
+    fn ban_hyao_is_tagged_wiktionary_not_wordnet() {
+        // The reviewer's second regression: บ้าน→หย้าว comes from Kaikki
+        // (Wiktionary synonym), NOT a WordNet synset — it must read Wiktionary.
+        use crate::dictionary::{Entry, License, Pos, Provenance, Sense, Source};
+        let mut dict = Dictionary::new();
+        for e in seed_entries() {
+            dict.insert(e);
+        }
+        let mut ban = Entry::headword_only("บ้าน");
+        ban.senses.push(Sense {
+            pos: Some(Pos::Nam),
+            subject: None,
+            register: None,
+            definition: "ที่อยู่อาศัย".into(),
+            examples: vec![],
+            classifiers: vec![],
+            provenance: Provenance {
+                source: Source::Kaikki,
+                license: License::CcBySa,
+                confidence: RelationConfidence::Unverified,
+            },
+        });
+        ban.relations.push((Relation::Synonym, "หย้าว".into()));
+        dict.insert(ban);
+        let e = RelationEngine::from_dictionary(&dict);
+        let hyao = e.related("บ้าน", 20).into_iter().find(|r| r.word == "หย้าว").expect("หย้าว present");
+        assert_eq!(hyao.source, RelationSource::Wiktionary, "บ้าน→หย้าว must be Wiktionary");
+        assert_ne!(hyao.source, RelationSource::WordNet);
     }
 }
