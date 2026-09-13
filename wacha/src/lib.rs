@@ -374,6 +374,12 @@ impl Engine {
         self.relations.enumerate_pairs()
     }
 
+    /// V1 diagnostic for a single (query, candidate) pair — the exact inputs and
+    /// output of the ⚠-flag decision (src_set, max group size, tier, band, warn).
+    pub fn pair_debug(&self, query: &str, other: &str) -> Option<crate::relations::PairDebug> {
+        self.relations.pair_debug(query, other)
+    }
+
     /// The ranked related words for `query` (top_k). Facade over the engine.
     pub fn related_ranked(&self, query: &str, top_k: usize) -> Vec<crate::relations::RelatedWord> {
         self.relations.related(query, top_k)

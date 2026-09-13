@@ -65,6 +65,13 @@ fn main() {
             "audit" => print_audit(&engine),
             "corroboration" => print_corroboration(&engine),
             "patk" => print_patk(&engine, rest),
+            "probe" => {
+                if rest.len() != 2 {
+                    eprintln!("usage: wacha probe <query> <candidate>  (V1 flag diagnostic)");
+                    std::process::exit(2);
+                }
+                print_pair_debug(&engine, &rest[0], &rest[1]);
+            }
             "field" => {
                 let english = rest.join(" ");
                 if english.is_empty() {
@@ -293,6 +300,36 @@ fn print_field(data_dir: Option<&str>, english: &str) {
         None => {
             eprintln!("no cached ศัพท์บัญญัติ result for \"{english}\" (run scripts/fetch_coined_word.sh)");
             std::process::exit(1);
+        }
+    }
+}
+
+/// V1 diagnostic (`wacha probe <q> <cand>`): print the exact quantities the
+/// ⚠ flag is derived from for a single pair — the union source set, max shared
+/// group size, resulting tier, measured-precision band, and whether the flag
+/// warns — plus a per-shared-group breakdown. Lets the flag be audited directly.
+fn print_pair_debug(engine: &Engine, query: &str, cand: &str) {
+    match engine.pair_debug(query, cand) {
+        None => println!("{query} & {cand}: share NO sense group (no related pair)"),
+        Some(d) => {
+            let src = wacha::relations::RelationEngine::source_set_names(d.src_set).join("+");
+            let band_letter = match d.band { 2 => "A", 1 => "B", _ => "C" };
+            let tier_name = match d.tier {
+                3 => "ORST-attested",
+                2 => "multi-source(≥2)",
+                1 => "single-source-corroborated(synset≥3)",
+                _ => "isolated-pair(2-member)",
+            };
+            println!("── probe: {query} → {cand} ──");
+            println!("  src_set        = {:#06b}  ({src})", d.src_set);
+            println!("  max_group_size = {}", d.max_group_size);
+            println!("  tier           = {} ({tier_name})", d.tier);
+            println!("  band           = {} ({band_letter})", d.band);
+            println!("  ⚠ warns        = {}", d.warns);
+            println!("  shared groups (source, size):");
+            for (s, n) in &d.groups {
+                println!("    - {:<12} size {n}", format!("{:?}", s));
+            }
         }
     }
 }

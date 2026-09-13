@@ -162,6 +162,24 @@ pub struct PairInfo {
     pub tier: u8,
 }
 
+/// V1 diagnostic for a single (query, candidate) pair — the exact inputs and
+/// outputs of the ⚠-flag decision. See `RelationEngine::pair_debug`.
+#[derive(Debug, Clone)]
+pub struct PairDebug {
+    /// Union of attesting-source bits across every shared group.
+    pub src_set: u8,
+    /// Largest shared sense-group size (the input to the tier's synset test).
+    pub max_group_size: usize,
+    /// Corroboration tier (0..=3).
+    pub tier: u8,
+    /// Measured-precision band (0=C low .. 2=A high) — the ranking/flag key.
+    pub band: u8,
+    /// Whether the ⚠ Unverified flag warns for this pair (true ⇔ band C).
+    pub warns: bool,
+    /// Per-shared-group (source, member_count) breakdown, in scan order.
+    pub groups: Vec<(RelationSource, usize)>,
+}
+
 /// One related word plus the explanation of how it connects to the query word.
 #[derive(Debug, Clone)]
 pub struct RelatedWord {
@@ -790,6 +808,43 @@ impl RelationEngine {
         self.pair_tier(query, other).map(Self::precision_band)
     }
 
+    /// V1 diagnostic: for a (query, candidate) pair, return the exact quantities
+    /// the ⚠ flag is derived from — the union source set, the max shared group
+    /// size, the resulting corroboration tier, the measured-precision band, and
+    /// whether the flag warns — plus a per-shared-group breakdown. `None` if the
+    /// two words share no sense group. This exists so the flag's behaviour can be
+    /// audited directly rather than inferred from the code.
+    pub fn pair_debug(&self, query: &str, other: &str) -> Option<PairDebug> {
+        let (&qid, &oid) = (self.word_id.get(query)?, self.word_id.get(other)?);
+        let mut src_set = 0u8;
+        let mut max_gsize = 0usize;
+        let mut groups = Vec::new();
+        for &sidx in &self.word_senses[qid] {
+            let sg = &self.senses[sidx];
+            if sg.members.contains(&oid) {
+                src_set |= Self::source_bit(sg.source);
+                if sg.members.len() > max_gsize {
+                    max_gsize = sg.members.len();
+                }
+                groups.push((sg.source, sg.members.len()));
+            }
+        }
+        if groups.is_empty() {
+            return None;
+        }
+        let tier = Self::corroboration_tier(src_set, max_gsize);
+        let band = Self::precision_band(tier);
+        let warns = Self::classify_confidence_band(band) == RelationConfidence::Unverified;
+        Some(PairDebug {
+            src_set,
+            max_group_size: max_gsize,
+            tier,
+            band,
+            warns,
+            groups,
+        })
+    }
+
     /// Enumerate every distinct unordered related pair (a < b by word id) in the
     /// graph, each with its attesting-source SET (bitmask) and corroboration
     /// tier. Used by the Phase N precision-by-tier and source-overlap
@@ -1113,6 +1168,39 @@ mod tests {
         // isolated-pair member -> NOT warned (Confirmed).
         let iso = rel.iter().find(|r| r.word == "คู่โดดเดี่ยว").expect("isolated pair present");
         assert_eq!(iso.confidence, RelationConfidence::Confirmed, "band B isolated pair (80%) must NOT be warned");
+    }
+
+    #[test]
+    fn v1_pair_debug_flag_follows_max_group_size_not_pair_arity() {
+        // Round 8 V1 — the reviewer suspected เดิน→ดำเนิน (a Kaikki word-level
+        // pair) was a 2-member group (band B, no-warn) yet warned. The truth:
+        // a Wiktionary "synonyms" list makes the query share a LARGE single-
+        // source synset with the candidate, so max_group_size ≥ 3 -> tier 1 ->
+        // band C -> warns. That is CORRECT. This test locks the behaviour:
+        // a single-source pair that co-occurs in ANY ≥3-member group warns,
+        // even if it also co-occurs in a 2-member group.
+        use crate::dictionary::{Entry, License, Pos, Provenance, Relation, Sense, Source};
+        let mut dict = Dictionary::new();
+        for e in seed_entries() { dict.insert(e); }
+        // A Kaikki headword whose Wiktionary synonym set is large (>=3 members)
+        // AND also lists the same candidate — mirroring เดิน's size-2 + size-46.
+        let mut k = Entry::headword_only("เดินทดสอบ");
+        k.senses.push(Sense {
+            pos: Some(Pos::Kri), subject: None, register: None, definition: "d".into(),
+            examples: vec![], classifiers: vec![],
+            provenance: Provenance { source: Source::Kaikki, license: License::CcBySa, confidence: RelationConfidence::Unverified },
+        });
+        for syn in ["ดำเนินทดสอบ", "เคลื่อนทดสอบ", "โคจรทดสอบ"] {
+            k.relations.push((Relation::Synonym, syn.into()));
+        }
+        dict.insert(k);
+        let e = RelationEngine::from_dictionary(&dict);
+        let d = e.pair_debug("เดินทดสอบ", "ดำเนินทดสอบ").expect("pair shares a group");
+        assert!(d.max_group_size >= 3, "the Wiktionary synset must be ≥3 members");
+        assert_eq!(d.src_set.count_ones(), 1, "single-source (Wiktionary only)");
+        assert_eq!(d.tier, 1, "single-source synset ≥3 -> tier 1");
+        assert_eq!(d.band, 0, "tier 1 -> band C");
+        assert!(d.warns, "band C must warn — the flag is correct, the premise was wrong");
     }
 
     #[test]
