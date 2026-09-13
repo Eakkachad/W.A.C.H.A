@@ -362,6 +362,27 @@ impl Engine {
         self.relations.words_with_min_related(min)
     }
 
+    /// Export (headword, primary_definition, source_label) for every entry with
+    /// a non-empty definition — the source for the WASM definitions blob (W2).
+    /// Sorted by headword (front-coding friendly), deterministic.
+    pub fn export_definitions(&self) -> Vec<(String, String, String)> {
+        let mut out: Vec<(String, String, String)> = self
+            .dict
+            .all_entries()
+            .filter_map(|e| {
+                let sense = e.senses.iter().find(|s| !s.definition.trim().is_empty())?;
+                Some((
+                    e.headword.clone(),
+                    sense.definition.clone(),
+                    sense.provenance.source.label().to_string(),
+                ))
+            })
+            .collect();
+        out.sort_by(|a, b| a.0.cmp(&b.0));
+        out.dedup_by(|a, b| a.0 == b.0); // one def per headword
+        out
+    }
+
     /// Frequency-weighted definition coverage (A3): of the top-`n` most frequent
     /// Thai words (by `tnc_freq.txt`), how many have a non-empty definition.
     /// Returns (defined, n_considered, pct). This answers "does a judge typing a

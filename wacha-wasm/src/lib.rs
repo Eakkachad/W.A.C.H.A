@@ -34,8 +34,65 @@ const WORDS_TH: &str = include_str!("../../data/words_th.txt");
 // Generated natively by `wacha/examples/gen_reduced_cache.rs`.
 const SEG_CACHE: &[u8] = include_bytes!("../assets/words_th.seg");
 
+// Compact definitions blob (W2): all 29,601 defined headwords + primary
+// definition, sorted by headword, binary-searchable, NO JSON at runtime.
+// Format: [u32 count] then count × [u16 hw_len][hw][u16 def_len][def][u8 src].
+// Generated natively by `wacha/examples/gen_defs_blob.rs`.
+const DEFS_BLOB: &[u8] = include_bytes!("../assets/defs.blob");
+
 thread_local! {
     static ENGINE: RefCell<Option<Engine>> = const { RefCell::new(None) };
+    static DEFS: RefCell<Option<Vec<(String, String, u8)>>> = const { RefCell::new(None) };
+}
+
+/// Parse the embedded defs blob into a sorted (headword, def, src) table.
+fn parse_defs() -> Vec<(String, String, u8)> {
+    let b = DEFS_BLOB;
+    let mut out = Vec::new();
+    if b.len() < 4 {
+        return out;
+    }
+    let count = u32::from_le_bytes([b[0], b[1], b[2], b[3]]) as usize;
+    let mut p = 4usize;
+    for _ in 0..count {
+        if p + 2 > b.len() { break; }
+        let hl = u16::from_le_bytes([b[p], b[p + 1]]) as usize; p += 2;
+        if p + hl > b.len() { break; }
+        let hw = String::from_utf8_lossy(&b[p..p + hl]).into_owned(); p += hl;
+        if p + 2 > b.len() { break; }
+        let dl = u16::from_le_bytes([b[p], b[p + 1]]) as usize; p += 2;
+        if p + dl > b.len() { break; }
+        let def = String::from_utf8_lossy(&b[p..p + dl]).into_owned(); p += dl;
+        if p >= b.len() { break; }
+        let src = b[p]; p += 1;
+        out.push((hw, def, src));
+    }
+    out
+}
+
+fn src_label(code: u8) -> &'static str {
+    match code {
+        0 => "ตรวจด้วยมือ",
+        1 => "Kaikki (Wiktionary)",
+        2 => "ศัพท์บัญญัติ (ORST)",
+        3 => "RID ๒๕๕๔ (ORST)",
+        _ => "",
+    }
+}
+
+/// Look up a definition (headword, source) from the embedded blob by binary
+/// search. Returns None if not defined.
+fn lookup_def(word: &str) -> Option<(String, String)> {
+    DEFS.with(|cell| {
+        let mut opt = cell.borrow_mut();
+        if opt.is_none() {
+            *opt = Some(parse_defs());
+        }
+        let defs = opt.as_ref().unwrap();
+        defs.binary_search_by(|(hw, _, _)| hw.as_str().cmp(word))
+            .ok()
+            .map(|i| (defs[i].1.clone(), src_label(defs[i].2).to_string()))
+    })
 }
 
 fn with_engine<R>(f: impl FnOnce(&Engine) -> R) -> R {
@@ -153,7 +210,18 @@ fn lookup_json(engine: &Engine, query: &str) -> String {
             json_str(&e.word), json_str(&e.pos), json_str(&e.definition),
             json_str(&e.source), json_str(&e.license)
         )),
-        None => s.push_str("\"entry\":null,"),
+        None => {
+            // W2: the segmenter engine only carries the 20 seed entries in the
+            // WASM build, but the embedded defs blob has all 29,601. If the
+            // query is a single defined headword, serve the blob definition.
+            match lookup_def(query.trim()) {
+                Some((def, src)) => s.push_str(&format!(
+                    "\"entry\":{{\"word\":{},\"pos\":{},\"definition\":{},\"source\":{},\"license\":{}}},",
+                    json_str(query.trim()), json_str(""), json_str(&def), json_str(&src), json_str("")
+                )),
+                None => s.push_str("\"entry\":null,"),
+            }
+        }
     }
     s.push_str("\"related\":[");
     for (i, rw) in r.related.iter().enumerate() {

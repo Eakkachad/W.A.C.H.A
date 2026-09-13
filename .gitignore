@@ -27,3 +27,4 @@ wacha-wasm/target/
 wacha-wasm/web/wacha_wasm.wasm
 # Embedded reduced segmenter cache (regenerate via wacha/examples/gen_reduced_cache.rs)
 wacha-wasm/assets/words_th.seg
+wacha-wasm/assets/defs.blob

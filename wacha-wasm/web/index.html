@@ -47,9 +47,10 @@
   <div class="status" id="status">กำลังโหลดเครื่องยนต์ WebAssembly…</div>
   <input id="q" placeholder="พิมพ์คำหรือข้อความไทย เช่น ครู, บ้าน, เด็กน้อยรักสุนัข" disabled autocomplete="off">
   <div class="note">
-    เดโมนี้เป็น <b>ชุดข้อมูลย่อ</b> (offline WASM): มีรายการคำ 62,106 คำ (CC0) สำหรับ<b>ตัดคำ</b> +
-    ความสัมพันธ์จาก seed ที่ตรวจมือ และ Thai WordNet — แต่ <b>ไม่รวมนิยาม 29,000 คำจาก Kaikki</b>
-    (ไฟล์ 82 MB ใหญ่เกินสำหรับเบราว์เซอร์) ฉบับเต็มรันบนเซิร์ฟเวอร์ ดู <code>wacha-web</code>.
+    เดโมนี้ทำงาน<b>ออฟไลน์ทั้งหมดในเบราว์เซอร์</b> (WASM): ตัดคำจากรายการคำ 62,106 คำ (CC0) +
+    <b>นิยาม 29,601 คำ</b> (Kaikki/Wiktionary CC BY-SA + seed) + ความสัมพันธ์จาก seed ที่ตรวจมือ
+    และ Thai WordNet — ไม่ต้องต่อเน็ตหลังโหลดครั้งแรก. ความสัมพันธ์เชิงลึก (PageRank/กราฟเต็ม) รันบน
+    <code>wacha-web</code>.
   </div>
   <div id="result"></div>
 </main>
@@ -80,7 +81,7 @@ function render(d){
   h += d.segmentation.map(t=>`<span class="${t.in_vocab?'':'oov'}">${esc(t.text)}</span>`).join('');
   h += '</div></div><div class="card"><h2>นิยาม</h2>';
   if(d.entry){ h += `<div><span class="word">${esc(d.entry.word)}</span><span class="pos">${esc(d.entry.pos)}</span></div><div>${esc(d.entry.definition)}</div>`; }
-  else { h += '<span class="empty">ไม่มีนิยามในชุดข้อมูลย่อ (มีเฉพาะคำ seed) — ฉบับเต็มมี 29,000 นิยาม</span>'; }
+  else { h += '<span class="empty">ไม่พบนิยามของคำนี้ (คำนี้ไม่มีในพจนานุกรม 29,601 คำ)</span>'; }
   h += '</div><div class="card"><h2>คำที่เกี่ยวข้อง (อธิบายได้)</h2>';
   if(!d.related.length){ h += '<span class="empty">ไม่มีข้อมูลความสัมพันธ์</span>'; }
   else { h += '<ul>' + d.related.map((r,i)=>{
