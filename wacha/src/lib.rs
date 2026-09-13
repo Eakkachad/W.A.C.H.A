@@ -25,6 +25,7 @@ pub mod import;
 pub mod learner;
 pub mod relations;
 pub mod segmenter;
+pub mod symbol_trie;
 pub mod tcc;
 pub mod wordnet;
 
