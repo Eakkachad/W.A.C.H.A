@@ -1091,3 +1091,21 @@ Consumers updated: `relations.rs` (`entry.word`→`entry.headword`), `lib.rs` (`
 `seed_entries_carry_seed_provenance`). `lookup ครู` on real data is **equivalent to before** (same
 segmentation / นิยาม น. / learner content / related words อาจารย์[ตรวจแล้ว] ครูบาอาจารย์·ผู้สอน[WordNet],
 no วันอังคาร/อังคาร — Task 13 fix preserved). Clean build, no warnings. `katgpt-rs` untouched.
+
+### 2026-09-13 (Round 5 · Task 2) — Importer trait + deterministic merge
+
+New `wacha/src/import/mod.rs`: `Importer` trait (`name`/`source`/`load(path) -> Result<Vec<Entry>>`,
+dependency-free `Box<dyn Error+Send+Sync>` — no `anyhow`). `LexitronImporter` (words_th.txt →
+headword-only entries) and `SeedImporter` (the 20 curated entries) implement it.
+
+`merge(Vec<Vec<Entry>>) -> Vec<Entry>` unifies by `(headword, homograph)`: senses **concatenate** (never
+overwrite), scalars (`pronunciation`/`romanization`) fill only if `None`, relations/sub_entries/see_also/
+etymology unioned. Source priority **Rid > HumanSeed > CoinedWord > Kaikki > Lexitron**. **Deterministic**:
+source-lists sorted by priority desc before merging; senses sorted within each entry by
+`(source_priority desc, pos, subject, definition)`.
+
+**Verified:** 60 tests pass (4 new): `lexitron_loads_headwords_only`,
+`merge_lexitron_headword_with_seed_yields_one_entry_with_senses`, `senses_concatenate_across_sources`
+(seed sorts before Kaikki), and `merge_is_deterministic_across_runs` (two runs byte-identical). Engine
+unchanged, `lookup ครู` output identical. Clean build. (Engine not yet wired to the importers — that comes
+when Kaikki data lands in Task 3; the trait + merge are the foundation.)

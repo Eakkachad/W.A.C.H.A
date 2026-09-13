@@ -21,6 +21,7 @@
 pub mod datrie;
 pub mod dictionary;
 pub mod graph;
+pub mod import;
 pub mod learner;
 pub mod relations;
 pub mod segmenter;
