@@ -467,10 +467,10 @@ impl RelationEngine {
         ranked
             .into_iter()
             .take(top_k)
-            .map(|(wid, _band, ppr, _tier, sidx)| {
+            .map(|(wid, band, ppr, _tier, sidx)| {
                 let sg = &self.senses[sidx];
                 let source = sg.source;
-                let confidence = self.classify_confidence(qid, wid, source);
+                let confidence = Self::classify_confidence_band(band);
                 let path = vec![
                     format!("{} --{}--> {}", word, sg.label, self.words[wid]),
                     Self::group_explanation(source, &sg.tag),
@@ -703,20 +703,21 @@ impl RelationEngine {
         violations
     }
 
-    /// Confidence: Seed and CoinedWord are always Confirmed (authoritative). A
-    /// WordNet/Wiktionary relation is Unverified iff it is an *isolated pair* —
-    /// the connecting sense group has exactly 2 members AND neither word appears
-    /// in any other sense group (no corroboration anywhere).
-    fn classify_confidence(&self, a: usize, b: usize, source: RelationSource) -> RelationConfidence {
-        if matches!(source, RelationSource::Seed | RelationSource::CoinedWord) {
-            return RelationConfidence::Confirmed;
-        }
-        let a_deg = self.word_senses[a].len();
-        let b_deg = self.word_senses[b].len();
-        if a_deg <= 1 && b_deg <= 1 {
-            RelationConfidence::Unverified
+    /// **Confidence flag, re-based on measured precision (Round 7 T2).**
+    ///
+    /// The R6 flag was `Unverified iff isolated pair`. The Phase-N audit then
+    /// measured isolated pairs at **80%** and single-source synsets (≥3) at
+    /// **55%** — so the old flag warned about the *better* class and stayed
+    /// silent on the *worse* one. It was inverted.
+    ///
+    /// The flag now follows the measured bands: **warn on band C** (the 55%
+    /// class — single-source WordNet/Wiktionary synsets), and stay quiet on
+    /// bands A/B (multi-source 92.5%, ORST/isolated ~80%). See `BIBLE.md` §6.6.
+    fn classify_confidence_band(band: u8) -> RelationConfidence {
+        if band == 0 {
+            RelationConfidence::Unverified // band C — measured worst (55%)
         } else {
-            RelationConfidence::Confirmed
+            RelationConfidence::Confirmed // bands A/B — measured ≥80%
         }
     }
 }
@@ -856,31 +857,33 @@ mod tests {
     }
 
     #[test]
-    fn isolated_wordnet_pair_is_unverified_corroborated_is_confirmed() {
+    fn warn_flag_follows_measured_band_not_isolation() {
+        // Round 7 T2 — the flag reversal. The R6 flag warned isolated pairs
+        // (measured 80%) and stayed silent on single-source synsets (measured
+        // 55%) — inverted. Now the ⚠ Unverified flag follows the measured band:
+        //   - band C (single-source synset ≥3, 55%)  -> Unverified (warn)
+        //   - band B (isolated pair, 80%)            -> Confirmed (no warn)
+        use crate::dictionary::{Entry, License, Pos, Provenance, Relation, Sense, Source};
+        use crate::wordnet::WordNet;
+        let wn = WordNet::from_synsets_tsv("s1\tหัวคำถาม\tสมาชิกซินเซต\tสมาชิกซินเซตสอง\n");
         let mut dict = Dictionary::new();
-        for en in seed_entries() {
-            dict.insert(en);
-        }
-        let wn = crate::wordnet::WordNet::embedded();
+        for e in seed_entries() { dict.insert(e); }
+        let mut k = Entry::headword_only("หัวคำถาม");
+        k.senses.push(Sense {
+            pos: Some(Pos::Nam), subject: None, register: None, definition: "d".into(),
+            examples: vec![], classifiers: vec![],
+            provenance: Provenance { source: Source::Kaikki, license: License::CcBySa, confidence: RelationConfidence::Unverified },
+        });
+        k.relations.push((Relation::Synonym, "คู่โดดเดี่ยว".into()));
+        dict.insert(k);
         let e = RelationEngine::from_dictionary_with_wordnet(&dict, &wn);
-
-        // ข้อหา↔มลทิน is an isolated 2-node pair (both degree 1) -> Unverified.
-        let khoha = e.related("ข้อหา", 10);
-        let mlt = khoha.iter().find(|r| r.word == "มลทิน").expect("มลทิน related to ข้อหา");
-        assert_eq!(
-            mlt.confidence,
-            RelationConfidence::Unverified,
-            "isolated WordNet pair ข้อหา/มลทิน must be Unverified"
-        );
-
-        // สุนัข↔หมา is corroborated (each appears in multiple synsets) -> Confirmed.
-        let suna = e.related("สุนัข", 10);
-        let ma = suna.iter().find(|r| r.word == "หมา").expect("หมา related to สุนัข");
-        assert_eq!(
-            ma.confidence,
-            RelationConfidence::Confirmed,
-            "corroborated pair สุนัข/หมา must be Confirmed"
-        );
+        let rel = e.related("หัวคำถาม", 20);
+        // band-C synset member -> WARNED (Unverified).
+        let syn = rel.iter().find(|r| r.word == "สมาชิกซินเซต").expect("synset member present");
+        assert_eq!(syn.confidence, RelationConfidence::Unverified, "band C (55%) must be warned");
+        // isolated-pair member -> NOT warned (Confirmed).
+        let iso = rel.iter().find(|r| r.word == "คู่โดดเดี่ยว").expect("isolated pair present");
+        assert_eq!(iso.confidence, RelationConfidence::Confirmed, "band B isolated pair (80%) must NOT be warned");
     }
 
     #[test]

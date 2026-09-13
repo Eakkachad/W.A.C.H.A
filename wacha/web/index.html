@@ -213,7 +213,7 @@ function render(d) {
         + `<span class="badge seed">ตรวจแล้ว</span> ความสัมพันธ์ที่ตรวจสอบด้วยมือ &nbsp;·&nbsp; `
         + `<span class="badge wn">WordNet</span> สกัดจาก Thai WordNet อัตโนมัติ (ยังไม่ได้ตรวจทีละคู่ — อาจมีคู่ที่ไม่แม่นยำ)`;
       if (d.related.some(r => r.confidence === "unverified")) {
-        html += `<br><span class="badge unv">⚠ ยังไม่ยืนยัน</span> คู่คำโดดเดี่ยว — ไม่มีชุดคำอื่นใน WordNet ยืนยันซ้ำ (โครงสร้างกราฟบอกว่าควรตรวจก่อนเชื่อ)`;
+        html += `<br><span class="badge unv">⚠ ควรตรวจ</span> คำพ้องจากชุดความหมาย (synset) แหล่งเดียวขนาด ≥3 คำ — วัดแล้วแม่นเพียง ~55% (ต่ำสุด) จึงติดธงเตือน`;
       }
       html += `</div>`;
     }
@@ -229,7 +229,7 @@ function render(d) {
     d.related.forEach((rw, i) => {
       const badge = sourceBadge(rw.source);
       const conf = rw.confidence === "unverified"
-        ? `<span class="badge unv" title="คู่คำโดดเดี่ยวใน WordNet — ไม่มีชุดคำอื่นยืนยันซ้ำ อาจไม่แม่นยำ">⚠ ยังไม่ยืนยัน</span>`
+        ? `<span class="badge unv" title="คำพ้องจาก synset แหล่งเดียว ≥3 คำ — วัดแล้วแม่น ~55% ต่ำสุด ควรตรวจก่อนเชื่อ">⚠ ควรตรวจ</span>`
         : "";
       html += `<li><div class="head">`;
       html += `<span class="rank">${i + 1}.</span>`;
