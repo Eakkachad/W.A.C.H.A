@@ -437,7 +437,7 @@ impl RelationEngine {
                 let confidence = self.classify_confidence(qid, wid, source);
                 let path = vec![
                     format!("{} --{}--> {}", word, sg.label, self.words[wid]),
-                    format!("(ผ่านชุดความหมายเดียวกัน: {})", sg.tag),
+                    Self::group_explanation(source, &sg.tag),
                 ];
                 RelatedWord {
                     word: self.words[wid].clone(),
@@ -448,6 +448,25 @@ impl RelationEngine {
                 }
             })
             .collect()
+    }
+
+    /// The second explanation line under a related word — honest per source
+    /// (P3). Only real WordNet synsets have a genuine sense id; Kaikki
+    /// (Wiktionary) has **zero** sense-scoped synonyms (verified: 0 of 34,392
+    /// entries), so its 2-member groups are word-level, not sense-scoped —
+    /// saying "ผ่านชุดความหมายเดียวกัน: X-Y" would over-claim a sense grouping we
+    /// invented. Seed/CoinedWord are curated, so they keep the explicit tag.
+    fn group_explanation(source: RelationSource, tag: &str) -> String {
+        match source {
+            RelationSource::WordNet => format!("(ผ่านชุดความหมายเดียวกัน: {tag})"),
+            RelationSource::Wiktionary => {
+                "(คำพ้องระดับคำ — Wiktionary ไม่ได้ระบุว่าเป็นความหมายใด)".to_string()
+            }
+            RelationSource::Seed => format!("(ความสัมพันธ์ที่ตรวจด้วยมือ: {tag})"),
+            RelationSource::CoinedWord => {
+                "(คำพ้องบัญญัติในสาขาเดียวกัน — ราชบัณฑิตยสภา)".to_string()
+            }
+        }
     }
 
     /// A one-hot-ish bit per source, so a candidate's attesting sources can be
@@ -809,6 +828,35 @@ mod tests {
             !rel.iter().any(|r| r.word == "บ้านเกิด"),
             "ครอบครัว must not surface บ้านเกิด (cross-synset leak)"
         );
+    }
+
+    #[test]
+    fn wiktionary_label_does_not_claim_a_sense_group() {
+        // P3: a Kaikki (Wiktionary) synonym is word-level — the explanation must
+        // NOT use the "ผ่านชุดความหมายเดียวกัน: X-Y" wording reserved for real
+        // WordNet synsets (Kaikki has 0 sense-scoped synonyms).
+        use crate::dictionary::{Entry, License, Pos, Provenance, Sense, Source};
+        let mut dict = Dictionary::new();
+        for e in seed_entries() {
+            dict.insert(e);
+        }
+        let mut ban = Entry::headword_only("บ้าน");
+        ban.senses.push(Sense {
+            pos: Some(Pos::Nam),
+            subject: None,
+            register: None,
+            definition: "ที่อยู่อาศัย".into(),
+            examples: vec![],
+            classifiers: vec![],
+            provenance: Provenance { source: Source::Kaikki, license: License::CcBySa, confidence: RelationConfidence::Unverified },
+        });
+        ban.relations.push((Relation::Synonym, "หย้าว".into()));
+        dict.insert(ban);
+        let e = RelationEngine::from_dictionary(&dict);
+        let hyao = e.related("บ้าน", 20).into_iter().find(|r| r.word == "หย้าว").expect("หย้าว present");
+        let expl = hyao.path.last().expect("explanation line");
+        assert!(expl.contains("คำพ้องระดับคำ"), "Wiktionary label must be word-level: {expl}");
+        assert!(!expl.contains("ผ่านชุดความหมายเดียวกัน"), "must not claim a sense group: {expl}");
     }
 
     #[test]
