@@ -63,6 +63,14 @@ fn main() {
         Some((cmd, rest)) => match cmd.as_str() {
             "stats" => print_stats(&engine),
             "audit" => print_audit(&engine),
+            "field" => {
+                let english = rest.join(" ");
+                if english.is_empty() {
+                    eprintln!("usage: wacha field <english term>  (e.g. field, computer)");
+                    std::process::exit(2);
+                }
+                print_field(data_dir.as_deref(), &english);
+            }
             "segment" => {
                 let text = rest.join(" ");
                 if text.is_empty() {
@@ -260,6 +268,30 @@ fn print_audit(engine: &Engine) {
         let ok = if keep == present { "ok " } else { "MISS" };
         let state = if present { "present" } else { "absent " };
         println!("  [{ok}] {verdict} {a} ⟷ {b}: {state}");
+    }
+}
+
+/// The §1.2 closing-demo table: one English word → Thai equivalents grouped by
+/// ORST discipline, read from the offline cache (data/coined_word_cache/).
+fn print_field(data_dir: Option<&str>, english: &str) {
+    let Some(dir) = data_dir else {
+        eprintln!("field requires --data DIR (needs DIR/coined_word_cache/)");
+        std::process::exit(2);
+    };
+    let cache = Path::new(dir).join("coined_word_cache");
+    match wacha::import::coined_word::field_view(&cache, english) {
+        Some(rows) => {
+            println!("\n──────── ศัพท์บัญญัติ: \"{english}\" ────────");
+            println!("คำอังกฤษเดียว → หลายคำไทย จำแนกตามสาขาวิชา (ที่มา: ราชบัณฑิตยสภา)\n");
+            for (disc, terms) in &rows {
+                println!("  {:<40} {}", disc, terms.join(", "));
+            }
+            println!("\n({} สาขาวิชา · ที่มา ORST · educational/non-commercial)", rows.len());
+        }
+        None => {
+            eprintln!("no cached ศัพท์บัญญัติ result for \"{english}\" (run scripts/fetch_coined_word.sh)");
+            std::process::exit(1);
+        }
     }
 }
 

@@ -14,6 +14,7 @@ use std::collections::BTreeMap;
 use std::error::Error;
 use std::path::Path;
 
+pub mod coined_word;
 pub mod kaikki;
 
 /// A boxed, thread-safe error (dependency-free stand-in for `anyhow::Error`).

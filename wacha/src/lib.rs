@@ -196,6 +196,31 @@ impl Engine {
                 Err(e) => log(&format!("warning: Kaikki load failed ({e}); continuing without it")),
             }
         }
+        // ศัพท์บัญญัติ (ORST coined words) — Task 6. Loaded from the cached HTML
+        // in data/coined_word_cache/ if the dir exists and is non-empty (fetched
+        // once, offline, by scripts/fetch_coined_word.sh). Never fetches here.
+        let coined_dir = dir.join("coined_word_cache");
+        if coined_dir.is_dir() {
+            use crate::import::coined_word::CoinedWordImporter;
+            let has_html = std::fs::read_dir(&coined_dir)
+                .map(|mut it| it.any(|e| e.ok().map(|e| e.path().extension().map(|x| x == "html").unwrap_or(false)).unwrap_or(false)))
+                .unwrap_or(false);
+            if has_html {
+                let t = Instant::now();
+                match CoinedWordImporter.load(&coined_dir) {
+                    Ok(entries) => {
+                        let (n_e, n_s) = (entries.len(), entries.iter().map(|e| e.senses.len()).sum::<usize>());
+                        log(&format!(
+                            "loaded {n_e} ศัพท์บัญญัติ (CoinedWord) entries / {n_s} senses from {} in {:?}",
+                            coined_dir.display(),
+                            t.elapsed()
+                        ));
+                        source_lists.push(entries);
+                    }
+                    Err(e) => log(&format!("warning: ศัพท์บัญญัติ load failed ({e}); continuing without it")),
+                }
+            }
+        }
         let entries = crate::import::merge(source_lists);
         // Extend the segmenter vocab with any entry headwords not already present.
         for e in &entries {
