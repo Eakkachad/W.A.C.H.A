@@ -4,6 +4,10 @@ target/
 # Generated Datrie trie cache (rebuilt from words_th.txt on demand)
 *.datrie.cache
 
+# Generated global PageRank cache (rebuilt from the relation graph on demand;
+# keyed on graph content hash — eliminates the ~1s warm-start recompute)
+*.pagerank.cache
+
 # Source WordNet SQLite DB (11MB, NICT license) — we ship the derived
 # wordnet_synonyms.tsv (~1MB) instead; re-fetch the .db only to regenerate it.
 wordnet_th.db

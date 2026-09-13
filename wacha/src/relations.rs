@@ -12,6 +12,36 @@
 
 use crate::dictionary::{Dictionary, Relation};
 use crate::graph::KnowledgeGraph;
+use std::path::Path;
+
+/// Deterministic content hash of the graph the global PageRank was computed
+/// over. Keys the on-disk PageRank cache: if the graph changes (different
+/// entities or triples), the hash changes, and a stale cache is rejected.
+///
+/// Folds entity count + triple count + every triple's `(subject_id,
+/// relation_id, object_id)` through FNV-1a. Triples are order-*dependent* here,
+/// which is fine: `build()` always constructs the graph deterministically (it
+/// iterates sense groups in insertion order and adds pair edges in a fixed
+/// nested-loop order), so the same dictionary yields the same triple order and
+/// thus the same hash. Any real change to the entity/triple set changes the
+/// hash.
+pub fn graph_content_hash(graph: &KnowledgeGraph) -> u64 {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    let fold = |v: u64, h: &mut u64| {
+        for b in v.to_le_bytes() {
+            *h ^= b as u64;
+            *h = h.wrapping_mul(0x0000_0100_0000_01B3);
+        }
+    };
+    fold(graph.entity_count() as u64, &mut h);
+    fold(graph.triples.len() as u64, &mut h);
+    for t in &graph.triples {
+        fold(t.subject_id as u64, &mut h);
+        fold(t.relation_id as u64, &mut h);
+        fold(t.object_id as u64, &mut h);
+    }
+    h
+}
 
 // Confidence lives in `dictionary` (needed by `Provenance`); re-export so
 // existing `crate::relations::RelationConfidence` references keep working.
@@ -161,14 +191,109 @@ impl RelatedWord {
 
 impl RelationEngine {
     pub fn from_dictionary(dict: &Dictionary) -> Self {
-        Self::build(dict, None)
+        Self::build(dict, None, None)
     }
 
     pub fn from_dictionary_with_wordnet(dict: &Dictionary, wordnet: &crate::wordnet::WordNet) -> Self {
-        Self::build(dict, Some(wordnet))
+        Self::build(dict, Some(wordnet), None)
     }
 
-    fn build(dict: &Dictionary, wordnet: Option<&crate::wordnet::WordNet>) -> Self {
+    /// Like [`Self::from_dictionary_with_wordnet`], but caches the expensive
+    /// query-independent global PageRank vector beside the trie cache
+    /// (`<cache_dir>/words_th.pagerank.cache`). On a warm start the vector is
+    /// loaded from disk (a few ms) instead of recomputed (~1s). The cache is
+    /// keyed on the graph content hash, so a changed graph invalidates it.
+    ///
+    /// Pass `None` to disable caching (recompute every time) — this is what the
+    /// no-cache constructors above do, preserving existing test behavior.
+    pub fn from_dictionary_with_wordnet_cached(
+        dict: &Dictionary,
+        wordnet: &crate::wordnet::WordNet,
+        cache_dir: Option<&Path>,
+    ) -> Self {
+        Self::build(dict, Some(wordnet), cache_dir)
+    }
+
+    /// Current PageRank-cache format version. Bump when the layout changes.
+    pub const PAGERANK_CACHE_FORMAT_VERSION: u32 = 1;
+    const PAGERANK_CACHE_MAGIC: &'static str = "WACHA_PAGERANK_CACHE";
+    /// File name of the PageRank cache, placed beside the trie cache.
+    pub const PAGERANK_CACHE_FILE: &'static str = "words_th.pagerank.cache";
+
+    fn pagerank_cache_header(hash: u64) -> String {
+        format!(
+            "{}\n{}\n{}\n",
+            Self::PAGERANK_CACHE_MAGIC,
+            Self::PAGERANK_CACHE_FORMAT_VERSION,
+            hash
+        )
+    }
+
+    /// Serialize `global_pr` to `path` with a 3-line text header
+    /// (`WACHA_PAGERANK_CACHE\n<version>\n<graph_content_hash>\n`) followed by
+    /// the postcard-encoded `Vec<f32>`. Mirrors [`crate::segmenter::Segmenter::save_cache`].
+    pub fn save_pagerank_cache(
+        path: &Path,
+        graph_hash: u64,
+        global_pr: &[f32],
+    ) -> std::io::Result<()> {
+        let payload = postcard::to_stdvec(&global_pr.to_vec())
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        let mut out = Vec::with_capacity(payload.len() + 64);
+        out.extend_from_slice(Self::pagerank_cache_header(graph_hash).as_bytes());
+        out.extend_from_slice(&payload);
+        std::fs::write(path, out)
+    }
+
+    /// Load a cached `global_pr` from `path`, verifying the magic, format
+    /// version, and that the stored graph content hash equals `expected_hash`.
+    /// On any mismatch (or a legacy/corrupt file) returns an error whose message
+    /// names the exact condition, so the caller recomputes and logs clearly.
+    pub fn load_pagerank_cache_checked(
+        path: &Path,
+        expected_hash: u64,
+    ) -> std::io::Result<Vec<f32>> {
+        let bytes = std::fs::read(path)?;
+        let err = |m: String| std::io::Error::new(std::io::ErrorKind::InvalidData, m);
+
+        // Parse the 3-line text header.
+        let mut nl = bytes.iter().enumerate().filter(|(_, b)| **b == b'\n').map(|(i, _)| i);
+        let (Some(l1), Some(l2), Some(l3)) = (nl.next(), nl.next(), nl.next()) else {
+            return Err(err("pagerank cache has no valid header (legacy/corrupt) — recomputing".into()));
+        };
+        let magic = std::str::from_utf8(&bytes[..l1]).unwrap_or("");
+        if magic != Self::PAGERANK_CACHE_MAGIC {
+            return Err(err("pagerank cache magic mismatch (legacy/corrupt) — recomputing".into()));
+        }
+        let version: u32 = std::str::from_utf8(&bytes[l1 + 1..l2])
+            .ok()
+            .and_then(|s| s.trim().parse().ok())
+            .unwrap_or(0);
+        if version != Self::PAGERANK_CACHE_FORMAT_VERSION {
+            return Err(err(format!(
+                "pagerank cache format version {version} != {} — recomputing",
+                Self::PAGERANK_CACHE_FORMAT_VERSION
+            )));
+        }
+        let cached_hash: u64 = std::str::from_utf8(&bytes[l2 + 1..l3])
+            .ok()
+            .and_then(|s| s.trim().parse().ok())
+            .unwrap_or(0);
+        if cached_hash != expected_hash {
+            return Err(err(format!(
+                "graph content hash mismatch (cache {cached_hash:x} != current {expected_hash:x}) — recomputing"
+            )));
+        }
+        let payload = &bytes[l3 + 1..];
+        postcard::from_bytes::<Vec<f32>>(payload)
+            .map_err(|e| err(format!("pagerank cache decode failed: {e}")))
+    }
+
+    fn build(
+        dict: &Dictionary,
+        wordnet: Option<&crate::wordnet::WordNet>,
+        cache_dir: Option<&Path>,
+    ) -> Self {
         let mut eng = RelationEngine {
             words: Vec::new(),
             word_id: std::collections::HashMap::new(),
@@ -261,12 +386,59 @@ impl RelationEngine {
         // Global PageRank once, uniform teleport over ALL entities. This is the
         // FolkRank baseline π subtracted per query (log π_q − log π) to cancel
         // hub popularity. 20 power-iterations is plenty for this graph size.
+        //
+        // This is the ~1.08s query-independent warm-start cost. When a
+        // `cache_dir` is supplied we cache the vector keyed on the graph content
+        // hash: a warm start loads it in a few ms instead of recomputing.
         let n = graph.entity_count();
         let global_pr = if n == 0 {
             Vec::new()
         } else {
-            let all: Vec<usize> = (0..n).collect();
-            graph.personalized_pagerank(&all, 20)
+            let graph_hash = graph_content_hash(&graph);
+            let cache_path = cache_dir.map(|d| d.join(Self::PAGERANK_CACHE_FILE));
+
+            // Try the cache first.
+            let mut loaded: Option<Vec<f32>> = None;
+            if let Some(ref path) = cache_path {
+                if path.exists() {
+                    let t = std::time::Instant::now();
+                    match Self::load_pagerank_cache_checked(path, graph_hash) {
+                        Ok(pr) if pr.len() == n => {
+                            eprintln!("global PageRank: loaded from cache in {:?}", t.elapsed());
+                            loaded = Some(pr);
+                        }
+                        Ok(pr) => {
+                            eprintln!(
+                                "global PageRank: cache length {} != entity count {n} — recomputing",
+                                pr.len()
+                            );
+                        }
+                        Err(e) => eprintln!("global PageRank: cache not usable: {e}"),
+                    }
+                }
+            }
+
+            match loaded {
+                Some(pr) => pr,
+                None => {
+                    let t = std::time::Instant::now();
+                    let all: Vec<usize> = (0..n).collect();
+                    let pr = graph.personalized_pagerank(&all, 20);
+                    eprintln!("global PageRank: recomputed in {:?}", t.elapsed());
+                    if let Some(ref path) = cache_path {
+                        match Self::save_pagerank_cache(path, graph_hash, &pr) {
+                            Ok(()) => eprintln!(
+                                "global PageRank: wrote cache to {}",
+                                path.display()
+                            ),
+                            Err(e) => eprintln!(
+                                "global PageRank: warning: could not write cache ({e})"
+                            ),
+                        }
+                    }
+                    pr
+                }
+            }
         };
 
         // Copy corpus frequency for every word we know (tiebreaker source).
@@ -734,6 +906,63 @@ mod tests {
             dict.insert(e);
         }
         RelationEngine::from_dictionary(&dict)
+    }
+
+    #[test]
+    fn pagerank_cache_invalidates_on_graph_change() {
+        // Build a small graph and its global PageRank vector.
+        let mut graph = KnowledgeGraph::new();
+        graph.add_triple("แมว", "syn", "เหมียว");
+        graph.add_triple("หมา", "syn", "สุนัข");
+        graph.add_triple("แมว", "syn", "สัตว์");
+        let n = graph.entity_count();
+        let all: Vec<usize> = (0..n).collect();
+        let pr = graph.personalized_pagerank(&all, 20);
+        let hash = graph_content_hash(&graph);
+
+        // Write the cache to a temp file.
+        let mut path = std::env::temp_dir();
+        path.push(format!(
+            "wacha_pagerank_cache_test_{}.cache",
+            std::process::id()
+        ));
+        RelationEngine::save_pagerank_cache(&path, hash, &pr).expect("write cache");
+
+        // Matching hash -> cache HIT: identical vector.
+        let loaded = RelationEngine::load_pagerank_cache_checked(&path, hash)
+            .expect("matching-hash cache must load");
+        assert_eq!(loaded.len(), pr.len(), "cached length must match");
+        assert_eq!(loaded, pr, "cached vector must be byte-identical");
+
+        // Change the graph (add a triple with new entities) -> different content
+        // hash -> cache MISS (rejected with a clear message; must recompute).
+        let mut graph2 = graph.clone();
+        graph2.add_triple("นก", "syn", "วิหค");
+        let hash2 = graph_content_hash(&graph2);
+        assert_ne!(hash2, hash, "changed graph must change the content hash");
+
+        match RelationEngine::load_pagerank_cache_checked(&path, hash2) {
+            Ok(_) => panic!("stale cache must be rejected on graph-content-hash mismatch"),
+            Err(e) => assert!(
+                e.to_string().contains("content hash mismatch"),
+                "expected content-hash-mismatch error, got: {e}"
+            ),
+        }
+
+        // Also: merely changing a triple's endpoints (same entity/triple counts)
+        // must change the hash too — the triple *set* is folded, not just counts.
+        let mut graph3 = graph.clone();
+        // Rewire the last triple to a different object id.
+        if let Some(last) = graph3.triples.last_mut() {
+            last.object_id = 0;
+        }
+        let hash3 = graph_content_hash(&graph3);
+        assert_ne!(
+            hash3, hash,
+            "changing a triple's endpoint must change the content hash"
+        );
+
+        std::fs::remove_file(&path).ok();
     }
 
     #[test]

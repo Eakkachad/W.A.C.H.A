@@ -111,11 +111,33 @@ impl Engine {
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
     {
+        Self::build_from_segmenter_cached(word_list, entries, freq_text, segmenter, None)
+    }
+
+    /// Same as [`Engine::build_from_segmenter`], but additionally caches the
+    /// query-independent global PageRank vector in `cache_dir` (beside the trie
+    /// cache) so warm starts skip the ~1s recompute. Pass `None` for `cache_dir`
+    /// to disable PageRank caching (identical to `build_from_segmenter`).
+    pub fn build_from_segmenter_cached<I, S>(
+        word_list: I,
+        entries: Vec<Entry>,
+        freq_text: Option<&str>,
+        segmenter: Segmenter,
+        cache_dir: Option<&std::path::Path>,
+    ) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
         // `word_list` is consumed only to build the dictionary side; the trie
         // comes from the supplied segmenter. We still drain the iterator so the
         // dictionary headwords + entries are registered.
         let (_all_words, dict) = Self::assemble_dict(word_list, entries, freq_text);
-        let relations = RelationEngine::from_dictionary_with_wordnet(&dict, &wordnet::WordNet::embedded());
+        let relations = RelationEngine::from_dictionary_with_wordnet_cached(
+            &dict,
+            &wordnet::WordNet::embedded(),
+            cache_dir,
+        );
         Self { dict, segmenter, relations, learner: LearnerStore::embedded() }
     }
 
@@ -259,11 +281,12 @@ impl Engine {
                 Ok(seg) => {
                     log(&format!("segmenter cache validated + deserialized in {:?}", t_load.elapsed()));
                     let t = Instant::now();
-                    let engine = Self::build_from_segmenter(
+                    let engine = Self::build_from_segmenter_cached(
                         word_list,
                         entries,
                         freq_txt.as_deref(),
                         seg,
+                        Some(dir),
                     );
                     log(&format!(
                         "loaded segmenter from cache {} in {:?} (skipped ~43s trie build)",
