@@ -1,0 +1,47 @@
+# RID 2554 fixture entries — hand-copied from dictionary.orst.go.th
+#
+# Fair-use test fixtures (5–10 entries), NOT a bulk harvest. Used only to drive
+# RidImporter's parser tests and the COMPETITION_DAY.md dry run. Format mirrors
+# the on-screen RID entry layout (§1.1 of NEXT_STEPS_R5.md), one entry per block,
+# blank line between entries. This is the *stable text projection* the importer
+# parses; if the organizer ships a different serialization on the day, only
+# `RidImporter::parse_entry` (the adapter) needs editing — see COMPETITION_DAY.md.
+#
+# Line grammar (per entry):
+#   HEADWORD: <headword> [<homograph Thai numeral>]      (required, first line)
+#   READING:  [<คำอ่าน>]                                  (optional)
+#   ETYM:     (ป. …; ส. …)                                (optional, one line)
+#   SUBENTRIES: w1, w2, w3                                (optional, ลูกคำ)
+#   SENSE: [POS] (สาขาวิชา) {register} (๑) <definition text> [ดู <xref>]
+#     - one SENSE line per numbered sense; POS/subject/register/xref optional
+#
+# The parser is tolerant of missing optional fields.
+
+HEADWORD: แมว ๑
+READING: [แมว]
+ETYM: (ป. มชฺชาร; ส. มารฺชาร)
+SUBENTRIES: แมวคราว, แมวเซา, แมวดาว
+SENSE: [น.] ชื่อสัตว์เลี้ยงลูกด้วยนมชนิด Felis catus Linn. เป็นสัตว์เลี้ยงในบ้าน
+
+HEADWORD: แมว ๒
+SENSE: [น.] (ถิ่น-พายัพ) ชื่อไม้ล้มลุกชนิดหนึ่ง
+
+HEADWORD: กรรม ๑
+READING: [กำ, กำมะ-]
+ETYM: (ส. กรฺม; ป. กมฺม)
+SENSE: [น.] การกระทำที่ส่งผลร้ายมายังปัจจุบัน; การกระทำ
+SENSE: [น.] (ไว) ผู้ถูกกระทำ เช่น คนกินข้าว ข้าวเป็นกรรม
+
+HEADWORD: ปิตุ
+READING: [ปิตุ]
+ETYM: (ป. ปิตา; ส. ปิตฤ)
+SENSE: [น.] พ่อ, ใช้ประกอบกับคำอื่น
+
+HEADWORD: ใบขนุน
+SENSE: [น.] (๑) ชื่อปลาทะเลชนิดหนึ่ง
+SENSE: [น.] (๒) ชื่อพรรณไม้ ดู กระดังงาจีน
+
+HEADWORD: เขียน
+READING: [เขียน]
+SENSE: [ก.] ขีดให้เป็นตัวหนังสือหรือรูป, แต่งหนังสือ
+SENSE: [ก.] (ศิลปะ) วาดรูป

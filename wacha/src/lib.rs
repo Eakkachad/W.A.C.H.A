@@ -180,6 +180,26 @@ impl Engine {
         // Assemble dictionary entries from all available sources (Task 2/3):
         // seed (always) + Kaikki (if data/kaikki_th.jsonl is present), merged.
         let mut source_lists: Vec<Vec<Entry>> = vec![dictionary::seed_entries()];
+        // Real RID data (Task 8) — the organizer's dataset drops into data/rid/.
+        // Highest merge priority (Rid > HumanSeed > CoinedWord > Kaikki > Lexitron).
+        let rid_dir = dir.join("rid");
+        if rid_dir.is_dir() {
+            use crate::import::rid::RidImporter;
+            let t = Instant::now();
+            match RidImporter.load(&rid_dir) {
+                Ok(entries) if !entries.is_empty() => {
+                    let (n_e, n_s) = (entries.len(), entries.iter().map(|e| e.senses.len()).sum::<usize>());
+                    log(&format!(
+                        "loaded {n_e} RID entries / {n_s} senses from {} in {:?}",
+                        rid_dir.display(),
+                        t.elapsed()
+                    ));
+                    source_lists.push(entries);
+                }
+                Ok(_) => {}
+                Err(e) => log(&format!("warning: RID load failed ({e}); continuing without it")),
+            }
+        }
         let kaikki_path = dir.join("kaikki_th.jsonl");
         if kaikki_path.exists() {
             let t = Instant::now();
