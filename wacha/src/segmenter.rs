@@ -40,31 +40,58 @@ pub struct Token {
     pub in_vocab: bool,
 }
 
-/// Stable FNV-1a hash of a set of words (order-independent: words are sorted &
-/// deduplicated first). Deterministic across runs and machines — unlike
-/// `DefaultHasher`, which is randomized per process.
+/// Stable, order-independent hash of a *set* of words. Deterministic across
+/// runs and machines (unlike `DefaultHasher`, which is per-process randomized).
+///
+/// **O(n), no sort (Round 6 P1).** The previous implementation sorted 72k Thai
+/// strings on every start-up — the single largest start-up cost, larger than
+/// parsing the 82 MB Kaikki file. Order-independence is instead achieved by
+/// combining each distinct word's FNV-1a hash with two *commutative* operations
+/// (wrapping-add and XOR), then mixing in the distinct word count and total byte
+/// length. Two commutative accumulators (add ⊕ xor) plus the count/length mix
+/// keep collision resistance far better than a single commutative op alone
+/// (add-only and xor-only each have easy collisions; together they don't).
 pub fn vocab_hash<I, S>(words: I) -> u64
 where
     I: IntoIterator<Item = S>,
     S: AsRef<str>,
 {
-    let mut distinct: Vec<String> = words
-        .into_iter()
-        .map(|w| w.as_ref().trim().to_string())
-        .filter(|w| !w.is_empty())
-        .collect();
-    distinct.sort();
-    distinct.dedup();
-    let mut h: u64 = 0xcbf2_9ce4_8422_2325; // FNV-1a offset basis
-    for w in &distinct {
+    // Dedup in O(n) via a set of per-word hashes — no sort, no owned Vec of
+    // strings. (Hash-set membership can in theory drop a true collision, but the
+    // final mix folds count+length so a dropped duplicate can't silently change
+    // the result the way an added/removed *distinct* word does.)
+    let mut seen: std::collections::HashSet<u64> = std::collections::HashSet::new();
+    let mut add_acc: u64 = 0;
+    let mut xor_acc: u64 = 0;
+    let mut count: u64 = 0;
+    let mut total_len: u64 = 0;
+    for w in words {
+        let w = w.as_ref().trim();
+        if w.is_empty() {
+            continue;
+        }
+        // Per-word FNV-1a.
+        let mut h: u64 = 0xcbf2_9ce4_8422_2325;
         for b in w.as_bytes() {
             h ^= *b as u64;
             h = h.wrapping_mul(0x0000_0100_0000_01B3);
         }
-        h ^= 0xff; // word separator
-        h = h.wrapping_mul(0x0000_0100_0000_01B3);
+        if !seen.insert(h) {
+            continue; // duplicate word (by hash) — count each distinct word once
+        }
+        add_acc = add_acc.wrapping_add(h);
+        xor_acc ^= h;
+        count += 1;
+        total_len = total_len.wrapping_add(w.len() as u64);
     }
-    h
+    // Final mix: fold the two commutative accumulators with the count and length
+    // through the FNV multiplier so the result depends on all four.
+    let mut out: u64 = 0xcbf2_9ce4_8422_2325;
+    for v in [add_acc, xor_acc, count, total_len] {
+        out ^= v;
+        out = out.wrapping_mul(0x0000_0100_0000_01B3);
+    }
+    out
 }
 
 /// Return the postcard payload after the 3-line text header, or the whole slice

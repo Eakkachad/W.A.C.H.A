@@ -249,10 +249,14 @@ impl Engine {
 
         let cache_path = dir.join("words_th.datrie.cache");
         // Expected hash of the FULL merged vocab (words_th + all entry headwords).
+        let t_hash = Instant::now();
         let expected_hash = crate::segmenter::vocab_hash(word_list.iter());
+        log(&format!("vocab_hash ({} words) computed in {:?}", word_list.len(), t_hash.elapsed()));
         if cache_path.exists() {
+            let t_load = Instant::now();
             match Segmenter::load_cache_checked(&cache_path, expected_hash) {
                 Ok(seg) => {
+                    log(&format!("segmenter cache validated + deserialized in {:?}", t_load.elapsed()));
                     let t = Instant::now();
                     let engine = Self::build_from_segmenter(
                         word_list,
