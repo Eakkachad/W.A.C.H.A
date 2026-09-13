@@ -252,6 +252,25 @@ impl Engine {
         self.dict.len()
     }
 
+    /// Definition coverage: (# entries with ≥1 non-empty sense, # searchable
+    /// words in the segmenter vocab, percentage). The denominator is the *union*
+    /// searchable vocabulary (LEXiTRON words + every merged headword), which is
+    /// what a user can actually type — the honest coverage figure.
+    pub fn definition_coverage(&self) -> (usize, usize, f64) {
+        let defined = self
+            .dict
+            .all_entries()
+            .filter(|e| e.senses.iter().any(|s| !s.definition.trim().is_empty()))
+            .count();
+        let searchable = self.segmenter.word_count();
+        let pct = if searchable == 0 {
+            0.0
+        } else {
+            100.0 * defined as f64 / searchable as f64
+        };
+        (defined, searchable, pct)
+    }
+
     pub fn relation_entity_count(&self) -> usize {
         self.relations.entity_count()
     }

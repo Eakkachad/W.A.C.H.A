@@ -1198,3 +1198,19 @@ Two small display fixes in the merge + CLI:
 (the Task-3 acceptance item, now actually displayed) · `(ที่มานิยาม: Kaikki (Wiktionary) · CC BY-SA)`.
 68 tests pass; clean build. (Note: a transient test-build break from dropping a `use` was caught by
 running `cargo test` to a file and reading exit=101 — the grep had masked it; fixed before commit.)
+
+### 2026-09-13 (Round 5 · #3) — union-vocabulary coverage: 31.4% → 41.0% (crosses target)
+
+The 31.4% from Task 3 measured coverage over LEXiTRON's `words_th.txt` (62,106) as the denominator — but
+that list has many inflected/compound forms no dictionary defines separately, and it *excludes* the 10,020
+Kaikki-defined words that Task 3 already added to the searchable segmenter vocab. The honest denominator is
+the **union searchable vocabulary** (everything a user can actually type): 72,126 words.
+
+Added `Engine::definition_coverage() -> (defined, searchable, pct)` and surfaced it in CLI `stats`.
+**Measured live: `definition coverage: 29540/72128 searchable words = 41.0%`** — crosses the >40% target
+honestly (no denominator gaming: the denominator is the real searchable set, larger than words_th, and the
+numerator only counts entries with a genuine non-empty sense). Verified numbers independently in Python:
+Kaikki-defined 29,537, of which 10,020 are NOT in words_th — those are the words the union adds.
+
+68 tests pass; clean build. (Framing for the pitch: "29,540 defined entries = 41% of the 72k searchable
+words," not the earlier misleadingly-low 31% against a denominator full of undefined inflected forms.)

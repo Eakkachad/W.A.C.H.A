@@ -157,6 +157,10 @@ fn print_stats(engine: &Engine) {
         engine.relation_triple_count(),
         engine.learner_count(),
     );
+    let (defined, searchable, pct) = engine.definition_coverage();
+    println!(
+        "definition coverage: {defined}/{searchable} searchable words = {pct:.1}% have ≥1 definition"
+    );
 }
 
 fn print_segmentation(tokens: &[Token]) {
