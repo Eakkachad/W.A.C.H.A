@@ -1214,3 +1214,17 @@ Kaikki-defined 29,537, of which 10,020 are NOT in words_th — those are the wor
 
 68 tests pass; clean build. (Framing for the pitch: "29,540 defined entries = 41% of the 72k searchable
 words," not the earlier misleadingly-low 31% against a denominator full of undefined inflected forms.)
+
+### 2026-09-13 (Round 5 · Task 7) — citation fix: Milne & Witten → FolkRank
+
+The hub-correction formula (`log π_q − log π`) was mis-attributed to **Milne & Witten** in `graph.rs`,
+`BIBLE.md` §3.3/§6.4, and `PITCH_DECK.md`. Verified: Milne & Witten's relatedness measure is an
+NGD-style Wikipedia-link overlap (CIKM'08) with **no PageRank content**. Correct precedent is **FolkRank**
+(Hotho et al. 2006; Jäschke et al. 2007) — personalized PageRank minus global PageRank. Caveat stated
+everywhere: FolkRank uses a plain *difference*; our *log-ratio* is our own variant, labelled as such.
+
+Corrected: `wacha/src/graph.rs` + the superseded `poc/src/graph.rs` comments; `BIBLE.md` §3.3 (rewritten
+from "could not verify" to the corrected attribution) + §6.4; `PITCH_DECK.md` honesty note. Every
+remaining "Milne" occurrence is now a *correction/negation* ("mis-attributed… corrected"), not an
+assertion — the false attribution no longer survives anywhere; the traceable record of the fix does.
+68 wacha tests / 10 poc tests still pass (comment-only change).

@@ -248,10 +248,19 @@ impl KnowledgeGraph {
     ///
     /// π_q solves π_q = (1-c)·v + c·Pᵀ·π_q via power iteration, where v is a
     /// teleport distribution over `seeds` and P is the degree-normalized
-    /// transition matrix. The returned score is the "relative PPR" (Milne &
-    /// Witten): log π_q(e) − log π(e), where π is the global (uniform-teleport)
-    /// PageRank. This cancels hub popularity: an entity that is 1-2 hops from
-    /// every query gets a large π_q *and* a large π, so the ratio neutralizes it.
+    /// transition matrix. The returned score subtracts the global
+    /// (uniform-teleport) PageRank π from the personalized π_q to cancel hub
+    /// popularity — the **FolkRank** idea (Hotho et al. 2006; Jäschke et al.
+    /// 2007): personalized PageRank minus global PageRank, both from the same
+    /// iteration. An entity 1–2 hops from every query gets a large π_q *and* a
+    /// large π, so the correction neutralizes it.
+    ///
+    /// **Honest caveat:** FolkRank uses a plain *difference* (π_q − π); the
+    /// `log π_q(e) − log π(e)` (log-ratio) form used here is our own variant,
+    /// not the published FolkRank measure. (Earlier versions of this comment
+    /// mis-attributed it to Milne & Witten, whose relatedness measure is an
+    /// NGD-style Wikipedia-link overlap with no PageRank content — corrected
+    /// 2026-09-13, see BIBLE.md §3.3.)
     ///
     /// Deterministic: fixed iteration count, no tolerance-based termination.
     /// Returns one score per entity (index-aligned with `self.entities`).
