@@ -37,9 +37,18 @@ files too and note it here — this log is the record of *that it changed*, thos
 | Round 3 Task 11 (optional) — real Typhoon 2 if API access found (`--host` part **done**, `bec54b8`) | mostly done | 2026-09-12 |
 | Round 4 Task 12 — exhaustively review WordNet relations on the 20 seed words | **done, verified** — 47/47 pairs audited, 7 cut, group-level fix, 52/52 tests, live-confirmed | 2026-09-13 |
 | Round 5 — review + plan (ORST practice data released; real dataset comes at the event) | **done** — `NEXT_STEPS_R5.md`; measured: 78.9% empty cards, 8,879 false 2-hop links, citation corrected to FolkRank | 2026-09-13 |
-| Round 5 Tasks 1-3, 5 — RID-shaped `Entry`/`Sense`, `Importer` trait, Kaikki import, cache invalidation | not started (**critical path**) | — |
-| Round 5 Task 4 — `Sense` nodes in the graph (generalizes the Task 12/13 hand-patches) | not started | — |
-| Round 5 Tasks 6-10 — ศัพท์บัญญัติ subset, FolkRank citation, RID stub + runbook, UI/licence, re-measure | not started | — |
+| Round 5 Tasks 1-3, 5 — RID-shaped `Entry`/`Sense`, `Importer` trait, Kaikki import, cache invalidation | **done** — `7c0bdf6`/`022410f`/`d446d44`/`5a7c9cf`; 29,540 Kaikki entries | 2026-09-13 |
+| Round 5 Task 4 — `Sense` nodes in the graph | **done** (structural) then **rejected on review** (silently replaced PPR with edge counting) → **fixed in R5B A1** | 2026-09-13 |
+| Round 5 Task 7 — FolkRank citation fix | **done** — `c733acc` | 2026-09-13 |
+| **Round 5B A1** — restore Personalized PageRank on the sense-scoped graph (blocking) | **done, verified** — `6198086`; log-ratio PPR + freq tiebreak; p95 13.7ms; `ranking_is_not_edge_count` + `lookup_uses_personalized_pagerank` | 2026-09-13 |
+| **Round 5B A2** — recall/absence + cross-sense recount | **done, verified** — `e068bac`; KEEP 97.5%→100%, CUT 100%, `no_cross_sense_two_hop_pairs`=0 | 2026-09-13 |
+| **Round 5B A3** — `scripts/verify_r5.sh` (single source of truth) | **done** — `ebd9bb8`; prints every R5 number, no network | 2026-09-13 |
+| **Round 5B B1** — ศัพท์บัญญัติ (CoinedWord) demo subset | **done, verified** — `1d1a39f`; 39 terms cached once, `field`→8 disciplines, สนาม→7 equivalents | 2026-09-13 |
+| **Round 5B B2** — RID importer stub + `COMPETITION_DAY.md` | **done, verified** — `4078b6b`; 7 fixture tests, runbook run in 66s | 2026-09-13 |
+| **Round 5B C1** — UI + API licence accuracy | **done, verified** — `aeed967`; sense metadata + source/licence badges; 11-case XSS battery re-passed | 2026-09-13 |
+| **Round 5B C2** — re-measure & fix the pitch | **done, verified** — `2a6fc6c`; dead demo word replaced, coverage w/ denominators, BIBLE §6.4 matches reality | 2026-09-13 |
+| **Round 5B D1** — segmentation accuracy (optional) | **skipped by design** — see `VERIFY_R5.md` §4 (risk to demo, needs dataset fetch, deprioritized) | 2026-09-13 |
+| Round 5B — final report | **done** — `VERIFY_R5.md` at repo root | 2026-09-13 |
 | Day 2 — demo/submit | not started | — |
 
 **A real product crate now exists** (`wacha/`) in addition to the `poc/` feasibility harness. The
@@ -1270,3 +1279,117 @@ are 1-hop-through-a-shared-sense** (same-synset co-membership), which is exactly
 was measured on — so the figure now describes the shown output honestly for the first time. State it as
 "84.2% of the WordNet-derived synonym relations we show" — and it only covers the WordNet tier (seed = 100%
 audited; Wiktionary/CoinedWord tiers are separately provenance-tagged, not covered by that number).
+
+### 2026-09-13 (Round 5 review) — Tasks 1/2/3/5/7 accepted, Task 4 rejected on review
+
+Verification pass by the reviewing agent (ran the built binary and queried the source data directly; no
+code changed this session). Plan for the remainder: `NEXT_STEPS_R5B.md`.
+
+**Accepted, independently re-measured:**
+- Coverage 31.4% raw / **40.9% union** (72,135 vocab, 29,537 defined) — recount matched the agent's
+  41.0% within 7 words. Frequency-weighted: **93.9% of the top-1000** words now have a definition
+  (top-100: 100%). The "missed the 40% target" framing was wrong — it used the raw denominator; by the
+  denominator that describes a judge's experience the target is comfortably met.
+- Kaikki parse clean: 0 bad lines, 29,562 words / 43,852 glossed senses vs Kaikki's published 43,883.
+- Sense ordering + ลักษณนาม + per-field licence line verified live (`บ้าน` → "ที่อยู่อาศัย", หลัง/บ้าน,
+  `Kaikki (Wiktionary) · CC BY-SA`).
+- Citation fix **exceeded spec**: rather than deleting "Milne", the code and docs now carry an explicit
+  "earlier comment mis-attributed this — corrected 2026-09-13" note. That is more honest than removal;
+  the spec's acceptance criterion (no occurrences) was the wrong criterion.
+- Provenance mislabel fixed in two stages: `[ตรวจแล้ว]` no longer appears on auto-imported relations,
+  and `[Wiktionary (อัตโนมัติ)]` now labels Kaikki-derived ones correctly (confirmed `หย้าว`/`เหย้า`/
+  `กว้าน` are absent from WordNet and present in Kaikki's 35 synonyms for `บ้าน`).
+
+**Task 4 (`fa246bb`) rejected — structural goal met, but the ranking algorithm was silently replaced.**
+- Sense scoping itself works: `ครอบครัว` returns only `ที่บ้าน`/`บ้าน` via synset `08078020-n`,
+  `บ้านเกิด` is gone, and explanation paths now show the synset id.
+- **But `relations.rs:304` is `score: count as f32`** and `personalized_pagerank` has no caller —
+  `graph.rs:267`/`:342` are dead code. Scores collapsed to integers (1.000–4.000, previously 9.129 etc.),
+  and `บ้าน` now ranks archaic forms (`คฤห`, `คฤหา`) alphabetically at a tied 2.000.
+- This contradicts `PITCH.md:33` ("Personalized PageRank + BFS") and `PITCH.md:81`, which answers the
+  judges' "AI อยู่ตรงไหน" question with PageRank — and it means Task 7 corrected a citation for a
+  formula that no longer executes. Sense-scoping changes the *edge set*; PPR is the *ranking over it* —
+  they are compatible and PPR must be restored on the sense-scoped graph (R5B A1).
+- Plausible root cause to check first: sense nodes grew the graph and full-graph power iteration may have
+  become too slow per query. Sanctioned fix is bounded local PPR with the approximation documented — not
+  counting.
+- **Recall was never measured.** `รถยนต์ → ยานยนต์` is gone (different synsets, so the 2-hop path is
+  correctly cut) — but the two are genuinely close in Thai. Precision up, recall down; reporting only
+  "150,018 → 0" is one-sided. R5B A2 measures both against the Round 4 audited 47 pairs.
+- **`PITCH.md` demo word 3 is dead** — lines 118–119 script the `ยานยนต์ ⚠` beat that no longer exists.
+
+**Process note for future rounds:** the reviewing agent verified the *mechanism* of sense scoping but did
+not recount 150,018 → 0 independently, because doing so requires reimplementing the traversal. Claims like
+this should ship as a **test that recounts from the live graph and asserts 0** (R5B A2.4), not as a number
+in prose — it turns a re-derivation into a one-command check.
+
+**Next action:** execute `NEXT_STEPS_R5B.md` end-to-end unattended, then a single review pass against
+`scripts/verify_r5.sh` + `VERIFY_R5.md`.
+
+### 2026-09-13 (Round 5B) — finish R5 unattended: PPR restored, recall measured, ศัพท์บัญญัติ + RID, honest docs
+
+Executed `NEXT_STEPS_R5B.md` end-to-end in one unattended run. Every number here is from
+`wacha/scripts/verify_r5.sh`; the full report is `VERIFY_R5.md` at the repo root.
+
+**Why this round existed:** Task 4 (`fa246bb`) hit its structural goal (sense-scoping kills cross-synset
+leakage) but **silently replaced Personalized PageRank with edge counting** — scores collapsed to integers,
+archaic forms outranked common words, and `PITCH.md` described an algorithm that no longer ran. The review
+rejected it. R5B restores the ranking without reverting the fix, then measures the side Task 4 omitted
+(recall), then adds two data sources and makes every document true.
+
+**Phase A (blocking first):**
+- **A1 (`6198086`) — PPR restored.** Rebuilt `relations.rs` to feed the sense-group edges into a
+  `KnowledgeGraph`, compute **global PageRank once at build** (cached), and score each same-sense-group
+  co-member by the documented FolkRank log-ratio `log π_q − log π` per query. Frequency (`tnc_freq.txt`)
+  is a **documented tiebreaker** for near-equal PPR (so `คฤห`/`คฤหา` can't outrank common words). Runs
+  **full-graph** (not bounded) because measured **p95 = 13.7 ms** warm — far under the 200 ms budget, so
+  the sanctioned bounded-local-PPR fallback was unnecessary (documented in `BIBLE.md` §6.4). Tests
+  `ranking_is_not_edge_count` + `lookup_uses_personalized_pagerank` assert continuous scores and that
+  `graph.rs`'s PPR is actually called. `ครู → อาจารย์ 15.903 [ตรวจแล้ว]`; `ครอบครัว` still excludes
+  `บ้านเกิด`.
+- **A2 (`e068bac`) — recall measured both ways.** `count_cross_sense_pairs()` + test
+  `no_cross_sense_two_hop_pairs` recount from the live graph and assert **0** (the checkable form of
+  "150,018 → 0"). Against the 47 hand-audited pairs (CLI `audit`): KEEP-recall **97.5% → 100%**,
+  CUT-absence **100% → 100%** (before via a `c733acc` worktree). Honest caveat: `รถยนต์ → ยานยนต์` was
+  present before, absent after — a genuine out-of-audit multi-hop recall cost of sense-scoping (different
+  synsets), reported plainly.
+- **A3 (`ebd9bb8`) — `scripts/verify_r5.sh`.** One command prints every R5 number (tests, graph size,
+  coverage with all denominators, cross-sense count, recall/absence, cold/warm start, p95 latency, 6
+  review-word lookups, katgpt-clean + PPR-caller confirmations). Runnable from `wacha/`, no network.
+
+**Phase B (new capability):**
+- **B1 (`1d1a39f`) — ศัพท์บัญญัติ.** Network was reachable, so B1 ran (the skip path was for failure).
+  `scripts/fetch_coined_word.sh` fetched **39** curated English terms once (≥500 ms/req, single-thread,
+  stop-on-non-200, cache, never re-fetch — re-run = **0** requests). `CoinedWordImporter` parses the
+  cached HTML into one `Sense` per (Thai term, discipline) with `Provenance{CoinedWord, OrstEducational,
+  Confirmed}`. `lookup สนาม` → 7 discipline equivalents `[ศัพท์บัญญัติ (ราชบัณฑิตฯ)]` ranked above WordNet;
+  CLI `field field` reproduces the §1.2 table (one English word → 8 disciplines).
+- **B2 (`4078b6b`) — RID stub + runbook.** `RidImporter` parses the §1.1 RID layout (homographs,
+  `[POS]`, `(สาขาวิชา)`, `{register}`, `(ป.…; ส.…)` etymology, ลูกคำ, `ดู`) from hand-copied fair-use
+  fixtures; wired into `load_from_dir` (`data/rid/` auto-loads at highest merge priority).
+  `COMPETITION_DAY.md` executed end-to-end vs fixtures in **66 s** (< 10 min target).
+
+**Phase C (make the docs true):**
+- **C1 (`aeed967`) — UI + API licence.** `/api/lookup` entry JSON now carries classifiers/subject/
+  register/source/license; `index.html` renders them + a source/licence badge, with a `sourceBadge()`
+  helper for all four sources — all `esc()`'d. Re-ran the 11-case adversarial escaping battery live: all
+  pass. `API.md` gained a per-field licence table, dropped the RID-open-data implication, and states the
+  combined dataset is **CC BY-SA** (Kaikki) with the ORST layers labelled educational/non-commercial.
+- **C2 (`2a6fc6c`) — pitch re-measured.** Dead demo word `รถยนต์→ยานยนต์` replaced with the ศัพท์บัญญัติ
+  `สนาม`/`field` closing beat + the 150,018→0 sense-scoping story; coverage stated with **all three
+  denominators** (raw 41.0%, freq-weighted 100/93.9/81.3%); `BIBLE.md` §6.4 rewritten to describe the
+  ranking that actually runs (log-ratio PPR, cached global π, freq tiebreak, full-graph). Every demo word
+  re-verified live.
+
+**Final numbers (verify_r5.sh, 2026-09-13):** 85 tests pass; graph 57,061 entities / 74,215 triples /
+29,759 sense nodes; 72,175 searchable words / 29,601 defined entries; coverage raw **41.0%**,
+freq-weighted **100 / 93.9 / 81.3%** (top-100/1000/5000); cross-sense pairs **0**; KEEP-recall **40/40**,
+CUT-absence **7/7**; cold **61.5 s** / warm **1.45 s**; p95 **13.7 ms**; `katgpt-rs` untouched.
+
+**D1 (segmentation accuracy) skipped by design** — optional, deprioritized, and changing the segmenter
+unattended risks demo regressions + needs a dataset fetch (see `VERIFY_R5.md` §4). No STOP condition was
+hit anywhere; A1's counting-fallback did not fire.
+
+**Guardrails honored:** one commit per task (each leaves `wacha-web` serving), no silent substitution
+(the A1 blocker was solved as specified), no mass-scrape, `README.md` (a concurrent session's uncommitted
+edit) left untouched.
