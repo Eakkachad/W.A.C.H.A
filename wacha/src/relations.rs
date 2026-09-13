@@ -147,6 +147,18 @@ pub struct RelatedWord {
     pub confidence: RelationConfidence,
 }
 
+impl RelatedWord {
+    /// Compact source tag for dumps (patk): se/cw/wn/wk.
+    pub fn source_short(&self) -> &'static str {
+        match self.source {
+            RelationSource::Seed => "se",
+            RelationSource::CoinedWord => "cw",
+            RelationSource::WordNet => "wn",
+            RelationSource::Wiktionary => "wk",
+        }
+    }
+}
+
 impl RelationEngine {
     pub fn from_dictionary(dict: &Dictionary) -> Self {
         Self::build(dict, None)
@@ -393,7 +405,7 @@ impl RelationEngine {
         // synset (tier ≥1) just because a 2-member group concentrates PPR mass.
         let min_p = 1e-6f32;
         // (wid, tier, ppr, best_sense_idx)
-        let mut ranked: Vec<(usize, u8, f32, usize)> = shared
+        let mut ranked: Vec<(usize, u8, f32, u8, usize)> = shared
             .into_iter()
             .map(|(w, (sidx, src_set, max_gsize))| {
                 let ppr = match self.graph.entity_id(&self.words[w]) {
@@ -405,33 +417,57 @@ impl RelationEngine {
                     None => f32::NEG_INFINITY,
                 };
                 let tier = Self::corroboration_tier(src_set, max_gsize);
-                (w, tier, ppr, sidx)
+                let band = Self::precision_band(tier);
+                (w, band, ppr, tier, sidx)
             })
             .collect();
 
         ranked.sort_by(|a, b| {
-            // Primary: corroboration tier descending (ORST/multi-source/
-            // single-corroborated/isolated).
-            b.1.cmp(&a.1)
-                // Secondary: PPR score descending.
+            // Round 7 T1 — rank by MEASURED-precision band, then corpus
+            // frequency (promoted to a primary signal: real lexicography orders
+            // synonyms by frequency of use), then FolkRank PPR, then alpha.
+            //
+            // `WACHA_RANK=tier` reverts to the R6 tier-number ranking purely for
+            // the T1 before/after precision@5 measurement (BENCHMARKS/VERIFY).
+            // Production always uses the band ranking.
+            let fa = self.freq.get(&self.words[a.0]).copied().unwrap_or(0);
+            let fb = self.freq.get(&self.words[b.0]).copied().unwrap_or(0);
+            // Default (Round 7): band → FolkRank PPR → corpus frequency. The plan
+            // proposed freq as the PRIMARY signal, but the held-out precision@5
+            // measurement (T1, seed 0x52372026) showed freq-primary DROPS p@5
+            // (75.3% vs 79.3%) — it pulls in frequent-but-loose words (น้ำ for
+            // น้ำมันมนตร์, หัว for หัวคันนา). Per the T1 rule ("ships only if p@5
+            // improves or holds") we keep PPR ahead of frequency; the band
+            // re-basing (the actual fix for the measured tier inversion) stays.
+            // Toggles for the before/after measurement only:
+            //   WACHA_RANK=tier    → R6 tier-number ranking (the "before")
+            //   WACHA_RANK=freq    → band → freq → PPR (measured, rejected)
+            let mode = std::env::var("WACHA_RANK").unwrap_or_default();
+            let use_tier = mode == "tier";
+            let key_a = if use_tier { a.3 } else { a.1 };
+            let key_b = if use_tier { b.3 } else { b.1 };
+            let ppr_cmp = |a: &(usize, u8, f32, u8, usize), b: &(usize, u8, f32, u8, usize)| {
+                let ord = b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal);
+                if (a.2 - b.2).abs() > PPR_TIE_EPS { ord } else { std::cmp::Ordering::Equal }
+            };
+            key_b.cmp(&key_a) // Primary: band (or tier under the toggle) descending.
                 .then_with(|| {
-                    let ord = b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal);
-                    if (a.2 - b.2).abs() > PPR_TIE_EPS { ord } else { std::cmp::Ordering::Equal }
+                    if mode == "freq" {
+                        // Measured-and-rejected variant: band → freq → PPR.
+                        fb.cmp(&fa).then_with(|| ppr_cmp(a, b))
+                    } else {
+                        // Default + `tier`: PPR before frequency.
+                        ppr_cmp(a, b).then_with(|| fb.cmp(&fa))
+                    }
                 })
-                // Tertiary (near-equal PPR): higher frequency wins.
-                .then_with(|| {
-                    let fa = self.freq.get(&self.words[a.0]).copied().unwrap_or(0);
-                    let fb = self.freq.get(&self.words[b.0]).copied().unwrap_or(0);
-                    fb.cmp(&fa)
-                })
-                // Quaternary: alphabetical (deterministic).
+                // Deterministic final tiebreak.
                 .then_with(|| self.words[a.0].cmp(&self.words[b.0]))
         });
 
         ranked
             .into_iter()
             .take(top_k)
-            .map(|(wid, _tier, ppr, sidx)| {
+            .map(|(wid, _band, ppr, _tier, sidx)| {
                 let sg = &self.senses[sidx];
                 let source = sg.source;
                 let confidence = self.classify_confidence(qid, wid, source);
@@ -467,6 +503,25 @@ impl RelationEngine {
                 "(คำพ้องบัญญัติในสาขาเดียวกัน — ราชบัณฑิตยสภา)".to_string()
             }
         }
+    }
+
+    /// Query words that have at least `min` co-members (candidate pool for the
+    /// precision@5 sample). Deterministic (word order).
+    pub fn words_with_min_related(&self, min: usize) -> Vec<String> {
+        use std::collections::HashSet;
+        let mut out = Vec::new();
+        for qid in 0..self.words.len() {
+            let mut co: HashSet<usize> = HashSet::new();
+            for &sidx in &self.word_senses[qid] {
+                for &m in &self.senses[sidx].members {
+                    if m != qid { co.insert(m); }
+                }
+            }
+            if co.len() >= min {
+                out.push(self.words[qid].clone());
+            }
+        }
+        out
     }
 
     /// A one-hot-ish bit per source, so a candidate's attesting sources can be
@@ -507,6 +562,31 @@ impl RelationEngine {
         }
     }
 
+    /// **Measured-precision band (Round 7 T1)** — the *ranking* key, replacing the
+    /// raw construction tier. R6's Phase-N audit measured precision per tier and
+    /// found the tier NUMBER is anti-correlated with quality: tier 1
+    /// (single-source synset ≥3) is the WORST (55%), below the isolated-pair
+    /// tier 0 (80%). So we no longer rank by tier number; we rank by the band the
+    /// audit measured, collapsing tiers whose precision is statistically
+    /// indistinguishable at n=40 (82.5% vs 80% overlap in CI):
+    ///
+    /// | band | tiers | measured precision |
+    /// |------|-------|--------------------|
+    /// | 2 (A, high) | tier 2 — multi-source agreement        | 92.5% |
+    /// | 1 (B, mid)  | tier 3 + tier 0 — ORST, isolated pair   | ~80–82% |
+    /// | 0 (C, low)  | tier 1 — single-source synset ≥3        | 55% |
+    ///
+    /// This is the honest reversal: our own heuristic (bigger synset ⇒ more
+    /// trustworthy) was measured wrong, so the ranking follows the evidence, not
+    /// the intuition. See `BIBLE.md` §6.4 / §6.6.
+    fn precision_band(tier: u8) -> u8 {
+        match tier {
+            2 => 2,          // multi-source agreement — highest measured precision
+            3 | 0 => 1,      // ORST-attested + isolated pair — mid, indistinguishable
+            _ => 0,          // tier 1: single-source synset ≥3 — lowest (55%)
+        }
+    }
+
     /// Public accessor for the corroboration tier of a (query, candidate) pair,
     /// for the Phase N precision-by-tier measurement. Returns `None` if the two
     /// words share no sense group.
@@ -530,6 +610,12 @@ impl RelationEngine {
         } else {
             None
         }
+    }
+
+    /// The measured-precision band (0=C..2=A) of a (query, candidate) pair — the
+    /// ranking key (Round 7 T1). `None` if the two words share no sense group.
+    pub fn pair_band(&self, query: &str, other: &str) -> Option<u8> {
+        self.pair_tier(query, other).map(Self::precision_band)
     }
 
     /// Enumerate every distinct unordered related pair (a < b by word id) in the
@@ -860,51 +946,45 @@ mod tests {
     }
 
     #[test]
-    fn corroborated_outranks_isolated() {
-        // P2/N regression: a candidate attested by a multi-member WordNet synset
-        // (corroboration tier ≥1) must outrank an isolated 2-member Wiktionary
-        // pair (tier 0), even though the 2-member group concentrates more PPR
-        // mass. Synthetic reproduction of the บ้าน case:
-        //   - บ้านทดสอบ shares a 4-member WordNet synset with เรือนทดสอบ (tier 1)
-        //   - บ้านทดสอบ shares an isolated 2-member Kaikki pair with คหทดสอบ (tier 0)
+    fn ranking_follows_measured_bands_not_tier_number() {
+        // Round 7 T1 — the honest reversal. The R6 audit measured tier 1
+        // (single-source synset ≥3) at 55% precision, BELOW the isolated-pair
+        // tier 0 at 80%. So ranking must NOT promote a tier-1 synset member over
+        // an isolated-pair member on tier number alone. With corpus frequency
+        // held equal (no freq table), a band-B member (isolated pair, tier 0)
+        // must outrank a band-C member (single-source synset, tier 1).
         use crate::dictionary::{Entry, License, Pos, Provenance, Relation, Sense, Source};
         use crate::wordnet::WordNet;
 
-        // A WordNet with one 4-member synset containing the query.
-        let wn = WordNet::from_synsets_tsv("syn-1\tบ้านทดสอบ\tเรือนทดสอบ\tนิวาสทดสอบ\tบ้านช่องทดสอบ\n");
-
+        // WordNet gives the query a 3-member single-source synset (tier 1 = band C).
+        let wn = WordNet::from_synsets_tsv("syn-1\tหัวคำถาม\tสมาชิกซินเซต\tสมาชิกซินเซตสอง\n");
         let mut dict = Dictionary::new();
         for e in seed_entries() {
             dict.insert(e);
         }
-        // A Kaikki entry giving บ้านทดสอบ an isolated 2-member pair with คหทดสอบ.
-        let mut kaikki = Entry::headword_only("บ้านทดสอบ");
+        // A Kaikki entry gives the query an isolated 2-member pair (tier 0 = band B).
+        let mut kaikki = Entry::headword_only("หัวคำถาม");
         kaikki.senses.push(Sense {
-            pos: Some(Pos::Nam),
-            subject: None,
-            register: None,
-            definition: "ที่อยู่อาศัย (Kaikki)".into(),
-            examples: vec![],
-            classifiers: vec![],
+            pos: Some(Pos::Nam), subject: None, register: None,
+            definition: "def".into(), examples: vec![], classifiers: vec![],
             provenance: Provenance { source: Source::Kaikki, license: License::CcBySa, confidence: RelationConfidence::Unverified },
         });
-        kaikki.relations.push((Relation::Synonym, "คหทดสอบ".into()));
+        kaikki.relations.push((Relation::Synonym, "คู่โดดเดี่ยว".into()));
         dict.insert(kaikki);
 
         let e = RelationEngine::from_dictionary_with_wordnet(&dict, &wn);
-        let rel = e.related("บ้านทดสอบ", 20);
+        // Bands: isolated pair = B (1); single-source synset = C (0).
+        assert_eq!(e.pair_band("หัวคำถาม", "คู่โดดเดี่ยว").unwrap(), 1, "isolated pair -> band B");
+        assert_eq!(e.pair_band("หัวคำถาม", "สมาชิกซินเซต").unwrap(), 0, "single-source synset -> band C");
+        let rel = e.related("หัวคำถาม", 20);
         let pos = |w: &str| rel.iter().position(|r| r.word == w);
-        let ruean = pos("เรือนทดสอบ");
-        let kh = pos("คหทดสอบ");
-        assert!(ruean.is_some(), "the WordNet-synset member must appear");
-        assert!(kh.is_some(), "the Kaikki-pair member must appear");
+        let iso = pos("คู่โดดเดี่ยว");
+        let syn = pos("สมาชิกซินเซต");
+        assert!(iso.is_some() && syn.is_some(), "both must appear");
         assert!(
-            ruean.unwrap() < kh.unwrap(),
-            "corroborated WordNet synset member (tier 1) must outrank isolated Kaikki pair (tier 0)"
+            iso.unwrap() < syn.unwrap(),
+            "band B (isolated, measured 80%) must outrank band C (single-source synset, measured 55%) at equal frequency — the reversal"
         );
-        // Tier check.
-        assert!(e.pair_tier("บ้านทดสอบ", "เรือนทดสอบ").unwrap() >= 1);
-        assert_eq!(e.pair_tier("บ้านทดสอบ", "คหทดสอบ").unwrap(), 0);
     }
 
     #[test]

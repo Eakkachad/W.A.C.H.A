@@ -64,6 +64,7 @@ fn main() {
             "stats" => print_stats(&engine),
             "audit" => print_audit(&engine),
             "corroboration" => print_corroboration(&engine),
+            "patk" => print_patk(&engine, rest),
             "field" => {
                 let english = rest.join(" ");
                 if english.is_empty() {
@@ -354,6 +355,33 @@ fn print_corroboration(engine: &Engine) {
             let names = wacha::relations::RelationEngine::source_set_names(p.src_set).join("+");
             println!("  {} ⟷ {}   [{}]", p.a, p.b, names);
         }
+    }
+}
+
+/// T1 precision@5 sampling: a deterministic seeded sample of query words that
+/// have ≥5 related results, each with its current top-5 ranked list, for
+/// hand-audit. The seed here is DIFFERENT from the tier-audit seed so precision
+/// is measured on data the bands were NOT fitted to. Usage: `patk [n] [seed]`.
+fn print_patk(engine: &Engine, args: &[String]) {
+    let n: usize = args.first().and_then(|s| s.parse().ok()).unwrap_or(30);
+    let seed: u64 = args.get(1).and_then(|s| u64::from_str_radix(s.trim_start_matches("0x"), 16).ok())
+        .unwrap_or(0x5237_2026); // R7 held-out seed (≠ 0x4e362026 tier-fit seed)
+    // Candidate query words: those with ≥5 related results. Enumerate over the
+    // relation graph's words deterministically.
+    let mut candidates: Vec<String> = engine.relation_words_with_min_related(5);
+    candidates.sort();
+    // Deterministic shuffle by hashing (seed, index).
+    let mut idx: Vec<usize> = (0..candidates.len()).collect();
+    idx.sort_by_key(|&i| {
+        let mut h = seed ^ (i as u64).wrapping_mul(0x9E3779B97F4A7C15);
+        h ^= h >> 33; h = h.wrapping_mul(0xff51afd7ed558ccd); h ^= h >> 33; h
+    });
+    println!("precision@5 sample: n={n} seed={seed:#x} (candidates with ≥5 related: {})", candidates.len());
+    for &i in idx.iter().take(n) {
+        let q = &candidates[i];
+        let rel = engine.related_ranked(q, 5);
+        let items: Vec<String> = rel.iter().map(|r| format!("{}[{}]", r.word, r.source_short())).collect();
+        println!("  {q}: {}", items.join(", "));
     }
 }
 

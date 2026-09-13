@@ -351,6 +351,17 @@ impl Engine {
         self.relations.enumerate_pairs()
     }
 
+    /// The ranked related words for `query` (top_k). Facade over the engine.
+    pub fn related_ranked(&self, query: &str, top_k: usize) -> Vec<crate::relations::RelatedWord> {
+        self.relations.related(query, top_k)
+    }
+
+    /// Query words that have at least `min` related results — the candidate pool
+    /// for the precision@5 sample (T1).
+    pub fn relation_words_with_min_related(&self, min: usize) -> Vec<String> {
+        self.relations.words_with_min_related(min)
+    }
+
     /// Frequency-weighted definition coverage (A3): of the top-`n` most frequent
     /// Thai words (by `tnc_freq.txt`), how many have a non-empty definition.
     /// Returns (defined, n_considered, pct). This answers "does a judge typing a
