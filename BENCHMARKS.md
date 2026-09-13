@@ -93,22 +93,48 @@ trie (pattern: เปล/เปร clusters), a scale-triggered collision-reloca
 
 ---
 
-## 4. Cross-source corroboration precision (Phase N, measured)
+## 4. Cross-source corroboration precision (Phase N, measured) — with CIs and scope (R7 T3)
 
 Stratified random sample, 40 pairs/tier, fixed seed `0x4e362026`, single-rater hand-audit
 (`wacha/data/corroboration_audit_2026-09-14.md`). Tier definitions pre-registered in
-`relations::corroboration_tier` before the audit.
+`relations::corroboration_tier` before the audit. **n=40 per tier ⇒ 95% CI ≈ ±10–15 pp** (Wilson).
 
-| Tier | n | precision |
+| Tier | n | precision (count) | 95% CI (approx) |
+|---|---|---|---|
+| 2 multi-source (≥2 distinct) | 40 | **92.5%** (37/40) | ~80–98% |
+| 3 ORST-attested (post CoinedWord same-discipline fix) | 40 | ~82.5% (33/40) | ~68–91% |
+| 0 isolated pair | 40 | ~80% (32/40) | ~65–90% |
+| 1 single-source corroborated (synset ≥3) | 40 | **~55%** (22/40) | ~39–70% |
+
+**What separates and what doesn't (honest reading of the CIs):**
+- **55% vs 80% separates** — the CIs (≤70% vs ≥65%) barely touch and the 25-pp gap is the real,
+  actionable finding. It drove the T1 band re-basing and the T2 flag reversal.
+- **92.5% vs 82.5% does NOT clearly separate** — the CIs overlap heavily. So tier 3 and tier 0 are
+  merged into one band (B), and 92.5% is reported as "highest, but within sampling error of ~82%".
+
+**Scope — always quoted with the number:** the 92.5% multi-source figure covers **1,074 of 158,045
+distinct related pairs (0.68%)**. It is a statement about the rare agreement set, not the whole graph.
+
+**Corpus shift (T3):** the relation graph is now **~84% Wiktionary-derived** — Wiktionary participates in
+**132,631 of 158,045 pairs**; WordNet 26,225; ศัพท์บัญญัติ 120; seed 145. Only **0.68%** are multi-source:
+Thai WordNet and Wiktionary encode largely *disjoint* synonym knowledge, so combining them adds coverage
+more than redundancy, and the rare agreements (band A) are disproportionately trustworthy.
+
+### 4.1 Ranking quality — precision@5 on a held-out sample (R7 T1)
+
+Fresh stratified sample, **seed `0x52372026` (different from the tier-fit seed** so this is not scored on
+data the bands were fitted to), 30 query words with ≥5 related, single-rater hand-audit of the top-5:
+
+| ranking | precision@5 | verdict |
 |---|---|---|
-| 2 multi-source (≥2 distinct) | 40 | **92.5%** ← headline |
-| 3 ORST-attested (post CoinedWord same-discipline fix) | 40 | ~82.5% (was 52.5% pre-fix) |
-| 0 isolated pair | 40 | ~80% |
-| 1 single-source corroborated (synset ≥3) | 40 | ~55% |
+| R6 tier-number (before) | 119/150 = **79.3%** | baseline |
+| **band → PPR → freq (R7 shipped)** | 119/150 = **79.3%** | holds — SHIPPED |
+| band → freq → PPR (freq-primary, plan's proposal) | 113/150 = **75.3%** | measured worse — REJECTED |
 
-Source-overlap (all 158,287 distinct pairs): wiktionary 132,631 · wordnet 26,225 · coined_word 364 ·
-seed 145. **Only 1,076 pairs (0.68%) are multi-source** — Thai WordNet and Wiktionary encode largely
-disjoint synonym knowledge, and where they agree, precision is highest (92.5%).
+Frequency-primary was the plan's proposal; it was **measured and rejected** because it pulls
+frequent-but-loose words (น้ำ/น้ำมัน for น้ำมันมนตร์, หัว/หัวใจ for หัวคันนา) into the top 5. Reproduce
+both via `WACHA_RANK={tier,freq} wacha --data ../data patk 30`.
+
 
 ---
 

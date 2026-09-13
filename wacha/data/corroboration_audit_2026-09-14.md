@@ -8,6 +8,11 @@ CUT = not a true synonym. **Single-rater audit** (the executing agent) — noted
 
 ## Summary — precision by pre-registered tier (seed 0x4e362026)
 
+**95% CIs (Round 7 T3, n=40 ⇒ ~±10–15 pp, Wilson):** 92.5%=37/40 (~80–98%), 82.5%=33/40 (~68–91%),
+80%=32/40 (~65–90%), 55%=22/40 (~39–70%). **55% vs 80% separates** (the actionable finding, drove T1/T2);
+**92.5% vs 82.5% does NOT clearly separate** (CIs overlap) — hence tiers 3+0 are one band. The 92.5% figure
+covers only **1,074 of 158,045 pairs (0.68%)** — always quote the scope with the number.
+
 | Tier | definition | n | KEEP | precision |
 |---|---|---|---|---|
 | 3 | ORST-attested (Seed + CoinedWord) | 40 | 21 | **52.5%** (pre-fix) |
