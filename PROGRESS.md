@@ -49,6 +49,13 @@ files too and note it here — this log is the record of *that it changed*, thos
 | **Round 5B C2** — re-measure & fix the pitch | **done, verified** — `2a6fc6c`; dead demo word replaced, coverage w/ denominators, BIBLE §6.4 matches reality | 2026-09-13 |
 | **Round 5B D1** — segmentation accuracy (optional) | **skipped by design** — see `VERIFY_R5.md` §4 (risk to demo, needs dataset fetch, deprioritized) | 2026-09-13 |
 | Round 5B — final report | **done** — `VERIFY_R5.md` at repo root | 2026-09-13 |
+| **Round 6 P1** — vocab_hash O(n) no-sort | **done** — `aa20ab2`; 3.7ms vs 9.6ms (2.6×); honest finding: hash wasn't the ~1s bottleneck | 2026-09-14 |
+| **Round 6 P2/N** — corroboration-tier ranking + measured precision | **done** — `deb984a`+`3157a3e`; บ้าน→เรือน #1; tier-2 92.5%; CoinedWord cross-discipline bug fixed | 2026-09-14 |
+| **Round 6 P3** — honest Kaikki label / stale timings / gold-set scope | **done** — `4deed80` | 2026-09-14 |
+| **Round 6 S1** — dense-alphabet trie | **STOPPED (documented)** — `d3de78a`; 6.9× build but differential test failed → not merged, byte path kept | 2026-09-14 |
+| **Round 6 W** — offline WASM flagship | **done** — `3b5d78d`; 3.17MB gzip, seg byte-identical to native, PWA, reduced dataset | 2026-09-14 |
+| **Round 6 C/D1/E1** — reverse dict / seg-F1 / allocator | not started (optional; honest-scoping — spine finished cleanly instead) | — |
+| **Round 6** — deliverables | **done** — `VERIFY_R6.md` + `BENCHMARKS.md` | 2026-09-14 |
 | Day 2 — demo/submit | not started | — |
 
 **A real product crate now exists** (`wacha/`) in addition to the `poc/` feasibility harness. The
@@ -1393,3 +1400,52 @@ hit anywhere; A1's counting-fallback did not fire.
 **Guardrails honored:** one commit per task (each leaves `wacha-web` serving), no silent substitution
 (the A1 blocker was solved as specified), no mass-scrape, `README.md` (a concurrent session's uncommitted
 edit) left untouched.
+
+### 2026-09-14 (Round 6) — correctness fixes, the corroboration novelty, S1 stop, and the WASM flagship
+
+Executed `NEXT_STEPS_R6.md` (incl. the ADDENDUM) unattended. Spine **P1 → P2/N → P3 → S1 → W** complete.
+Full report: `VERIFY_R6.md`; all numbers: `BENCHMARKS.md`. Optional C/D1/E1 left for a future round per the
+plan's honest-scoping note (finish the spine cleanly > leave phases half-done).
+
+**P1 (`aa20ab2`) — vocab_hash O(n), no sort.** Replaced the sort-72k-strings-per-startup hash with an
+order-independent commutative one (per-word FNV-1a folded via wrapping-add ⊕ xor + count/length mix,
+dedup via a hash set). Measured **3.7 ms vs 9.6 ms (2.6×)**, under the 30 ms target. **Honest finding
+(reported, not chased):** vocab_hash was *not* the ~1 s start-up cost the baseline attributed to it —
+timing shows the ~1 s is the RelationEngine build (global PageRank recompute), which S2 would cache.
+
+**P2/N (`deb984a` + `3157a3e`) — the ranking inversion, fixed principledly and measured.** Bug: a 2-member
+Kaikki synonym pair concentrated all PPR mass on one neighbour while a 4-member WordNet synset spread it,
+so *less* corroborated evidence scored *higher* — `บ้าน` returned 8 identical-score Wiktionary pairs and
+`เรือน` (the common synonym, in a genuine 4-member synset) didn't appear at all. Fixed via Phase N:
+tag each pair with the **set** of attesting sources + largest group size, rank by a **pre-registered
+corroboration tier** (3 ORST · 2 multi-source ≥2 · 1 single-source-corroborated synset≥3 · 0 isolated)
+before PPR. `บ้าน`→`เรือน` now #1; `ครู`/`สุนัข` lead with seed; `ครอบครัว` still excludes `บ้านเกิด`;
+cross_sense 0; KEEP 40/40. Then **measured** it (the novelty): stratified sample, 40/tier, fixed seed
+`0x4e362026`, single-rater hand-audit (`data/corroboration_audit_2026-09-14.md`). **Tier-2 multi-source
+agreement = 92.5% precision** — far better than the old degree signal (85.1 vs 81.8), validating the
+cross-source thesis. Source overlap tiny: **0.68%** of 158,287 pairs are multi-source (Thai WordNet and
+Wiktionary encode largely disjoint synonyms). Anomalies reported not hidden: tier-1 (55%) < tier-0 (80%)
+because Kaikki related/derived lists are thematic; tier-3 was polluted (52.5%) by a real CoinedWord bug
+(cross-discipline synonym links) — **fixed** to same-discipline only → **82.5%** post-fix (509→265 pairs).
+
+**P3 (`4deed80`) — three honesty fixes.** (1) Kaikki sense-group explanation no longer over-claims a
+sense grouping (per-source label; WordNet keeps synset id, Wiktionary says "คำพ้องระดับคำ — Wiktionary
+ไม่ได้ระบุว่าเป็นความหมายใด"). (2) PITCH stale "cold ~43วิ → warm ~10ms" → 58s/1.4s/p95 14ms. (3) BIBLE §8
+KEEP-recall 40/40 scope note (47 seed-adjacent pairs; doesn't capture รถยนต์→ยานยนต์).
+
+**S1 (`d3de78a`) — STOPPED per the stop rule.** Symbol-keyed dense-alphabet trie spike: **6.9× cold build
+(58.3→8.5 s)**, 2× smaller arrays — over the 3× bar. BUT the non-negotiable differential test **failed**
+(23/62,107 words segment differently, เปล/เปร pattern — scale-triggered collision-relocation bug in the
+port). Not integrated; byte path kept. Spike retained, compiled, small-scale unit-tested, wired to nothing.
+
+**W (`3b5d78d`) — the flagship: offline WASM.** Whole engine on `wasm32`, in a browser tab, no backend/
+GPU/network after load. Raw `extern "C"` ABI (no wasm-bindgen tooling on the box). Engine from an embedded
+prebuilt segmenter cache (skips the ~200 s in-browser build). **Reduced dataset** (segmenter + seed +
+WordNet, no 82 MB Kaikki — UI says so). PWA. Measured via `node`: **3.17 MB gzip** (10.83 MB raw), ~8 s
+one-time load, **segmentation byte-identical to the native CLI** on all 10 PITCH demo words. Real-browser
+airplane-mode test documented as needing manual verification; the node harness (empty imports) proves the
+module makes no host calls.
+
+**Final:** 89 tests pass; graph 57,061 entities / 73,025 triples / 29,353 sense nodes; cross_sense 0;
+KEEP 40/40; warm ~1.09 s; p95 13.9 ms; WASM 3.17 MB gzip. `katgpt-rs` untouched; `README.md` (concurrent
+session) not committed; one commit per task, each leaving the product demoable.
