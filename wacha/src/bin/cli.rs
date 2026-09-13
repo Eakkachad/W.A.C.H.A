@@ -179,6 +179,22 @@ fn print_lookup(_engine: &Engine, r: &Lookup, query: &str) {
         Some(e) => {
             println!("\nคำ: {}  ({})", e.word, e.pos);
             println!("นิยาม: {}", e.definition);
+            if !e.classifiers.is_empty() {
+                println!("ลักษณนาม: {}", e.classifiers.join(", "));
+            }
+            let mut tags = Vec::new();
+            if let Some(sub) = &e.subject {
+                tags.push(format!("สาขา: {sub}"));
+            }
+            if let Some(reg) = &e.register {
+                tags.push(format!("ทะเบียนคำ: {reg}"));
+            }
+            if !tags.is_empty() {
+                println!("{}", tags.join("  ·  "));
+            }
+            if !e.source.is_empty() {
+                println!("  (ที่มานิยาม: {} · {})", e.source, e.license);
+            }
         }
         None => {
             println!("\n(ไม่พบนิยามของคำนี้ในพจนานุกรม — no dictionary entry)");

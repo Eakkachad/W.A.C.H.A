@@ -1181,3 +1181,20 @@ graph but read as `wordnet` (auto-extracted), matching their honest provenance.
 **Verified live:** `บ้าน` related now all `wordnet/confirmed` (was `seed`); `ครู→อาจารย์` still correctly
 `seed` (real hand-verified relation preserved). 68 tests pass (1 new:
 `non_seed_entry_relations_are_not_tagged_seed`).
+
+### 2026-09-13 (Round 5 · fix) — sense ordering + show ลักษณนาม / register / subject / source
+
+Two small display fixes in the merge + CLI:
+- **Sense ordering:** `merge`'s `sort_senses` was breaking source-priority ties by **alphabetical
+  definition text**, which buried the canonical sense (e.g. `บ้าน` showed "ถิ่นที่มีมนุษย์อยู่" instead of
+  Wiktionary's first sense "ที่อยู่อาศัย"). Changed to a **stable** sort by source-priority only, preserving
+  each source's own most-important-first sense order. Still deterministic (merge input order is
+  deterministic) — the `merge_is_deterministic_across_runs` test still passes.
+- **Richer entry display:** `EntryView` gained `classifiers`, `register`, `subject`, `source`, `license`
+  (from the primary sense). CLI `lookup` now shows `ลักษณนาม:`, a สาขา/ทะเบียนคำ line, and a
+  `(ที่มานิยาม: … · <licence>)` line.
+
+**Verified live:** `lookup บ้าน` → นิยาม "ที่อยู่อาศัย" (canonical, was mis-ordered) · `ลักษณนาม: หลัง, บ้าน`
+(the Task-3 acceptance item, now actually displayed) · `(ที่มานิยาม: Kaikki (Wiktionary) · CC BY-SA)`.
+68 tests pass; clean build. (Note: a transient test-build break from dropping a `use` was caught by
+running `cargo test` to a file and reading exit=101 — the grep had masked it; fixed before commit.)

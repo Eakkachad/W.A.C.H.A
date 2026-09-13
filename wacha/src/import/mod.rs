@@ -9,7 +9,7 @@
 //! Dependency-light by design: errors are `Box<dyn Error>` (no `anyhow`), file
 //! reading is `std::fs` / streaming.
 
-use crate::dictionary::{Entry, Sense, Source};
+use crate::dictionary::{Entry, Source};
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::path::Path;
@@ -161,25 +161,20 @@ fn merge_into(existing: &mut Entry, incoming: Entry) {
     }
 }
 
-/// Sort an entry's senses deterministically: highest-priority source first,
-/// then by POS marker, then by subject tag, then by definition text.
+/// Order an entry's senses deterministically: highest-priority source first,
+/// and — crucially — **preserve each source's own sense order within a tier**
+/// (a *stable* sort, no alphabetical tiebreak). Wiktionary/RID list their senses
+/// most-important-first; alphabetizing by definition text (as an earlier version
+/// did) buried the canonical sense (e.g. `บ้าน`'s "ที่อยู่อาศัย" behind
+/// "ถิ่นที่มีมนุษย์อยู่"). Input order is deterministic (sources merged in
+/// priority order), so a stable sort is deterministic too.
 fn sort_senses(e: &mut Entry) {
     e.senses.sort_by(|a, b| {
         b.provenance
             .source
             .priority()
             .cmp(&a.provenance.source.priority())
-            .then_with(|| pos_key(a).cmp(&pos_key(b)))
-            .then_with(|| subject_key(a).cmp(&subject_key(b)))
-            .then_with(|| a.definition.cmp(&b.definition))
     });
-}
-
-fn pos_key(s: &Sense) -> String {
-    s.pos.map(|p| p.marker().to_string()).unwrap_or_default()
-}
-fn subject_key(s: &Sense) -> String {
-    s.subject.as_ref().map(|s| s.tag().to_string()).unwrap_or_default()
 }
 
 fn dedup_extend_string(dst: &mut Vec<String>, src: Vec<String>) {
@@ -193,7 +188,7 @@ fn dedup_extend_string(dst: &mut Vec<String>, src: Vec<String>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dictionary::{Pos, Provenance, RelationConfidence, License};
+    use crate::dictionary::{Pos, Provenance, RelationConfidence, License, Sense};
 
     fn seed_sense(def: &str) -> Sense {
         Sense::simple(Pos::Nam, def)

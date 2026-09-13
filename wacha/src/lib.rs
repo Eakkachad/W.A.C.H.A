@@ -63,6 +63,16 @@ pub struct EntryView {
     pub word: String,
     pub pos: String,
     pub definition: String,
+    /// ลักษณนาม for the primary sense (may be empty).
+    pub classifiers: Vec<String>,
+    /// Register marker (โบ/ปาก/ราชา/…) of the primary sense, if any.
+    pub register: Option<String>,
+    /// Subject field tag of the primary sense, if any.
+    pub subject: Option<String>,
+    /// Source label of the primary sense (e.g. "Kaikki (Wiktionary)").
+    pub source: String,
+    /// Licence label of the primary sense.
+    pub license: String,
 }
 
 impl Engine {
@@ -259,10 +269,18 @@ impl Engine {
     pub fn lookup(&self, query: &str, top_k: usize) -> Lookup {
         let query = query.trim();
         let segmentation = self.segmenter.segment(query);
-        let entry = self.dict.get(query).map(|e| EntryView {
-            word: e.headword.clone(),
-            pos: e.primary_pos_marker().unwrap_or("").to_string(),
-            definition: e.primary_definition().unwrap_or("").to_string(),
+        let entry = self.dict.get(query).map(|e| {
+            let primary = e.senses.first();
+            EntryView {
+                word: e.headword.clone(),
+                pos: e.primary_pos_marker().unwrap_or("").to_string(),
+                definition: e.primary_definition().unwrap_or("").to_string(),
+                classifiers: primary.map(|s| s.classifiers.clone()).unwrap_or_default(),
+                register: primary.and_then(|s| s.register).map(|r| r.marker().to_string()),
+                subject: primary.and_then(|s| s.subject.as_ref()).map(|s| s.tag().to_string()),
+                source: primary.map(|s| s.provenance.source.label().to_string()).unwrap_or_default(),
+                license: primary.map(|s| s.provenance.license.label().to_string()).unwrap_or_default(),
+            }
         });
         let related = self.relations.related(query, top_k);
         let learner = self.learner.get(query).cloned();
