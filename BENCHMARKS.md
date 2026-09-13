@@ -135,11 +135,25 @@ Frequency-primary was the plan's proposal; it was **measured and rejected** beca
 frequent-but-loose words (น้ำ/น้ำมัน for น้ำมันมนตร์, หัว/หัวใจ for หัวคันนา) into the top 5. Reproduce
 both via `WACHA_RANK={tier,freq} wacha --data ../data patk 30`.
 
+### 4.2 Segmentation boundary-F1 on wisesight1000 (R7 D1, measured — our own number)
+
+Evaluated our **greedy longest-match** segmenter on `pythainlp/wisesight1000` (CC0, 993 human-tokenised
+social-media samples), char-level `is_beginning` boundary protocol
+(`data/eval/wisesight1000.label`, run via `cargo run --release --example seg_f1`):
+
+| metric | value |
+|---|---|
+| per-sample boundary-F1 (mean ± std) | **0.8015 ± 0.1660** |
+| micro precision / recall / F1 | 0.685 / 0.911 / **0.782** |
+
+This is **our own measured number**, not a citation. The high recall / lower precision is the expected
+greedy over-merge signature (it favours the longest dictionary match, so it splits less than a human).
+**We deliberately do NOT quote newmm's 0.73 TNHC figure as ours** — that is a different algorithm under a
+different setup. Our word list is NECTEC LEXiTRON (credited in the pitch); the benchmark is PyThaiNLP's.
 
 ---
 
 ## 5. Analytical (computed, not measured)
-
 - **S1 projected full-graph gain if the relocation bug were fixed:** the spike's measured 6.9× cold-build
   and 2× array-size reduction would carry directly into the WASM artifact (the .seg cache is the trie
   arrays), projecting the 7.4 MB embedded cache → ~3.7 MB and the WASM gzip → ~2 MB. **This is a
