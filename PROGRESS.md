@@ -30,11 +30,13 @@ files too and note it here — this log is the record of *that it changed*, thos
 | Interactive relationship graph in `wacha-web` (P3) | **done** — SVG radial graph, click-to-explore; client-side only; opened in a real browser | 2026-09-12 |
 | WordNet confidence signal + measured precision (Round 3 · Task 7, P0) | **done** — degree-based Confirmed/Unverified marker in CLI+web; real 120-pair sample = **84.2%** precision | 2026-09-12 |
 | Full manual audit of WordNet relations touching the 20 seed words | **done** — all 47 pairs checked, 7 cut (group-level suppression, bridges removed), verified live, 2 regression tests | 2026-09-13 |
+| Round 4 Task 13 — sever `อ.`→วันอังคาร/อังคาร ambiguous-abbrev bridge for ครู | **done** — targeted calendar-group cut; ครู clean, อ. kept; verified live; 2 regression tests (54 total) | 2026-09-13 |
 | Round 3 Task 8 — pitch materials (`PITCH.md`) | **done** — Thai script (leads with §1) + honest Q&A + pre-verified demo word list | 2026-09-12 |
 | Round 3 Task 9 — demo rehearsal + adversarial-query test | **done** — cold 43.4s/warm 0.27s; 11-case adversarial battery all pass; fallback transcript saved | 2026-09-12 |
 | Round 3 Task 10 — open-data/API documentation | **done** — `wacha/API.md` (contract spot-checked + license table); referenced from PITCH.md | 2026-09-12 |
 | Round 3 Task 11 (optional) — real Typhoon 2 if API access found (`--host` part **done**, `bec54b8`) | mostly done | 2026-09-12 |
-| Round 4 Task 12 — exhaustively review WordNet relations on the 20 seed words (found live: ครู→วันอังคาร artifact) | not started (handed to another agent to execute) | 2026-09-13 |
+| Round 4 Task 12 — exhaustively review WordNet relations on the 20 seed words | **done, verified** — 47/47 pairs audited, 7 cut, group-level fix, 52/52 tests, live-confirmed | 2026-09-13 |
+| Round 4 Task 13 — sever the อ.→วันอังคาร/อังคาร bridge specifically for ครู | not started (handed to another agent to execute) | 2026-09-13 |
 | Day 2 — demo/submit | not started | — |
 
 **A real product crate now exists** (`wacha/`) in addition to the `poc/` feasibility harness. The
@@ -951,3 +953,45 @@ that **vendoring `datrie.rs` into `wacha` was the right call**: the upstream `ka
 being auto-modified/healed continuously (its own commit log shows ongoing sweep-style edits), so a path
 dependency would be a moving target — the vendored copy insulates วาจา from that churn. `katgpt-rs` remains
 untouched by this project.
+
+**Verified Task 12 hands-on (2026-09-13):** re-ran `cargo test` (52/52, matches claim), read the full
+47-row audit file myself (every verdict is reasonable — spot-checked several, e.g. the นักเรียน/tertiary-
+student cluster is a real, important distinction ORST maintains), and rebuilt + queried live:
+`นักเรียน`/`ใหญ่`/`ครู` all match the claimed post-fix related-word lists exactly. **One important finding
+during live re-verify:** the original motivating example (`ครู`→`วันอังคาร`/`อังคาร`) is confirmed **still
+present** — the report's own honesty note was accurate: it's a 2-hop bridge through the ambiguous
+abbreviation `อ.` (which legitimately abbreviates both `อาจารย์`/teacher and `อังคาร`/Tuesday in Thai
+WordNet's data — a real homograph, not bad data), correctly identified as out of this task's "direct
+seed-touching pair" scope rather than silently left unexplained.
+
+**User decision after seeing this:** fix it anyway (it's demo word #1 in `PITCH.md`, worth the small
+effort now that the root cause is fully understood) — wrote **`NEXT_STEPS.md` Round 4, Task 13**: prune
+`อ.`'s membership from the *calendar-sense* WordNet group only (leave the teacher-sense `ครู`↔`อ.` group
+untouched), verify live that `ครู` no longer surfaces `วันอังคาร`/`อังคาร` while every other confirmed
+relation stays intact, add one regression test, and update the audit file's "out of scope" note to reflect
+the follow-up fix. Small, targeted, same discipline as Task 12 (no general disambiguation system).
+
+**Next action:** waiting for the executing agent's report on Task 13, then re-verify hands-on as usual.
+
+### 2026-09-13 (Round 4 · Task 13) — severed the `อ.` → วันอังคาร/อังคาร bridge for ครู
+
+Wrote NEXT_STEPS Round 4 Task 13 (with the live-confirmed root cause + concrete synset-line pointer) and
+executed it in the same session.
+
+**Root cause (confirmed live, not guessed):** not a direct WordNet `ครู`/`วันอังคาร` pair — `อ.` is a
+genuinely ambiguous Thai abbreviation (= `อาจารย์`/`ครู` *and* `อังคาร`/Tuesday). Thai WordNet has `อ.` in
+two unrelated synsets (teacher: `ครู/ครูบาอาจารย์/ผู้สอน/ผู้ให้ความรู้/อ./อาจารย์`; calendar:
+`วันอังคาร/อ./อังคาร`, TSV line ~13536). No word-sense layer → `อ.` is one node bridging both; PPR walked
+`ครู → อ. → วันอังคาร`. Live path trace confirmed `อ.` is the only bridge.
+
+**Fix (single targeted cut, same discipline as Task 12 — no general disambiguator):**
+`SUPPRESSED_AMBIGUOUS_MEMBERS = [("อ.", ["วันอังคาร","อังคาร"])]` in `wordnet.rs` — drop `อ.` from any group
+that also contains a calendar marker (the calendar-sense group only); `อ.` stays intact in the teacher
+group, so the audited-KEEP `ครู`↔`อ.` relation is untouched. Calendar group becomes `วันอังคาร/อังคาร`
+(still valid) → `วันอังคาร` direct lookup still works.
+
+**Verified live:** `ครู` → อาจารย์, ครูบาอาจารย์, ผู้สอน, ผู้ให้ความรู้, **อ.**, โรงเรียน, นักเรียน,
+การศึกษา — **no วันอังคาร/อังคาร**, อ. retained, all other correct relations intact. `วันอังคาร` → อังคาร
+(intact). 2 regression tests added (54 tests pass); `poc` 10/10; `katgpt-rs` untouched. Audit doc updated
+with a Task-13 addendum. This also means `ครู` (PITCH demo word #1) is now clean of the Tuesday/Mars
+distraction; the "we catch our own errors" pitch moment still lives on demo word #4 (`ข้อหา`), unchanged.

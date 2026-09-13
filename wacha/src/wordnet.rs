@@ -139,6 +139,34 @@ fn prune_suppressed(words: &mut Vec<String>) {
             words.retain(|w| w == seed || !bad.contains(&w.as_str()));
         }
     }
+    prune_ambiguous_members(words);
+}
+
+/// One-off sense-disambiguation for a genuinely ambiguous Thai abbreviation that
+/// bridged two unrelated synsets (see `data/seed_wordnet_audit_2026-09-13.md`
+/// addendum, Task 13). `อ.` abbreviates BOTH `อาจารย์`/`ครู` (teacher) AND
+/// `อังคาร` (Tuesday). Thai WordNet lists `อ.` in two unrelated synsets; our
+/// loader has no word-sense layer, so `อ.` became one graph node bridging
+/// `ครู` → `วันอังคาร`/`อังคาร` via PPR.
+///
+/// Fix: drop `อ.` from the **calendar-sense** group ONLY (the one that also
+/// contains a calendar marker like `วันอังคาร`), keeping it fully intact in the
+/// teacher-sense group (the `ครู`↔`อ.` relation is audited KEEP, untouched).
+/// This is a single targeted cut, NOT a general disambiguation system.
+///
+/// Format: (member_to_remove, &[markers]) — remove `member` from a group iff the
+/// group also contains any of `markers`.
+const SUPPRESSED_AMBIGUOUS_MEMBERS: &[(&str, &[&str])] =
+    &[("อ.", &["วันอังคาร", "อังคาร"])];
+
+fn prune_ambiguous_members(words: &mut Vec<String>) {
+    for &(member, markers) in SUPPRESSED_AMBIGUOUS_MEMBERS {
+        let has_member = words.iter().any(|w| w == member);
+        let has_marker = words.iter().any(|w| markers.contains(&w.as_str()));
+        if has_member && has_marker {
+            words.retain(|w| w != member);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -223,5 +251,35 @@ mod tests {
         assert!(g.contains(&"นักเรียน".to_string()));   // seed kept
         assert!(g.contains(&"ผู้เรียน".to_string()));   // good member kept
         assert!(!g.contains(&"นักศึกษา".to_string()));  // bad member pruned
+    }
+
+    #[test]
+    fn ambiguous_abbrev_pruned_from_calendar_group_only() {
+        // Task 13: อ. is an ambiguous abbrev (อาจารย์/ครู AND อังคาร/Tuesday).
+        // Calendar-sense group: อ. must be pruned; วันอังคาร/อังคาร stay.
+        let mut cal: Vec<String> = ["วันอังคาร", "อ.", "อังคาร"]
+            .iter().map(|s| s.to_string()).collect();
+        prune_suppressed(&mut cal);
+        assert!(!cal.contains(&"อ.".to_string()), "อ. must be cut from calendar group");
+        assert!(cal.contains(&"วันอังคาร".to_string()) && cal.contains(&"อังคาร".to_string()),
+            "วันอังคาร/อังคาร must remain (still a valid >=2 group)");
+
+        // Teacher-sense group: อ. must stay (ครู↔อ. is audited KEEP, untouched).
+        let mut teach: Vec<String> = ["ครู", "ครูบาอาจารย์", "ผู้สอน", "ผู้ให้ความรู้", "อ.", "อาจารย์"]
+            .iter().map(|s| s.to_string()).collect();
+        prune_suppressed(&mut teach);
+        assert!(teach.contains(&"อ.".to_string()), "อ. must remain in the teacher group");
+    }
+
+    #[test]
+    fn kru_has_no_calendar_bridge_via_embedded_data() {
+        // End-to-end on the shipped asset: no group containing ครู's abbrev อ.
+        // also contains a calendar marker (the bridge is severed at source).
+        let wn = WordNet::embedded();
+        for g in wn.groups() {
+            let has_aor = g.iter().any(|w| w == "อ.");
+            let has_cal = g.iter().any(|w| w == "วันอังคาร" || w == "อังคาร");
+            assert!(!(has_aor && has_cal), "อ. still shares a group with a calendar word: {g:?}");
+        }
     }
 }

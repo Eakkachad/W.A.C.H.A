@@ -79,3 +79,30 @@ traceable and reversible.
 
 Deliberately did **not** build a general POS/level classifier — the scope is these 47 pairs; a targeted
 suppression list is the right-sized fix.
+
+---
+
+## Addendum — 2026-09-13 (Task 13): the `อ.` ambiguous-abbreviation bridge (`ครู` → `วันอังคาร`)
+
+The original audit (above) correctly found no *direct* wrong `ครู`→`วันอังคาร` pair and noted the
+Tuesday/Mars result as an out-of-scope multi-hop artifact. Follow-up live tracing pinned the exact cause
+and it's now fixed here (so the audit file stays the authoritative record — not "out of scope" for it).
+
+**Root cause (confirmed live):** `อ.` is a genuinely ambiguous Thai abbreviation — it abbreviates *both*
+`อาจารย์`/`ครู` (teacher) *and* `อังคาร` (Tuesday). Thai WordNet lists `อ.` in two unrelated synsets:
+- teacher sense: `ครู / ครูบาอาจารย์ / ผู้สอน / ผู้ให้ความรู้ / อ. / อาจารย์`
+- calendar sense: `วันอังคาร / อ.  / อังคาร` (TSV line ~13536)
+
+Our loader has no word-sense layer, so `อ.` is a single graph node bridging both. PPR from `ครู` crossed
+`ครู → อ. → วันอังคาร` / `→ อังคาร`. `ครู`↔`อ.` itself is correct (audit #7 KEEP).
+
+**Fix (single targeted cut, same discipline as the main audit — NOT a general disambiguator):** in
+`wordnet.rs`, `SUPPRESSED_AMBIGUOUS_MEMBERS = [("อ.", ["วันอังคาร","อังคาร"])]` — remove `อ.` from any
+group that also contains a calendar marker, i.e. the calendar-sense group only. `อ.` stays fully intact in
+the teacher-sense group. Removing `อ.` leaves the calendar group as `วันอังคาร / อังคาร` (still valid), so
+looking up `วันอังคาร` directly still works.
+
+**Verified live (2026-09-13):** `ครู` → อาจารย์, ครูบาอาจารย์, ผู้สอน, ผู้ให้ความรู้, **อ.**, โรงเรียน,
+นักเรียน, การศึกษา — **no วันอังคาร/อังคาร**, `อ.` retained. `วันอังคาร` direct → `อังคาร` (intact).
+2 regression tests added (`ambiguous_abbrev_pruned_from_calendar_group_only`,
+`kru_has_no_calendar_bridge_via_embedded_data`). 54 tests pass.

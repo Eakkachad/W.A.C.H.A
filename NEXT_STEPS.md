@@ -371,6 +371,57 @@ and gives a real answer to "would this ever actually get used" beyond the demo.
 
 ---
 
+# Round 4 (2026-09-13) — clean up the WordNet contamination on the 20 seed words specifically
+
+Round 3 (Tasks 7-10) is done and verified — confidence tagging, the pitch, rehearsed demo, and API docs
+all exist and check out. This round is a single, narrowly-scoped follow-up, not a new feature round.
+
+## Task 12 — Exhaustively review WordNet-derived relations attached to the 20 seed words
+
+**Why this, and why not a broader cleanup:** the measured 84.2% precision (Round 3 Task 7) is fine to
+quote in the pitch as-is — we're not chasing 100% across all ~29,000 WordNet-covered words, that's not a
+good use of remaining time. But a real, known-bad example was found live during rehearsal (Task 9's
+honest note): `ครู` shows `วันอังคาร`/`อังคาร` (Tuesday/Mars — a Thai day-name/planet-name cross-lingual
+WordNet artifact) as a **Confirmed**-tier related word — i.e. the degree-based confidence signal did not
+catch it. The 20 seed words are exactly the words most likely to be demoed or tried live by judges (we
+chose them as the demo set), so **this specific, small, bounded surface is worth cleaning exhaustively**,
+unlike the full 29k-word graph.
+
+**What to do:**
+1. Enumerate every relation in the graph where `source == "wordnet"` and at least one endpoint is one of
+   the 20 seed words (from `wacha/src/dictionary.rs`'s `seed_entries()`) — this should be a small,
+   fully-reviewable set (tens to a couple hundred pairs), not a sample. Print/log the full list before
+   judging anything.
+2. Manually judge **every single one** (not a random subset — the whole set, since it's small enough) as a
+   genuine relation of the stated type or not, using real Thai-language judgment (same discipline as the
+   Task 7 sample audit — record the reasoning, don't just mark right/wrong silently).
+3. For each one judged wrong, remove it from the graph. Implementation approach is your call, but keep it
+   simple and auditable — e.g. a small denylist of `(word_a, word_b)` pairs checked when merging WordNet
+   triples in `relations.rs`, or filtering them out of `wordnet_synonyms.tsv`/`wordnet.rs` at load time.
+   Whichever you pick, make sure it's easy to see *what* was excluded and *why* by reading the code or a
+   comment next to it — don't silently drop rows with no trace.
+4. **If you notice a recurring pattern** while reviewing (e.g. several day-name/planet-name/calendar-term
+   false positives, which is a known category of cross-lingual WordNet artifact) — note it explicitly in
+   `PROGRESS.md`, and consider (but don't over-engineer) a small category-level filter if it would clean up
+   more than just the one-off cases you already found by hand. Do not build a general-purpose noise
+   classifier for this — that's out of scope; a short denylist or a narrow, explicit filter is enough.
+5. Re-verify **live** (CLI and/or `wacha-web`) that all 20 seed words' related-word lists no longer contain
+   anything you judged wrong in step 2. Also re-run `cargo test` (must still pass — add a regression test
+   for the specific `ครู`/`วันอังคาร`-shaped case the same way Task 1's audit added regression tests, so
+   this can't silently come back).
+
+**Acceptance criteria:** the full reviewed list (every WordNet-derived relation touching a seed word, with
+your judgment for each) is recorded in `PROGRESS.md`, exactly like the Task 7 sample table; every relation
+judged wrong is removed and confirmed gone via a real live query; `cargo test` still passes with at least
+one new regression test; if a systematic pattern was found, it's documented (fixed or explicitly deferred,
+your call, but not silently ignored).
+
+**Guardrails (same as always):** don't touch `katgpt-rs`. Don't re-run the full 120-pair-style broad
+precision re-measurement — that number stands as-is; this task is specifically about the seed-word-adjacent
+subset, not a re-audit of the whole 84.2% figure. Commit your work; leave the repo green.
+
+---
+
 ## When you're done (or stopping partway)
 
 1. Update `PROGRESS.md`'s status board for every task above (done / not started / in progress with what's
@@ -384,3 +435,66 @@ and gives a real answer to "would this ever actually get used" beyond the demo.
    update the living docs instead.
 4. Leave the repo in a state where `cargo test` passes in both `poc/` and `wacha/` — don't hand back
    a broken build.
+
+---
+
+# Round 4, Task 13 (2026-09-13) — sever the อ. → วันอังคาร/อังคาร bridge for ครู specifically
+
+**✅ DONE (2026-09-13, executed + verified live) — see `PROGRESS.md` + audit addendum.**
+`SUPPRESSED_AMBIGUOUS_MEMBERS` in `wordnet.rs` drops `อ.` from the calendar-sense group only; `ครู` no
+longer surfaces วันอังคาร/อังคาร, `อ.` and all other correct relations retained, `วันอังคาร` direct still
+works. 2 regression tests (54 total pass). Task body below kept for context.
+
+**Decision made (by the user, after seeing the live re-verify):** fix this, don't leave it as-is. Reasoning:
+`ครู` is demo word #1 in `PITCH.md` (the very first thing judges see) — an unexplained-looking
+"Tuesday/Mars" result under a teacher lookup is an unnecessary distraction there, even though it's now
+correctly understood (see below). This doesn't cost us the "we catch our own errors" pitch moment — that's
+already covered by demo word #4 (`ข้อหา`/`มลทิน`), which stays exactly as it is; this task is purely
+cleanup, not a repeat of that story.
+
+**Root cause (confirmed live during verification, not the original guess):** Task 12's audit correctly
+found that `ครู`→`วันอังคาร`/`อังคาร` is **not** a direct wrong WordNet pair (the direct-pair audit found
+none) — it's a **2-hop bridge through `อ.`**, and `อ.` is a genuinely ambiguous Thai abbreviation: it
+legitimately abbreviates *both* `อาจารย์`/`ครู` (teacher) **and** `อังคาร` (Tuesday). Thai WordNet's
+`word_synset` table has `อ.` in two unrelated synsets (one for the teacher sense, one for the
+day-of-week/planet sense) — our loader doesn't disambiguate word senses, so `อ.` ends up as a single graph
+node bridging both, and the personalized-PageRank walk from `ครู` crosses through it into the calendar
+sense. `ครู`↔`อ.` itself is correct and already audited **KEEP** in Task 12 (#7 in
+`seed_wordnet_audit_2026-09-13.md`) — don't touch that relation.
+
+**What to do:**
+1. In `wacha/data/wordnet_synonyms.tsv` (or via the existing `wordnet.rs` group-pruning machinery — your
+   call which is cleaner), find the specific synset group that contains `อ.` together with
+   `วันอังคาร`/`อังคาร` (the calendar/day-of-week sense) — this is a **different** group from the one
+   containing `ครู`/`อ.`/`อาจารย์`/etc. (the teacher sense).
+   > **Already located + live-confirmed (2026-09-13):** the calendar-sense group is the single TSV line
+   > `วันอังคาร␉อ.␉อังคาร` (currently line 13536). The teacher-sense group is
+   > `ครู␉ครูบาอาจารย์␉ผู้สอน␉ผู้ให้ความรู้␉อ.␉อาจารย์`. Live path trace from `ครู` shows exactly
+   > `ครู → อ. → วันอังคาร` and `ครู → อ. → อังคาร`, confirming `อ.` is the only bridge — so pruning `อ.`
+   > from the calendar group alone severs it. (Note: removing `อ.` leaves that group as `วันอังคาร␉อังคาร`,
+   > still a valid ≥2 group, so `วันอังคาร`↔`อังคาร` themselves stay intact when looked up directly.)
+2. Remove `อ.` from **that calendar-sense group only** — i.e. sever `อ.`'s membership in the
+   วันอังคาร/อังคาร synset, while leaving `อ.` fully intact in the ครู/teacher synset (where it's
+   correctly audited as KEEP). This is the same "prune a member from a specific group" mechanism Task 12
+   already built (`SUPPRESSED_SEED_MEMBERS` in `wordnet.rs`) — extend it (or add an analogous list) rather
+   than inventing a new mechanism, unless you find the existing one doesn't fit this shape cleanly.
+3. **Do not** remove `อ.` from the teacher-sense group, and do not touch the direct `ครู`↔`อ.` relation —
+   only the calendar-sense group's membership changes.
+4. **Do not** attempt a general fix for ambiguous-abbreviation bridging across the whole graph — this is a
+   one-off, targeted suppression for this specific node/group pair, matching the scope discipline of Task
+   12 (a short, auditable, traceable exclusion — not a general classifier or NLP disambiguation system).
+5. Rebuild and verify **live**: `wacha --data ../data lookup ครู` must no longer show `วันอังคาร` or
+   `อังคาร` anywhere in its related words, while still showing `อ.` (correctly, via the teacher sense) and
+   every other relation Task 12 already confirmed correct (`อาจารย์`, `ครูบาอาจารย์`, `ผู้สอน`,
+   `ผู้ให้ความรู้`, `โรงเรียน`). Also spot-check that `วันอังคาร`/`อังคาร` themselves, if looked up directly,
+   still work sensibly (they just shouldn't be reachable *from* `ครู` anymore).
+6. Add one regression test asserting `ครู`'s related-word set never contains `วันอังคาร`/`อังคาร` (mirror
+   the style of Task 12's two new tests).
+7. Update `wacha/data/seed_wordnet_audit_2026-09-13.md` (or add a short dated addendum) noting this
+   follow-up fix and its exact root cause, so the audit file stays the authoritative record of every
+   known-and-handled seed-word WordNet issue — don't leave this fix undocumented next to an audit file that
+   now says "out of scope" for it.
+
+**Acceptance criteria:** a live query for `ครู` shows no `วันอังคาร`/`อังคาร`; `อ.` and every other
+previously-confirmed-correct relation for `ครู` is unaffected; one new regression test added; `cargo test`
+passes (`wacha` + `poc`); `katgpt-rs` untouched; the audit doc updated to reflect this fix.
