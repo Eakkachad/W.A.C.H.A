@@ -150,10 +150,12 @@ impl Engine {
     /// or a no-op closure).
     pub fn load_from_dir(dir: &std::path::Path, mut log: impl FnMut(&str)) -> std::io::Result<Self> {
         use std::time::Instant;
+        use crate::import::kaikki::KaikkiImporter;
+        use crate::import::Importer;
 
         let words_path = dir.join("words_th.txt");
         let words_txt = std::fs::read_to_string(&words_path)?;
-        let word_list: Vec<&str> = words_txt.lines().collect();
+        let mut word_list: Vec<String> = words_txt.lines().map(|s| s.to_string()).collect();
 
         let freq_path = dir.join("tnc_freq.txt");
         let freq_txt = std::fs::read_to_string(&freq_path).ok();
@@ -165,6 +167,31 @@ impl Engine {
             if freq_txt.is_some() { " (+ frequencies)" } else { "" }
         ));
 
+        // Assemble dictionary entries from all available sources (Task 2/3):
+        // seed (always) + Kaikki (if data/kaikki_th.jsonl is present), merged.
+        let mut source_lists: Vec<Vec<Entry>> = vec![dictionary::seed_entries()];
+        let kaikki_path = dir.join("kaikki_th.jsonl");
+        if kaikki_path.exists() {
+            let t = Instant::now();
+            match KaikkiImporter.load(&kaikki_path) {
+                Ok(entries) => {
+                    let (n_e, n_s) = (entries.len(), entries.iter().map(|e| e.senses.len()).sum::<usize>());
+                    log(&format!(
+                        "loaded {n_e} Kaikki entries / {n_s} senses from {} in {:?}",
+                        kaikki_path.display(),
+                        t.elapsed()
+                    ));
+                    source_lists.push(entries);
+                }
+                Err(e) => log(&format!("warning: Kaikki load failed ({e}); continuing without it")),
+            }
+        }
+        let entries = crate::import::merge(source_lists);
+        // Extend the segmenter vocab with any entry headwords not already present.
+        for e in &entries {
+            word_list.push(e.headword.clone());
+        }
+
         let cache_path = dir.join("words_th.datrie.cache");
         if cache_is_fresh(&cache_path, &words_path) {
             match Segmenter::load_cache(&cache_path) {
@@ -172,7 +199,7 @@ impl Engine {
                     let t = Instant::now();
                     let engine = Self::build_from_segmenter(
                         word_list,
-                        dictionary::seed_entries(),
+                        entries,
                         freq_txt.as_deref(),
                         seg,
                     );
@@ -189,7 +216,7 @@ impl Engine {
 
         log("building trie from scratch (first run is slow, ~40s for 62k words)…");
         let t = Instant::now();
-        let engine = Self::build(word_list, dictionary::seed_entries(), freq_txt.as_deref());
+        let engine = Self::build(word_list, entries, freq_txt.as_deref());
         log(&format!("engine built in {:?}", t.elapsed()));
         match engine.segmenter().save_cache(&cache_path) {
             Ok(()) => log(&format!("wrote segmenter cache to {}", cache_path.display())),

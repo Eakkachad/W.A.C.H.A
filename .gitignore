@@ -8,6 +8,10 @@ target/
 # wordnet_synonyms.tsv (~1MB) instead; re-fetch the .db only to regenerate it.
 wordnet_th.db
 
+# Kaikki (Wiktionary) raw download (~79MB) — fetched via scripts/fetch_kaikki.sh,
+# never committed. CC BY-SA. Regenerate on demand.
+kaikki_th.jsonl
+
 # Generated served-page snapshot (regenerate via curl; the transcript is the
 # real offline fallback and IS committed).
 demo-fallback/index_snapshot.html

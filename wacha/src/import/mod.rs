@@ -14,6 +14,8 @@ use std::collections::BTreeMap;
 use std::error::Error;
 use std::path::Path;
 
+pub mod kaikki;
+
 /// A boxed, thread-safe error (dependency-free stand-in for `anyhow::Error`).
 pub type ImportError = Box<dyn Error + Send + Sync>;
 pub type ImportResult<T> = Result<T, ImportError>;

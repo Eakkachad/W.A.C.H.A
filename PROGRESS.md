@@ -1109,3 +1109,32 @@ source-lists sorted by priority desc before merging; senses sorted within each e
 (seed sorts before Kaikki), and `merge_is_deterministic_across_runs` (two runs byte-identical). Engine
 unchanged, `lookup ครู` output identical. Clean build. (Engine not yet wired to the importers — that comes
 when Kaikki data lands in Task 3; the trait + merge are the foundation.)
+
+### 2026-09-13 (Round 5 · Task 3) — Kaikki importer: 20 → 29,540 defined entries
+
+`scripts/fetch_kaikki.sh` (Thai-only file first, `raw-wiktextract` stream-filter fallback) → fetched the
+Thai-only JSONL (79 MB, gitignored). `wacha/src/import/kaikki.rs` streams it line-by-line (never loads the
+1.6 GB fallback whole), maps word/pos/glosses/examples/classifiers/tags→register/topics→subject/
+Royal-Institute romanization/etymology_texts(list). Every sense stamped `Kaikki / CC BY-SA / Unverified`.
+Wired into `Engine::load_from_dir` (loads `data/kaikki_th.jsonl` if present, merges with seed).
+
+**Real numbers (measured):**
+- Kaikki load: **34,364 entries / 43,855 senses** in 257 ms (≈ the expected ~29,562 forms / ~43,883
+  senses; entry count is higher because Kaikki splits POS into separate records — sense count matches).
+- Merged dictionary: **29,540 entries** with definitions (was **20**). **>25,000 definition target: MET.**
+- Segmenter vocab grew 62,106 → 72,128 (Kaikki headwords not in words_th added). Cold build 57.5 s.
+- `lookup ปัญญาประดิษฐ์` (was "ไม่พบนิยามของคำนี้") now returns a real definition:
+  "สาขาหนึ่งของวิทยาการคอมพิวเตอร์ ซึ่งเน้น…" ✓
+- `บ้าน` classifier `หลัง` **is captured** by the importer (verified in data); the CLI's single-definition
+  view doesn't render classifiers yet — Task 9 adds the per-sense UI.
+- 65 tests pass (5 new Kaikki tests: malformed-line skip, RI romanization, etymology_texts-as-list,
+  classifiers+provenance, sense-less-word drop).
+
+**Honest note on the coverage metric (do NOT paper over):** coverage measured as *% of words_th.txt with
+≥1 definition* is **31.4% (19,517 / 62,106)** — **below the >40% target.** Root cause investigated: it's
+not a parse bug (sense count matches Kaikki's published 43,883). It's vocabulary *overlap* — Kaikki's
+~29.5k Thai word-forms and LEXiTRON's 62k list only partially intersect; many LEXiTRON entries are
+inflected/compound forms Kaikki lacks, and many Kaikki entries aren't in LEXiTRON. So the *absolute*
+definition count smashed the primary target (29,540 ≫ 25,000) while the *overlap ratio* fell short of 40%.
+ศัพท์บัญญัติ (Task 6) and the real RID data (event) will lift the overlap further; the honest pitch number
+is "29,540 defined entries / ~31% of the practice word list," not a fabricated ≥40%.
