@@ -22,6 +22,12 @@ use std::collections::HashMap;
 pub struct Segmenter {
     vocab: DatrieVocab,
     word_count: usize,
+    /// Stable hash of the sorted, deduplicated word list this trie was built
+    /// from. Used to detect a stale on-disk cache (Task 5) — if the word list
+    /// changes (e.g. Kaikki data added), the hash changes and the cache is
+    /// rebuilt instead of silently segmenting against a stale vocabulary.
+    #[serde(default)]
+    vocab_hash: u64,
 }
 
 /// One output token from segmentation, tagged with whether it was a known
@@ -34,6 +40,50 @@ pub struct Token {
     pub in_vocab: bool,
 }
 
+/// Stable FNV-1a hash of a set of words (order-independent: words are sorted &
+/// deduplicated first). Deterministic across runs and machines — unlike
+/// `DefaultHasher`, which is randomized per process.
+pub fn vocab_hash<I, S>(words: I) -> u64
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    let mut distinct: Vec<String> = words
+        .into_iter()
+        .map(|w| w.as_ref().trim().to_string())
+        .filter(|w| !w.is_empty())
+        .collect();
+    distinct.sort();
+    distinct.dedup();
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325; // FNV-1a offset basis
+    for w in &distinct {
+        for b in w.as_bytes() {
+            h ^= *b as u64;
+            h = h.wrapping_mul(0x0000_0100_0000_01B3);
+        }
+        h ^= 0xff; // word separator
+        h = h.wrapping_mul(0x0000_0100_0000_01B3);
+    }
+    h
+}
+
+/// Return the postcard payload after the 3-line text header, or the whole slice
+/// if no recognizable header is present (legacy caches).
+fn strip_cache_header(bytes: &[u8]) -> &[u8] {
+    if bytes.starts_with(b"WACHA_DATRIE_CACHE\n") {
+        let mut count = 0;
+        for (i, b) in bytes.iter().enumerate() {
+            if *b == b'\n' {
+                count += 1;
+                if count == 3 {
+                    return &bytes[i + 1..];
+                }
+            }
+        }
+    }
+    bytes
+}
+
 impl Segmenter {
     /// Build a segmenter from an iterator of words (e.g. lines of `words_th.txt`).
     /// Empty and whitespace-only entries are skipped.
@@ -44,11 +94,13 @@ impl Segmenter {
     {
         let mut vocab_map: HashMap<Vec<u8>, usize> = HashMap::new();
         let mut idx = 0usize;
+        let mut all: Vec<String> = Vec::new();
         for w in words {
             let w = w.as_ref().trim();
             if w.is_empty() {
                 continue;
             }
+            all.push(w.to_string());
             // Keep the first occurrence's id; skip exact duplicates.
             vocab_map.entry(w.as_bytes().to_vec()).or_insert_with(|| {
                 let i = idx;
@@ -57,8 +109,14 @@ impl Segmenter {
             });
         }
         let word_count = vocab_map.len();
+        let hash = vocab_hash(all.iter());
         let vocab = DatrieVocab::build(&vocab_map);
-        Self { vocab, word_count }
+        Self { vocab, word_count, vocab_hash: hash }
+    }
+
+    /// The hash of the word list this segmenter was built from.
+    pub fn vocab_hash(&self) -> u64 {
+        self.vocab_hash
     }
 
     /// Serialize the built segmenter (the double-array trie + word count) to a
@@ -75,17 +133,80 @@ impl Segmenter {
     }
 
     /// Save the built segmenter to `path` (creates/overwrites the file).
+    ///
+    /// Writes a small text header before the postcard payload:
+    /// `WACHA_DATRIE_CACHE\n<format_version>\n<vocab_hash>\n` — so a stale cache
+    /// (word list changed, or an older format) is detected on load instead of
+    /// silently segmenting against the wrong vocabulary (Task 5).
     pub fn save_cache(&self, path: &std::path::Path) -> std::io::Result<()> {
-        let bytes = self
+        let payload = self
             .to_cache_bytes()
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-        std::fs::write(path, bytes)
+        let mut out = Vec::with_capacity(payload.len() + 64);
+        out.extend_from_slice(Self::cache_header(self.vocab_hash).as_bytes());
+        out.extend_from_slice(&payload);
+        std::fs::write(path, out)
     }
 
-    /// Load a segmenter from a cache file at `path`.
+    /// Current cache format version. Bump when the on-disk layout changes.
+    pub const CACHE_FORMAT_VERSION: u32 = 1;
+    const CACHE_MAGIC: &'static str = "WACHA_DATRIE_CACHE";
+
+    fn cache_header(hash: u64) -> String {
+        format!("{}\n{}\n{}\n", Self::CACHE_MAGIC, Self::CACHE_FORMAT_VERSION, hash)
+    }
+
+    /// Load a segmenter from a cache file, verifying it was built from a word
+    /// list whose hash equals `expected_hash` and that the format version
+    /// matches. On any mismatch (or a legacy headerless cache) returns an error
+    /// whose message names the exact condition, so the caller rebuilds and logs
+    /// clearly.
+    pub fn load_cache_checked(
+        path: &std::path::Path,
+        expected_hash: u64,
+    ) -> std::io::Result<Self> {
+        let bytes = std::fs::read(path)?;
+        let err = |m: String| std::io::Error::new(std::io::ErrorKind::InvalidData, m);
+
+        // Parse the 3-line text header.
+        let mut nl = bytes.iter().enumerate().filter(|(_, b)| **b == b'\n').map(|(i, _)| i);
+        let (Some(l1), Some(l2), Some(l3)) = (nl.next(), nl.next(), nl.next()) else {
+            return Err(err("cache has no valid header (legacy/corrupt) — rebuilding".into()));
+        };
+        let magic = std::str::from_utf8(&bytes[..l1]).unwrap_or("");
+        if magic != Self::CACHE_MAGIC {
+            return Err(err("cache magic mismatch (legacy/corrupt) — rebuilding".into()));
+        }
+        let version: u32 = std::str::from_utf8(&bytes[l1 + 1..l2])
+            .ok()
+            .and_then(|s| s.trim().parse().ok())
+            .unwrap_or(0);
+        if version != Self::CACHE_FORMAT_VERSION {
+            return Err(err(format!(
+                "cache format version {version} != {} — rebuilding",
+                Self::CACHE_FORMAT_VERSION
+            )));
+        }
+        let cached_hash: u64 = std::str::from_utf8(&bytes[l2 + 1..l3])
+            .ok()
+            .and_then(|s| s.trim().parse().ok())
+            .unwrap_or(0);
+        if cached_hash != expected_hash {
+            return Err(err(format!(
+                "word-list hash mismatch (cache {cached_hash:x} != current {expected_hash:x}) — rebuilding"
+            )));
+        }
+        let payload = &bytes[l3 + 1..];
+        Self::from_cache_bytes(payload).map_err(|e| err(format!("cache decode failed: {e}")))
+    }
+
+    /// Load a segmenter from a cache file at `path`, without hash verification
+    /// (kept for the round-trip test; production uses [`Self::load_cache_checked`]).
     pub fn load_cache(path: &std::path::Path) -> std::io::Result<Self> {
         let bytes = std::fs::read(path)?;
-        Self::from_cache_bytes(&bytes)
+        // Skip the 3-line header if present.
+        let payload = strip_cache_header(&bytes);
+        Self::from_cache_bytes(payload)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
     }
 
@@ -240,5 +361,40 @@ mod tests {
         let b = restored.segment_words("นักเรียนอ่านหนังสือที่โรงเรียน");
         assert_eq!(a, b);
         assert!(restored.contains("แมว"));
+    }
+
+    #[test]
+    fn cache_loads_when_hash_matches_and_rebuilds_on_change() {
+        let words = ["แมว", "หมา", "ปลา"];
+        let seg = Segmenter::from_words(words);
+        let h = super::vocab_hash(words.iter());
+        let dir = std::env::temp_dir();
+        let p = dir.join("wacha_cache_invalidation_test.cache");
+        seg.save_cache(&p).unwrap();
+
+        // Same word list -> hash matches -> loads.
+        let ok = Segmenter::load_cache_checked(&p, h);
+        assert!(ok.is_ok(), "matching-hash cache must load: {:?}", ok.err());
+
+        // Changed word list -> different hash -> load rejected with a clear msg.
+        let changed_hash = super::vocab_hash(["แมว", "หมา", "ปลา", "นก"].iter());
+        assert_ne!(changed_hash, h);
+        match Segmenter::load_cache_checked(&p, changed_hash) {
+            Ok(_) => panic!("stale cache must be rejected on hash mismatch"),
+            Err(e) => assert!(
+                e.to_string().contains("hash mismatch"),
+                "expected hash-mismatch error, got: {e}"
+            ),
+        }
+        std::fs::remove_file(&p).ok();
+    }
+
+    #[test]
+    fn vocab_hash_is_order_independent_and_stable() {
+        let a = super::vocab_hash(["แมว", "หมา", "ปลา"].iter());
+        let b = super::vocab_hash(["ปลา", "แมว", "หมา", "แมว"].iter()); // reordered + dup
+        assert_eq!(a, b, "hash must be order- and duplicate-independent");
+        // A different set differs.
+        assert_ne!(a, super::vocab_hash(["แมว", "หมา"].iter()));
     }
 }

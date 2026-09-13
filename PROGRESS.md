@@ -1138,3 +1138,31 @@ inflected/compound forms Kaikki lacks, and many Kaikki entries aren't in LEXiTRO
 definition count smashed the primary target (29,540 ≫ 25,000) while the *overlap ratio* fell short of 40%.
 ศัพท์บัญญัติ (Task 6) and the real RID data (event) will lift the overlap further; the honest pitch number
 is "29,540 defined entries / ~31% of the practice word list," not a fabricated ≥40%.
+
+### 2026-09-13 (Round 5 · Task 5) — Trie cache invalidation (hash + version header)
+
+The cache was previously mtime-keyed on `words_th.txt` only — so Task 3's Kaikki-expanded vocab (62k→72k
+words) would NOT invalidate it, silently segmenting against a stale vocabulary, or forcing a surprise 43s
+rebuild mid-demo. Fixed with a content hash.
+
+- `segmenter.rs`: `Segmenter` gained a `vocab_hash` field — a stable, order-independent FNV-1a hash of the
+  sorted/deduped word list (not `DefaultHasher`, which is per-process randomized). `save_cache` writes a
+  3-line text header `WACHA_DATRIE_CACHE\n<format_version>\n<vocab_hash>\n` before the postcard payload.
+  New `load_cache_checked(path, expected_hash)` verifies magic + format version + hash, returning an error
+  that names the exact failure (hash mismatch / version / legacy-corrupt) so a rebuild is never silent.
+- `lib.rs`: `load_from_dir` computes the expected hash from the **full merged vocab** (words_th + all
+  entry headwords, incl. Kaikki) and uses `load_cache_checked`; logs the mismatch reason on rebuild.
+
+**Verified live (real output):**
+- RUN 1 (cold): `engine built in 56.8s` → `wrote segmenter cache`.
+- RUN 2 (unchanged): `loaded segmenter from cache … in 34.97ms` (total process 0.34s).
+- RUN 3 (appended a word to words_th.txt): `cache not usable: word-list hash mismatch (cache 8ba1c173…
+  != current a1295989…) — rebuilding` — clear, then rebuilds & re-caches. Restored the word list and
+  rebuilt a clean cache (reload 37.6ms).
+- 67 tests pass (2 new: `cache_loads_when_hash_matches_and_rebuilds_on_change`,
+  `vocab_hash_is_order_independent_and_stable`).
+
+**Critical path 1→2→3→5 COMPLETE.** The project is now "a dictionary with 29,540 definitions + a proven,
+cache-safe multi-source ingestion path," up from "20 definitions." Remaining R5: Task 4 (Sense-node graph,
+kills the 8,879 false links), 6 (ศัพท์บัญญัติ), 7 (citation), 8 (RID stub + runbook), 9 (UI/licence), 10
+(re-measure pitch); 11 optional.

@@ -193,8 +193,10 @@ impl Engine {
         }
 
         let cache_path = dir.join("words_th.datrie.cache");
-        if cache_is_fresh(&cache_path, &words_path) {
-            match Segmenter::load_cache(&cache_path) {
+        // Expected hash of the FULL merged vocab (words_th + all entry headwords).
+        let expected_hash = crate::segmenter::vocab_hash(word_list.iter());
+        if cache_path.exists() {
+            match Segmenter::load_cache_checked(&cache_path, expected_hash) {
                 Ok(seg) => {
                     let t = Instant::now();
                     let engine = Self::build_from_segmenter(
@@ -210,7 +212,10 @@ impl Engine {
                     ));
                     return Ok(engine);
                 }
-                Err(e) => log(&format!("cache load failed ({e}); rebuilding from scratch")),
+                // The error message already names the condition (hash mismatch,
+                // version mismatch, or corrupt) — log it so a stale-cache rebuild
+                // is never silent.
+                Err(e) => log(&format!("cache not usable: {e}")),
             }
         }
 
@@ -272,6 +277,8 @@ impl Engine {
 
 /// A trie cache is usable if it exists and is at least as new as the word-list
 /// file it was built from (editing the word list invalidates a stale cache).
+/// (Superseded by hash-based invalidation in `load_cache_checked`, Task 5.)
+#[allow(dead_code)]
 fn cache_is_fresh(cache_path: &std::path::Path, words_path: &std::path::Path) -> bool {
     let (Ok(cache_meta), Ok(words_meta)) =
         (std::fs::metadata(cache_path), std::fs::metadata(words_path))
