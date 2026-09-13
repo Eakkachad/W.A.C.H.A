@@ -62,6 +62,7 @@ fn main() {
         None => repl(&engine),
         Some((cmd, rest)) => match cmd.as_str() {
             "stats" => print_stats(&engine),
+            "audit" => print_audit(&engine),
             "segment" => {
                 let text = rest.join(" ");
                 if text.is_empty() {
@@ -161,6 +162,100 @@ fn print_stats(engine: &Engine) {
     println!(
         "definition coverage: {defined}/{searchable} searchable words = {pct:.1}% have ≥1 definition"
     );
+}
+
+/// A2: the 47 hand-audited seed↔WordNet pairs from
+/// `wacha/data/seed_wordnet_audit_2026-09-13.md`, with their KEEP/CUT verdict.
+/// `true` = KEEP (a genuine relation the engine should still return),
+/// `false` = CUT (must be absent). Ordered as in the audit doc.
+const AUDIT_PAIRS: &[(&str, &str, bool)] = &[
+    ("ภาษา", "การสื่อสารด้วยภาษา", true),
+    ("เขียน", "ขีดเขียน", true),
+    ("ครู", "ครูบาอาจารย์", true),
+    ("ครู", "ผู้สอน", true),
+    ("ครู", "ผู้สาธิตวิธีการ", false),
+    ("ครู", "ผู้ให้ความรู้", true),
+    ("ครู", "อ.", true),
+    ("ครู", "อาจารย์", true),
+    ("อาจารย์", "ครูบาอาจารย์", true),
+    ("พจนานุกรม", "ดิก", true),
+    ("พจนานุกรม", "ดิกชันนารี", true),
+    ("เขียน", "ทำหนังสือ", true),
+    ("นักเรียน", "นร.", true),
+    ("นักเรียน", "นศ.", false),
+    ("นักเรียน", "นักวิชาการ", false),
+    ("นักเรียน", "นักศึกษา", false),
+    ("นักเรียน", "นิสิต", false),
+    ("นักเรียน", "นิสิตนักศึกษา", false),
+    ("นักเรียน", "ผู้ศึกษา", true),
+    ("นักเรียน", "ผู้เรียน", true),
+    ("นักเรียน", "เด็กนักเรียน", true),
+    ("เล็ก", "น้อย", true),
+    ("พจนานุกรม", "ปทานุกรม", true),
+    ("เขียน", "ประพันธ์", true),
+    ("อาจารย์", "ผู้สอน", true),
+    ("อาจารย์", "ผู้ให้ความรู้", true),
+    ("ภาษา", "ภาษาธรรมชาติ", true),
+    ("โรงเรียน", "ร.ร.", true),
+    ("เขียน", "รจนา", true),
+    ("โรงเรียน", "รร.", true),
+    ("หนังสือ", "สมุด", true),
+    ("สัตว์", "สัตว์ป่า", true),
+    ("สัตว์", "สัตว์เดียรัจฉาน", true),
+    ("สัตว์", "สิ่งมีชีวิต", true),
+    ("สัตว์", "เดียรัจฉาน", true),
+    ("สุนัข", "หมา", true),
+    ("สุนัข", "หมาบ้าน", true),
+    ("หนังสือ", "หนังสือหนังหา", true),
+    ("หนังสือ", "เล่ม", true),
+    ("หมา", "หมาบ้าน", true),
+    ("ใหญ่", "หลัก", false),
+    ("อาจารย์", "อ.", true),
+    ("โรงเรียน", "อาคารเรียน", true),
+    ("เขียน", "เขียนหนังสือ", true),
+    ("เขียน", "แต่ง", true),
+    ("เสือ", "เสือโคร่ง", true),
+    ("แมว", "แมวบ้าน", true),
+];
+
+/// A2: measure KEEP-recall and CUT-absence against the 47 audited pairs, plus
+/// the cross-sense recount (A2.4). Every number here is reproducible from the
+/// live engine — this is what `scripts/verify_r5.sh` calls.
+fn print_audit(engine: &Engine) {
+    // A2.4 — cross-sense candidate recount (must be 0).
+    println!("cross_sense_pairs = {}", engine.cross_sense_pair_count());
+
+    const TOP_K: usize = 50; // deep enough to catch a pair if it exists at all
+    let (mut keep_total, mut keep_hit) = (0usize, 0usize);
+    let (mut cut_total, mut cut_absent) = (0usize, 0usize);
+    for &(a, b, keep) in AUDIT_PAIRS {
+        // A relation is "present" if b is among a's related results OR a is
+        // among b's (relations are symmetric; either direction counts).
+        let present = engine.related_contains(a, b, TOP_K) || engine.related_contains(b, a, TOP_K);
+        if keep {
+            keep_total += 1;
+            if present {
+                keep_hit += 1;
+            }
+        } else {
+            cut_total += 1;
+            if !present {
+                cut_absent += 1;
+            }
+        }
+    }
+    let keep_pct = if keep_total > 0 { 100.0 * keep_hit as f64 / keep_total as f64 } else { 0.0 };
+    let cut_pct = if cut_total > 0 { 100.0 * cut_absent as f64 / cut_total as f64 } else { 0.0 };
+    println!("KEEP_recall = {keep_hit}/{keep_total} = {keep_pct:.1}%");
+    println!("CUT_absence = {cut_absent}/{cut_total} = {cut_pct:.1}%");
+    // Per-pair detail (so a reviewer can see exactly which pair moved).
+    for &(a, b, keep) in AUDIT_PAIRS {
+        let present = engine.related_contains(a, b, TOP_K) || engine.related_contains(b, a, TOP_K);
+        let verdict = if keep { "KEEP" } else { "CUT " };
+        let ok = if keep == present { "ok " } else { "MISS" };
+        let state = if present { "present" } else { "absent " };
+        println!("  [{ok}] {verdict} {a} ⟷ {b}: {state}");
+    }
 }
 
 fn print_segmentation(tokens: &[Token]) {

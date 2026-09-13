@@ -279,6 +279,18 @@ impl Engine {
         self.relations.triple_count()
     }
 
+    /// Recount of cross-sense candidate pairs in the live relation graph
+    /// (A2.4). Must be 0 — every related candidate shares a sense group.
+    pub fn cross_sense_pair_count(&self) -> usize {
+        self.relations.count_cross_sense_pairs()
+    }
+
+    /// Whether `other` appears among `word`'s related results (top_k deep).
+    /// Used by the audit recall/absence measurement (A2).
+    pub fn related_contains(&self, word: &str, other: &str, top_k: usize) -> bool {
+        self.relations.related(word, top_k).iter().any(|r| r.word == other)
+    }
+
     /// Segment arbitrary Thai text.
     pub fn segment(&self, text: &str) -> Vec<Token> {
         self.segmenter.segment(text)

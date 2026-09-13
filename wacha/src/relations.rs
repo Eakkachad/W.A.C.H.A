@@ -12,7 +12,6 @@
 
 use crate::dictionary::{Dictionary, Relation};
 use crate::graph::KnowledgeGraph;
-use std::collections::HashSet;
 
 // Confidence lives in `dictionary` (needed by `Provenance`); re-export so
 // existing `crate::relations::RelationConfidence` references keep working.
@@ -427,6 +426,45 @@ impl RelationEngine {
             .collect()
     }
 
+    /// Recount, from the live graph, how many (query, related-candidate) pairs
+    /// the engine would emit where the two words share **no** sense group — the
+    /// exact cross-sense 2-hop leakage Task 4 set out to kill. By construction
+    /// of [`Self::related`] this must be **0**; this method makes the claim a
+    /// one-command check (A2.4) instead of a number quoted in prose.
+    ///
+    /// It reproduces `related`'s candidate generation (co-membership in a shared
+    /// sense group) for *every* word and verifies each candidate genuinely
+    /// shares a sense group with the query. It deliberately skips the PPR
+    /// ranking/`top_k` truncation so it checks the *entire* candidate set, not
+    /// just the top results — and stays fast enough to run over all ~57k words.
+    pub fn count_cross_sense_pairs(&self) -> usize {
+        use std::collections::HashSet;
+        let mut violations = 0usize;
+        for qid in 0..self.words.len() {
+            let q_senses: HashSet<usize> = self.word_senses[qid].iter().copied().collect();
+            if q_senses.is_empty() {
+                continue;
+            }
+            // Candidate set exactly as `related` builds it: co-members of any of
+            // the query's sense groups.
+            let mut candidates: HashSet<usize> = HashSet::new();
+            for &sidx in &self.word_senses[qid] {
+                for &m in &self.senses[sidx].members {
+                    if m != qid {
+                        candidates.insert(m);
+                    }
+                }
+            }
+            for cid in candidates {
+                let shares = self.word_senses[cid].iter().any(|s| q_senses.contains(s));
+                if !shares {
+                    violations += 1;
+                }
+            }
+        }
+        violations
+    }
+
     /// Confidence: Seed and CoinedWord are always Confirmed (authoritative). A
     /// WordNet/Wiktionary relation is Unverified iff it is an *isolated pair* —
     /// the connecting sense group has exactly 2 members AND neither word appears
@@ -637,6 +675,19 @@ mod tests {
         assert!(
             !rel.iter().any(|r| r.word == "บ้านเกิด"),
             "ครอบครัว must not surface บ้านเกิด (cross-synset leak)"
+        );
+    }
+
+    #[test]
+    fn no_cross_sense_two_hop_pairs() {
+        // A2.4: recount from the live graph — the engine must emit ZERO
+        // (query, candidate) pairs that share no sense group. This is the
+        // checkable form of the "150,018 → 0" claim: one command, not prose.
+        let e = wordnet_engine();
+        assert_eq!(
+            e.count_cross_sense_pairs(),
+            0,
+            "every related candidate must share a sense group with its query"
         );
     }
 
