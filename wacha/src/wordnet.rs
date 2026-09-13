@@ -52,6 +52,14 @@ impl WordNet {
         wn
     }
 
+    /// Build from a synset-id-keyed TSV (`synsetid\tlemma\tlemma…` per line) —
+    /// the same format as `data/wordnet_synsets.tsv`. Populates `synsets` (which
+    /// the relation engine's Tier-2a reads), leaving the legacy flat `groups`
+    /// empty. Used by tests and any caller with its own synset table.
+    pub fn from_synsets_tsv(tsv: &str) -> Self {
+        Self { groups: Vec::new(), synsets: parse_synsets(tsv) }
+    }
+
     /// Parse synonym groups from a TSV string (one group per line, tab-separated
     /// lemmas). Lines with fewer than 2 distinct non-empty lemmas are skipped.
     ///

@@ -338,22 +338,30 @@ impl RelationEngine {
         let Some(&qid) = self.word_id.get(word) else {
             return Vec::new();
         };
-        // For each co-member, remember the best (highest-rank) connecting sense
-        // group — used purely for the explanation label/provenance, NOT ranking.
+        // For each co-member, gather ALL shared sense groups (not just one) so we
+        // can compute a cross-source corroboration tier (Round 6, Phase N). Keep
+        // the best (highest source-rank) group for the explanation label.
         use std::collections::HashMap;
-        let mut shared: HashMap<usize, usize> = HashMap::new(); // word -> best_sense_idx
+        // word -> (best_sense_idx_for_label, set of attesting sources, max group size)
+        let mut shared: HashMap<usize, (usize, u8, usize)> = HashMap::new();
         for &sidx in &self.word_senses[qid] {
             let sg = &self.senses[sidx];
+            let src_bit = Self::source_bit(sg.source);
+            let gsize = sg.members.len();
             for &m in &sg.members {
                 if m == qid {
                     continue;
                 }
-                let e = shared.entry(m).or_insert(sidx);
+                let e = shared.entry(m).or_insert((sidx, 0u8, 0usize));
+                e.1 |= src_bit; // accumulate the SET of attesting sources
+                if gsize > e.2 {
+                    e.2 = gsize; // remember the largest attesting group
+                }
                 // prefer the higher-source-rank sense for the explanation/label
-                let cur_rank = Self::source_rank(self.senses[*e].source);
+                let cur_rank = Self::source_rank(self.senses[e.0].source);
                 let new_rank = Self::source_rank(sg.source);
                 if new_rank > cur_rank {
-                    *e = sidx;
+                    e.0 = sidx;
                 }
             }
         }
@@ -362,22 +370,21 @@ impl RelationEngine {
         }
 
         // Per-query Personalized PageRank: teleport to the query word's node in
-        // the sense-scoped graph. If the word isn't a graph node (e.g. it only
-        // appeared as a lone headword with no co-members), there are no related
-        // words anyway.
+        // the sense-scoped graph.
         let Some(graph_qid) = self.graph.entity_id(word) else {
             return Vec::new();
         };
         let pi_q = self.graph.personalized_pagerank(&[graph_qid], 20);
 
-        // FolkRank relative score for each candidate: log π_q − log π_global.
-        // Both vectors are index-aligned to `self.graph.entities`, so we look up
-        // each candidate word's graph id. Candidates always have a graph id
-        // (they co-occur in a sense group, hence share an edge with the query).
+        // For each candidate: corroboration tier (primary key) + FolkRank
+        // relative PPR (secondary). The tier fixes P2: an isolated 2-member
+        // Wiktionary pair (tier 0) can no longer outrank a multi-member WordNet
+        // synset (tier ≥1) just because a 2-member group concentrates PPR mass.
         let min_p = 1e-6f32;
-        let mut ranked: Vec<(usize, f32, usize)> = shared
+        // (wid, tier, ppr, best_sense_idx)
+        let mut ranked: Vec<(usize, u8, f32, usize)> = shared
             .into_iter()
-            .map(|(w, sidx)| {
+            .map(|(w, (sidx, src_set, max_gsize))| {
                 let ppr = match self.graph.entity_id(&self.words[w]) {
                     Some(gid) => {
                         let a = pi_q[gid].max(min_p);
@@ -386,28 +393,34 @@ impl RelationEngine {
                     }
                     None => f32::NEG_INFINITY,
                 };
-                (w, ppr, sidx)
+                let tier = Self::corroboration_tier(src_set, max_gsize);
+                (w, tier, ppr, sidx)
             })
             .collect();
 
         ranked.sort_by(|a, b| {
-            // Primary: PPR score descending.
-            let ord = b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal);
-            if ord != std::cmp::Ordering::Equal && (a.1 - b.1).abs() > PPR_TIE_EPS {
-                return ord;
-            }
-            // Secondary (near-equal PPR): higher frequency wins.
-            let fa = self.freq.get(&self.words[a.0]).copied().unwrap_or(0);
-            let fb = self.freq.get(&self.words[b.0]).copied().unwrap_or(0);
-            fb.cmp(&fa)
-                // Tertiary: alphabetical (deterministic).
+            // Primary: corroboration tier descending (ORST/multi-source/
+            // single-corroborated/isolated).
+            b.1.cmp(&a.1)
+                // Secondary: PPR score descending.
+                .then_with(|| {
+                    let ord = b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal);
+                    if (a.2 - b.2).abs() > PPR_TIE_EPS { ord } else { std::cmp::Ordering::Equal }
+                })
+                // Tertiary (near-equal PPR): higher frequency wins.
+                .then_with(|| {
+                    let fa = self.freq.get(&self.words[a.0]).copied().unwrap_or(0);
+                    let fb = self.freq.get(&self.words[b.0]).copied().unwrap_or(0);
+                    fb.cmp(&fa)
+                })
+                // Quaternary: alphabetical (deterministic).
                 .then_with(|| self.words[a.0].cmp(&self.words[b.0]))
         });
 
         ranked
             .into_iter()
             .take(top_k)
-            .map(|(wid, ppr, sidx)| {
+            .map(|(wid, _tier, ppr, sidx)| {
                 let sg = &self.senses[sidx];
                 let source = sg.source;
                 let confidence = self.classify_confidence(qid, wid, source);
@@ -424,6 +437,69 @@ impl RelationEngine {
                 }
             })
             .collect()
+    }
+
+    /// A one-hot-ish bit per source, so a candidate's attesting sources can be
+    /// accumulated into a set with `|=`.
+    fn source_bit(s: RelationSource) -> u8 {
+        match s {
+            RelationSource::Seed => 0b0001,
+            RelationSource::CoinedWord => 0b0010,
+            RelationSource::WordNet => 0b0100,
+            RelationSource::Wiktionary => 0b1000,
+        }
+    }
+
+    /// Cross-source corroboration tier (Round 6, Phase N) — the primary ranking
+    /// key. Higher = more trustworthy evidence:
+    ///  - **3 ORST-attested:** a Seed or CoinedWord group attests the pair
+    ///    (hand-verified or ORST-authored — the authoritative sources).
+    ///  - **2 multi-source:** ≥2 *distinct* sources agree on the pair.
+    ///  - **1 single-source corroborated:** one source, but via a multi-member
+    ///    group (≥3 members = a real synset, internally corroborated).
+    ///  - **0 isolated pair:** one source, only 2-member group(s) (e.g. a lone
+    ///    Kaikki synonym pair — the weakest evidence, and exactly what the ⚠
+    ///    Unverified flag marks).
+    ///
+    /// This is the tier used for ranking AND measured for precision-by-tier in
+    /// VERIFY_R6.md. **Pre-registered before the audit** (Phase N rule).
+    fn corroboration_tier(src_set: u8, max_group_size: usize) -> u8 {
+        let orst = src_set & (0b0001 | 0b0010) != 0; // Seed or CoinedWord
+        let distinct_sources = src_set.count_ones();
+        if orst {
+            3
+        } else if distinct_sources >= 2 {
+            2
+        } else if max_group_size >= 3 {
+            1
+        } else {
+            0
+        }
+    }
+
+    /// Public accessor for the corroboration tier of a (query, candidate) pair,
+    /// for the Phase N precision-by-tier measurement. Returns `None` if the two
+    /// words share no sense group.
+    pub fn pair_tier(&self, query: &str, other: &str) -> Option<u8> {
+        let (&qid, &oid) = (self.word_id.get(query)?, self.word_id.get(other)?);
+        let mut src_set = 0u8;
+        let mut max_gsize = 0usize;
+        let mut shares = false;
+        for &sidx in &self.word_senses[qid] {
+            let sg = &self.senses[sidx];
+            if sg.members.contains(&oid) {
+                shares = true;
+                src_set |= Self::source_bit(sg.source);
+                if sg.members.len() > max_gsize {
+                    max_gsize = sg.members.len();
+                }
+            }
+        }
+        if shares {
+            Some(Self::corroboration_tier(src_set, max_gsize))
+        } else {
+            None
+        }
     }
 
     /// Recount, from the live graph, how many (query, related-candidate) pairs
@@ -676,6 +752,54 @@ mod tests {
             !rel.iter().any(|r| r.word == "บ้านเกิด"),
             "ครอบครัว must not surface บ้านเกิด (cross-synset leak)"
         );
+    }
+
+    #[test]
+    fn corroborated_outranks_isolated() {
+        // P2/N regression: a candidate attested by a multi-member WordNet synset
+        // (corroboration tier ≥1) must outrank an isolated 2-member Wiktionary
+        // pair (tier 0), even though the 2-member group concentrates more PPR
+        // mass. Synthetic reproduction of the บ้าน case:
+        //   - บ้านทดสอบ shares a 4-member WordNet synset with เรือนทดสอบ (tier 1)
+        //   - บ้านทดสอบ shares an isolated 2-member Kaikki pair with คหทดสอบ (tier 0)
+        use crate::dictionary::{Entry, License, Pos, Provenance, Relation, Sense, Source};
+        use crate::wordnet::WordNet;
+
+        // A WordNet with one 4-member synset containing the query.
+        let wn = WordNet::from_synsets_tsv("syn-1\tบ้านทดสอบ\tเรือนทดสอบ\tนิวาสทดสอบ\tบ้านช่องทดสอบ\n");
+
+        let mut dict = Dictionary::new();
+        for e in seed_entries() {
+            dict.insert(e);
+        }
+        // A Kaikki entry giving บ้านทดสอบ an isolated 2-member pair with คหทดสอบ.
+        let mut kaikki = Entry::headword_only("บ้านทดสอบ");
+        kaikki.senses.push(Sense {
+            pos: Some(Pos::Nam),
+            subject: None,
+            register: None,
+            definition: "ที่อยู่อาศัย (Kaikki)".into(),
+            examples: vec![],
+            classifiers: vec![],
+            provenance: Provenance { source: Source::Kaikki, license: License::CcBySa, confidence: RelationConfidence::Unverified },
+        });
+        kaikki.relations.push((Relation::Synonym, "คหทดสอบ".into()));
+        dict.insert(kaikki);
+
+        let e = RelationEngine::from_dictionary_with_wordnet(&dict, &wn);
+        let rel = e.related("บ้านทดสอบ", 20);
+        let pos = |w: &str| rel.iter().position(|r| r.word == w);
+        let ruean = pos("เรือนทดสอบ");
+        let kh = pos("คหทดสอบ");
+        assert!(ruean.is_some(), "the WordNet-synset member must appear");
+        assert!(kh.is_some(), "the Kaikki-pair member must appear");
+        assert!(
+            ruean.unwrap() < kh.unwrap(),
+            "corroborated WordNet synset member (tier 1) must outrank isolated Kaikki pair (tier 0)"
+        );
+        // Tier check.
+        assert!(e.pair_tier("บ้านทดสอบ", "เรือนทดสอบ").unwrap() >= 1);
+        assert_eq!(e.pair_tier("บ้านทดสอบ", "คหทดสอบ").unwrap(), 0);
     }
 
     #[test]
