@@ -56,6 +56,15 @@ files too and note it here — this log is the record of *that it changed*, thos
 | **Round 6 W** — offline WASM flagship | **done** — `3b5d78d`; 3.17MB gzip, seg byte-identical to native, PWA, reduced dataset | 2026-09-14 |
 | **Round 6 C/D1/E1** — reverse dict / seg-F1 / allocator | not started (optional; honest-scoping — spine finished cleanly instead) | — |
 | **Round 6** — deliverables | **done** — `VERIFY_R6.md` + `BENCHMARKS.md` | 2026-09-14 |
+| **Round 7 T1** — re-base ranking on measured-precision bands | **done** — `d59ad83`; band→PPR→freq p@5 79.3% shipped; freq-primary 75.3% measured & rejected | 2026-09-14 |
+| **Round 7 T2** — un-invert the ⚠ confidence flag | **done** — `58ea8a6`; warn band C (55%), not isolated (80%) | 2026-09-14 |
+| **Round 7 T3** — statistical honesty (CIs / scope / corpus shift) | **done** — `9d0a690`; 55vs80 separates, 92.5vs82.5 doesn't; 0.68% scope; 84% Wiktionary | 2026-09-14 |
+| **Round 7 T4** — verify_pitch.sh regression | **done** — `782ed7d`; caught R7's own stale demo, fixed PITCH §3; ALL PASS | 2026-09-14 |
+| **Round 7 W2** — definitions in the offline WASM | **done** — `b22ca3d`; 29,601 defs, 3.99MB gzip, non-seed lookup works | 2026-09-14 |
+| **Round 7 S2** — cache global PageRank | **done** — `996b56a`; warm engine build 1.097s→69ms | 2026-09-14 |
+| **Round 7 D1** — measured segmentation boundary-F1 | **done** — `7845867`; wisesight1000 0.8015±0.1660 (our own number) | 2026-09-14 |
+| **Round 7 C/S1b/E1** — reverse dict / dense trie / allocator | not started (optional, droppable; spine finished cleanly) | — |
+| **Round 7** — deliverables | **done** — `VERIFY_R7.md` + `BENCHMARKS.md` | 2026-09-14 |
 | Day 2 — demo/submit | not started | — |
 
 **A real product crate now exists** (`wacha/`) in addition to the `poc/` feasibility harness. The
@@ -1449,3 +1458,57 @@ module makes no host calls.
 **Final:** 89 tests pass; graph 57,061 entities / 73,025 triples / 29,353 sense nodes; cross_sense 0;
 KEEP 40/40; warm ~1.09 s; p95 13.9 ms; WASM 3.17 MB gzip. `katgpt-rs` untouched; `README.md` (concurrent
 session) not committed; one commit per task, each leaving the product demoable.
+
+### 2026-09-14 (Round 7) — make the ranking + flags follow the evidence; finish the flagship
+
+Executed `NEXT_STEPS_R7.md`. The round's premise: R6's acceptance criterion ("`เรือน` must be top 3")
+was itself the bug — it locked a word to a rank via a rule (tier 1 synset) the audit said was the *worst*
+(55%). R7 forbids pinning any word to any rank and measures ranking quality directly. Full report:
+`VERIFY_R7.md`; numbers: `BENCHMARKS.md`.
+
+**T1 (`d59ad83`) — ranking re-based on MEASURED bands, and the plan's own freq-primary proposal measured &
+rejected.** Tiers are now collapsed to 3 precision bands (A=multi-source 92.5%, B=ORST+isolated ~80-82%,
+C=single-source synset 55%) and ranking goes band → PPR → frequency. **Acceptance = precision@5 on a fresh
+held-out sample (seed `0x52372026`, ≠ the tier-fit seed), single-rater hand-audit, via the new `patk` CLI
+— no word pinned to a rank.** Measured: band→PPR→freq **79.3%** (holds vs R6's 79.3%, SHIPPED);
+band→freq→freq-primary (the plan's proposal) **75.3%** (freq pulls น้ำ/หัว-type frequent-but-loose words
+into the top-5 → rejected per the "ships only if p@5 holds" rule). Both reproducible via `WACHA_RANK=`.
+
+**T2 (`58ea8a6`) — un-inverted the ⚠ flag.** The old flag warned isolated pairs (measured 80%) and stayed
+silent on single-source synsets (measured 55%) — it warned the *better* class. Now warns band C (55%).
+`ข้อหา→มลทิน` (the original "bad pair" that motivated the flag in R3) is now *unflagged* because isolated
+pairs are actually 80% good; `วงศ์ตระกูล`-type single-source synsets are now flagged. BIBLE §6.6 keeps the
+original degree-based design + its weak result, states it was measured inverted, and what replaced it —
+the reversal is the story.
+
+**T3 (`9d0a690`) — statistical honesty.** CIs on every precision figure (n=40 ⇒ ±10-15pp): **55% vs 80%
+separates** (the actionable finding), **92.5% vs 82.5% does not** (CIs overlap → tiers merged). 92.5%
+always quoted with its scope (**0.68%** = 1,074/158,045 pairs). Corpus shift stated: the graph is now
+**~84% Wiktionary** (132,631/158,045), so provenance labels matter more than ever.
+
+**T4 (`782ed7d`) — pitch regression test.** `verify_pitch.sh` asserts every PITCH §3 demo claim
+(word/source/⚠) against the live engine; wired into `verify_r5.sh §8`. Running it immediately caught R7's
+own changes making the pitch stale (ข้อหา no longer flagged, ครู top-5 reordered, สนาม #1 changed) and
+PITCH §3 was fixed — demo word 4 rewritten as the flag-reversal story.
+
+**W2 (`b22ca3d`) — the flagship now has definitions.** R6 shipped WASM with 22 MB of budget unused and no
+definitions. A compact defs blob (sorted, binary-searchable, no JSON) puts **all 29,601 definitions** in
+the browser: 14.80 MB raw / **3.99 MB gzip** (under both the 25 MB and 15 MB thresholds → full set).
+Non-seed words (ปัญญาประดิษฐ์/รถยนต์) now return real Kaikki definitions offline; segmentation still
+byte-identical to native.
+
+**S2 (`996b56a`) — the correctly-diagnosed start-up fix.** The ~1.08 s warm cost was the global-PageRank
+recompute (not vocab_hash, as R6's P1 wrongly guessed). Cached beside the trie cache, keyed by a graph
+content hash: engine build **1.097 s → 69 ms** (PageRank load 65 µs). Invalidation test + byte-identical
+lookups.
+
+**D1 (`7845867`) — our own measured segmentation F1.** Greedy longest-match on wisesight1000 (CC0, 993
+samples): boundary-F1 **0.8015 ± 0.1660** per-sample (micro 0.782). High recall / lower precision = the
+greedy over-merge signature. We do NOT quote newmm's 0.73 as ours. Credits LEXiTRON/NECTEC.
+
+**C / S1b / E1 not started** (optional, droppable) — the spine finished cleanly instead. C (reverse dict)
+is now primed by W2's in-browser definitions; S1b has its 23-word reproduction case + D1's F1 backstop.
+
+**Final:** 90 tests; graph 57,061/73,025/29,353; cross_sense 0; KEEP 40/40; warm build 69 ms; WASM 3.99 MB
+gzip; seg F1 0.8015. `katgpt-rs`/`graph.rs` untouched; `README.md` (concurrent session) not committed; one
+commit per task, each demoable; no criterion pinned a word to a rank.
