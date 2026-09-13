@@ -46,6 +46,10 @@ Phase T (mandatory) precedes everything else.
 - **W2 WASM:** 14.80 MB raw / **3.99 MB gzip**; all 29,601 defs; ปัญญาประดิษฐ์/รถยนต์/ครอบครัว return real
   Kaikki defs; segmentation byte-identical to native on 10 PITCH words; init ~8 s.
 - **D1 segmentation:** boundary-F1 **0.8015 ± 0.1660** per-sample; micro P/R/F1 0.685/0.911/0.782.
+  **Character-level, therefore NOT comparable to the word-level F1 figures in the literature** (AttaCut
+  Table 2); our word-level F1 is unmeasured and would be lower. Recall > precision means the segmenter
+  **over-segments** (emits ~31.5% more boundaries than gold), not under — see `BENCHMARKS.md` §4.2, where
+  an earlier backwards reading was corrected on 2026-09-14.
 - `git -C ../katgpt-rs status --short` empty (untouched).
 
 ---

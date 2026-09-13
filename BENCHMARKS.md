@@ -146,10 +146,32 @@ social-media samples), char-level `is_beginning` boundary protocol
 | per-sample boundary-F1 (mean ± std) | **0.8015 ± 0.1660** |
 | micro precision / recall / F1 | 0.685 / 0.911 / **0.782** |
 
-This is **our own measured number**, not a citation. The high recall / lower precision is the expected
-greedy over-merge signature (it favours the longest dictionary match, so it splits less than a human).
-**We deliberately do NOT quote newmm's 0.73 TNHC figure as ours** — that is a different algorithm under a
-different setup. Our word list is NECTEC LEXiTRON (credited in the pitch); the benchmark is PyThaiNLP's.
+This is **our own measured number**, not a citation.
+
+**What the precision/recall split actually means (corrected 2026-09-14).** Recall 0.911 > precision 0.685
+means we emit **more** boundaries than the gold annotation — about 31.5% of the boundaries we predict are
+not in the gold — so this segmenter **over-segments**, i.e. it splits *more* finely than the human
+annotator, and it misses few real boundaries. The most likely driver is the OOV path: wisesight1000 is
+social-media text (slang, typos, Latin script), and unknown spans fall back to Thai Character Clusters,
+which are short and therefore introduce extra boundaries. *(An earlier version of this paragraph described
+this as an "over-merge signature" that "splits less than a human" — that was backwards, and is corrected
+here rather than quietly deleted.)*
+
+**⚠️ This number is NOT comparable to the word-level F1 figures in the Thai segmentation literature.**
+Ours is **character-level boundary F1**; the widely-cited table (AttaCut, arXiv:1911.07056, Table 2 —
+PyThaiNLP 0.67 / DeepCut 0.93 on BEST-2010, PyThaiNLP 0.74 on Wisesight-1000) reports **word-level (WL)
+F1**, which is a strictly harder metric: one wrong boundary invalidates the whole word. The AttaCut
+authors make this point themselves — *"measuring only the character-level metrics would overestimate the
+tokenization performance of word tokenizers"* (§4.2) — which is precisely why they added WL. **Our
+word-level F1 would be lower than 0.8015, and we have not measured it yet.** Until we do, do not place
+0.8015 next to those numbers, and do not claim any comparison with newmm, DeepCut or AttaCut.
+
+**We also do NOT quote newmm's 0.73 TNHC figure as ours** — different algorithm, different corpus, different
+metric. Our word list is NECTEC LEXiTRON (credited in the pitch); the benchmark is PyThaiNLP's.
+
+**Open task:** measure word-level F1 on the same wisesight1000 split, following the AttaCut protocol
+(per-sample mean ± std), and report it beside the boundary figure. Only then is a like-for-like statement
+about where we sit relative to published baselines possible.
 
 ---
 

@@ -1512,3 +1512,50 @@ is now primed by W2's in-browser definitions; S1b has its 23-word reproduction c
 **Final:** 90 tests; graph 57,061/73,025/29,353; cross_sense 0; KEEP 40/40; warm build 69 ms; WASM 3.99 MB
 gzip; seg F1 0.8015. `katgpt-rs`/`graph.rs` untouched; `README.md` (concurrent session) not committed; one
 commit per task, each demoable; no criterion pinned a word to a rank.
+
+### 2026-09-14 (Round 7 review) — correction to the D1 segmentation write-up
+
+Review pass by the reviewing agent. R7 verified and accepted (details below); **one factual error found in
+a deliverable and corrected in place** rather than left for the next round, since it was a wrong statement
+sitting in a document we would hand a judge.
+
+**Correction 1 — the D1 precision/recall reading was backwards.** The 2026-09-14 D1 entry above and
+`BENCHMARKS.md` §4.2 described micro P/R of 0.685/0.911 as "the greedy over-merge signature… it splits
+less than a human". That is inverted. Recall (0.911) > precision (0.685) means we emit **more** boundaries
+than the gold annotation — roughly 31.5% of our predicted boundaries are not in the gold — so the
+segmenter **over-segments**, splitting more finely than the human annotator, while missing few true
+boundaries. Most likely driver: wisesight1000 is social-media text and unknown spans fall back to Thai
+Character Clusters, which are short and add boundaries. Corrected in `BENCHMARKS.md` §4.2 with the
+superseded wording quoted, not silently deleted.
+
+**Correction 2 — the number needed a comparability warning.** Our 0.8015 is **character-level boundary
+F1**. The figures a Thai-NLP audience will recall (AttaCut arXiv:1911.07056 Table 2 — PyThaiNLP 0.67 /
+DeepCut 0.93 on BEST-2010; PyThaiNLP 0.74 on Wisesight-1000) are **word-level F1**, a strictly harder
+metric. The AttaCut authors say so themselves (§4.2: *"measuring only the character-level metrics would
+overestimate the tokenization performance of word tokenizers"*) — which is why they added WL. Without this
+warning, a NECTEC reader would naturally read 0.8015 as beating newmm's 0.74. It does not: **our
+word-level F1 is unmeasured and would be lower.** Warning added to `BENCHMARKS.md` §4.2 and `VERIFY_R7.md`.
+
+**Open task carried forward:** measure word-level F1 on the same wisesight1000 split under the AttaCut
+protocol (per-sample mean ± std) and report it beside the boundary figure. Only then can we make any
+like-for-like statement about published baselines.
+
+**R7 otherwise verified by the reviewer, running everything independently:** `verify_pitch.sh` ALL PASS
+(and it caught R7's own stale demo beat — T2's flag reversal killed the `ข้อหา→มลทิน` moment, which was
+correctly migrated to `วงศ์ตระกูล→วงศ์วานว่านเครือ`); warm engine build 1.097 s → **69 ms** with the global
+PageRank vector loading in 63 µs; WASM **4.06 MB gzip** with all 29,601 definitions confirmed present by
+grepping real definition strings out of the `.wasm` binary, single `fetch`, no backend; 90 + 4 tests;
+`katgpt-rs` untouched.
+
+**Two things worth recording about method, not results:**
+1. **T1 rejected the reviewer's own proposal on measurement.** The plan proposed promoting corpus
+   frequency to the primary ranking signal; measured on a held-out seed it scored p@5 **75.3%** against
+   the shipped band→PPR→freq at **79.3%**, and was correctly not shipped.
+2. **T1's p@5 held at 79.3% — it did not improve.** The value of re-basing the tiers was that the stated
+   rationale no longer contradicts our own audit, not that ranking quality measurably rose. Say "held",
+   not "improved".
+
+**Remaining honest weaknesses** (none blocking a demo): cold build still ~58 s (S1 stopped on its
+correctness gate); relations are ~84% Wiktionary-derived; the 92.5% multi-source precision covers only
+0.68% of pairs; tier audits are n=40 and single-rater (±10–15 pp, no inter-rater agreement); C (reverse
+dictionary), S1b and E1 not started.
