@@ -72,7 +72,10 @@ fn main() {
 
     let words: Vec<(String, String)> = seed_entries()
         .into_iter()
-        .map(|e| (e.word, e.definition))
+        .map(|e| {
+            let def = e.primary_definition().unwrap_or("").to_string();
+            (e.headword, def)
+        })
         .collect();
 
     eprintln!(

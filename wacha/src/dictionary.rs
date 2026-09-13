@@ -1,43 +1,368 @@
-//! Dictionary data: the word list that drives segmentation, optional word
-//! frequencies (for ranking), and structured dictionary entries carrying the
-//! explicit relations from which we derive knowledge-graph triples.
+//! Dictionary data model — reshaped (Round 5, Task 1) to match the structure of
+//! พจนานุกรม ฉบับราชบัณฑิตยสถาน พ.ศ. ๒๕๕๔ (RID 2554), so the real competition
+//! dataset drops into the same `Entry`/`Sense` shape without a rewrite.
 //!
-//! Data provenance (resolved Day-0, `AGENT_HANDOFF.md` §6):
-//! - Word list: PyThaiNLP `words_th.txt`, 62,107 entries, **CC0-1.0** (public
-//!   domain; derived from NECTEC LEXiTRON). Free to use with no attribution.
-//! - Frequencies: PyThaiNLP `tnc_freq.txt` (Thai National Corpus), **CC0-1.0**.
+//! Key change from Rounds 1–4: an `Entry` now holds a headword + scalar metadata
+//! and a list of **`Sense`s**, each carrying its own part-of-speech, subject
+//! field, register, definition, examples, classifiers, and — crucially —
+//! **per-sense `Provenance`** (source + licence + confidence). This is what lets
+//! us merge LEXiTRON + Kaikki + ศัพท์บัญญัติ + RID into one entry while keeping an
+//! honest, field-level record of where each fact came from and under what
+//! licence.
 //!
-//! At the real event, if ORST hands out an official RID dataset it supersedes
-//! this — the `Entry`/relation model below is the integration point.
+//! Data provenance of the current practice data (`AGENT_HANDOFF.md` §6):
+//! - Word list: PyThaiNLP `words_th.txt`, **CC0-1.0** (from NECTEC LEXiTRON).
+//! - Frequencies: PyThaiNLP `tnc_freq.txt`, **CC0-1.0**.
+//! The real RID data arrives at the event; see `COMPETITION_DAY.md` (Task 8).
 
 use std::collections::HashMap;
 
-/// A dictionary relation kind. Kept small and explicit — we only extract
-/// relations the source data actually carries, never inferred/hallucinated ones
-/// (per the guardrails). Each maps to a human-readable Thai relation label used
-/// in the knowledge graph and shown to the user in explanations.
+// ── Controlled vocabularies (RID §1.1) ──────────────────────────────────────
+
+/// Part of speech — the 8 RID word classes (ชนิดของคำ). Closed set.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Pos {
+    Kri,        // ก.  กริยา (verb)
+    Nam,        // น.  คำนาม (noun)
+    Nibat,      // นิ. นิบาต (particle)
+    Buraphabot, // บ.  บุรพบท (preposition)
+    Uthan,      // อ.  อุทาน (interjection)
+    Santhan,    // สัน สันธาน (conjunction)
+    Sapphanam,  // ส.  สรรพนาม (pronoun)
+    Wiset,      // ว.  วิเศษณ์ (adjective/adverb)
+}
+
+impl Pos {
+    /// The RID marker (as printed in the dictionary, e.g. `น.`).
+    pub fn marker(self) -> &'static str {
+        match self {
+            Pos::Kri => "ก.",
+            Pos::Nam => "น.",
+            Pos::Nibat => "นิ.",
+            Pos::Buraphabot => "บ.",
+            Pos::Uthan => "อ.",
+            Pos::Santhan => "สัน",
+            Pos::Sapphanam => "ส.",
+            Pos::Wiset => "ว.",
+        }
+    }
+
+    /// Full Thai name (for the UI badge, e.g. คำนาม).
+    pub fn thai_name(self) -> &'static str {
+        match self {
+            Pos::Kri => "คำกริยา",
+            Pos::Nam => "คำนาม",
+            Pos::Nibat => "นิบาต",
+            Pos::Buraphabot => "บุรพบท",
+            Pos::Uthan => "อุทาน",
+            Pos::Santhan => "สันธาน",
+            Pos::Sapphanam => "สรรพนาม",
+            Pos::Wiset => "วิเศษณ์",
+        }
+    }
+
+    /// Parse a RID marker back into a `Pos`. Accepts the canonical markers above.
+    pub fn from_marker(s: &str) -> Option<Self> {
+        Some(match s.trim() {
+            "ก." => Pos::Kri,
+            "น." => Pos::Nam,
+            "นิ." => Pos::Nibat,
+            "บ." => Pos::Buraphabot,
+            "อ." => Pos::Uthan,
+            "สัน" => Pos::Santhan,
+            "ส." => Pos::Sapphanam,
+            "ว." => Pos::Wiset,
+            _ => return None,
+        })
+    }
+
+    /// All 8 values (for tests / iteration).
+    pub fn all() -> &'static [Pos] {
+        &[
+            Pos::Kri, Pos::Nam, Pos::Nibat, Pos::Buraphabot,
+            Pos::Uthan, Pos::Santhan, Pos::Sapphanam, Pos::Wiset,
+        ]
+    }
+}
+
+impl std::fmt::Display for Pos {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.marker())
+    }
+}
+
+/// Subject field — the 32 RID สาขาวิชา. Closed set, but with an `Other` escape
+/// hatch for sources (Kaikki topics, ศัพท์บัญญัติ disciplines) that don't map
+/// cleanly onto an RID field.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum Subject {
+    Kot, KanThut, KanMueang, KanSueksa, Kaset, Khanit, Khom, Khemi, Chari, Chiwa,
+    Dara, Thorani, Banchi, Pratya, Phrueksa, Phaet, Fisik, Faifa, Phumi, Manut,
+    MaeLek, Rekha, Witthaya, Wan, Wai, Satsana, Settha, Sathiti, Sari, Sangkhom,
+    Sat, Saeng, Hora, Utu,
+    /// A subject that isn't one of the 32 RID fields (e.g. a Kaikki topic).
+    Other(String),
+}
+
+impl Subject {
+    /// The RID short tag as printed in parentheses, e.g. `(ไว)`.
+    pub fn tag(&self) -> &str {
+        match self {
+            Subject::Kot => "กฎ",
+            Subject::KanThut => "การทูต",
+            Subject::KanMueang => "การเมือง",
+            Subject::KanSueksa => "การศึกษา",
+            Subject::Kaset => "เกษตร",
+            Subject::Khanit => "คณิต",
+            Subject::Khom => "คอม",
+            Subject::Khemi => "เคมี",
+            Subject::Chari => "จริย",
+            Subject::Chiwa => "ชีว",
+            Subject::Dara => "ดารา",
+            Subject::Thorani => "ธรณี",
+            Subject::Banchi => "บัญชี",
+            Subject::Pratya => "ปรัชญา",
+            Subject::Phrueksa => "พฤกษ",
+            Subject::Phaet => "แพทย์",
+            Subject::Fisik => "ฟิสิกส์",
+            Subject::Faifa => "ไฟฟ้า",
+            Subject::Phumi => "ภูมิ",
+            Subject::Manut => "มานุษย",
+            Subject::MaeLek => "แม่เหล็ก",
+            Subject::Rekha => "เรขา",
+            Subject::Witthaya => "วิทยา",
+            Subject::Wan => "วรรณ",
+            Subject::Wai => "ไว",
+            Subject::Satsana => "ศาสน",
+            Subject::Settha => "เศรษฐ",
+            Subject::Sathiti => "สถิติ",
+            Subject::Sari => "สรีร",
+            Subject::Sangkhom => "สังคม",
+            Subject::Sat => "สัตว",
+            Subject::Saeng => "แสง",
+            Subject::Hora => "โหร",
+            Subject::Utu => "อุตุ",
+            Subject::Other(s) => s.as_str(),
+        }
+    }
+
+    /// Parse an RID subject tag. Returns `Other` for anything not in the 32.
+    pub fn from_marker(s: &str) -> Self {
+        match s.trim() {
+            "กฎ" => Subject::Kot,
+            "การทูต" => Subject::KanThut,
+            "การเมือง" => Subject::KanMueang,
+            "การศึกษา" => Subject::KanSueksa,
+            "เกษตร" => Subject::Kaset,
+            "คณิต" => Subject::Khanit,
+            "คอม" => Subject::Khom,
+            "เคมี" => Subject::Khemi,
+            "จริย" => Subject::Chari,
+            "ชีว" => Subject::Chiwa,
+            "ดารา" => Subject::Dara,
+            "ธรณี" => Subject::Thorani,
+            "บัญชี" => Subject::Banchi,
+            "ปรัชญา" => Subject::Pratya,
+            "พฤกษ" => Subject::Phrueksa,
+            "แพทย์" => Subject::Phaet,
+            "ฟิสิกส์" => Subject::Fisik,
+            "ไฟฟ้า" => Subject::Faifa,
+            "ภูมิ" => Subject::Phumi,
+            "มานุษย" => Subject::Manut,
+            "แม่เหล็ก" => Subject::MaeLek,
+            "เรขา" => Subject::Rekha,
+            "วิทยา" => Subject::Witthaya,
+            "วรรณ" => Subject::Wan,
+            "ไว" => Subject::Wai,
+            "ศาสน" => Subject::Satsana,
+            "เศรษฐ" => Subject::Settha,
+            "สถิติ" => Subject::Sathiti,
+            "สรีร" => Subject::Sari,
+            "สังคม" => Subject::Sangkhom,
+            "สัตว" => Subject::Sat,
+            "แสง" => Subject::Saeng,
+            "โหร" => Subject::Hora,
+            "อุตุ" => Subject::Utu,
+            other => Subject::Other(other.to_string()),
+        }
+    }
+
+    /// The 34 named RID fields (32 in the plan + the list actually enumerated on
+    /// the ORST form; `Other` excluded).
+    pub fn all_named() -> Vec<Subject> {
+        vec![
+            Subject::Kot, Subject::KanThut, Subject::KanMueang, Subject::KanSueksa,
+            Subject::Kaset, Subject::Khanit, Subject::Khom, Subject::Khemi,
+            Subject::Chari, Subject::Chiwa, Subject::Dara, Subject::Thorani,
+            Subject::Banchi, Subject::Pratya, Subject::Phrueksa, Subject::Phaet,
+            Subject::Fisik, Subject::Faifa, Subject::Phumi, Subject::Manut,
+            Subject::MaeLek, Subject::Rekha, Subject::Witthaya, Subject::Wan,
+            Subject::Wai, Subject::Satsana, Subject::Settha, Subject::Sathiti,
+            Subject::Sari, Subject::Sangkhom, Subject::Sat, Subject::Saeng,
+            Subject::Hora, Subject::Utu,
+        ]
+    }
+}
+
+impl std::fmt::Display for Subject {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.tag())
+    }
+}
+
+/// Register / ทะเบียนคำ — the 5 RID usage labels. Closed set.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Register {
+    Baep,  // แบบ  literary
+    Bo,    // โบ   archaic
+    Pak,   // ปาก  colloquial
+    Racha, // ราชา royal
+    Loek,  // เลิก obsolete
+}
+
+impl Register {
+    pub fn marker(self) -> &'static str {
+        match self {
+            Register::Baep => "แบบ",
+            Register::Bo => "โบ",
+            Register::Pak => "ปาก",
+            Register::Racha => "ราชา",
+            Register::Loek => "เลิก",
+        }
+    }
+
+    pub fn from_marker(s: &str) -> Option<Self> {
+        Some(match s.trim() {
+            "แบบ" => Register::Baep,
+            "โบ" => Register::Bo,
+            "ปาก" => Register::Pak,
+            "ราชา" => Register::Racha,
+            "เลิก" => Register::Loek,
+            _ => return None,
+        })
+    }
+
+    pub fn all() -> &'static [Register] {
+        &[Register::Baep, Register::Bo, Register::Pak, Register::Racha, Register::Loek]
+    }
+}
+
+impl std::fmt::Display for Register {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.marker())
+    }
+}
+
+// ── Provenance ──────────────────────────────────────────────────────────────
+
+/// Which source a sense/fact came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Source {
+    Lexitron,
+    Kaikki,
+    CoinedWord, // ศัพท์บัญญัติ
+    Rid,        // real competition data
+    HumanSeed,
+}
+
+impl Source {
+    pub fn label(self) -> &'static str {
+        match self {
+            Source::Lexitron => "LEXiTRON",
+            Source::Kaikki => "Kaikki (Wiktionary)",
+            Source::CoinedWord => "ศัพท์บัญญัติ (ORST)",
+            Source::Rid => "RID ๒๕๕๔ (ORST)",
+            Source::HumanSeed => "ตรวจด้วยมือ",
+        }
+    }
+    /// Merge priority — higher wins for scalar fields (Task 2).
+    pub fn priority(self) -> u8 {
+        match self {
+            Source::Rid => 5,
+            Source::HumanSeed => 4,
+            Source::CoinedWord => 3,
+            Source::Kaikki => 2,
+            Source::Lexitron => 1,
+        }
+    }
+}
+
+/// Licence of a source's data.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum License {
+    Cc0,
+    CcBySa,
+    NictPermissive,
+    OrstEducational,
+}
+
+impl License {
+    pub fn label(self) -> &'static str {
+        match self {
+            License::Cc0 => "CC0-1.0",
+            License::CcBySa => "CC BY-SA",
+            License::NictPermissive => "NICT (permissive)",
+            License::OrstEducational => "ORST (educational, non-commercial)",
+        }
+    }
+}
+
+/// Structural confidence of a relation/fact (reused from the relations layer's
+/// concept; kept here so `Provenance` is self-contained).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum RelationConfidence {
+    Confirmed,
+    Unverified,
+}
+
+impl RelationConfidence {
+    pub fn tag(self) -> &'static str {
+        match self {
+            RelationConfidence::Confirmed => "ยืนยัน",
+            RelationConfidence::Unverified => "ยังไม่ยืนยัน",
+        }
+    }
+    pub fn as_str(self) -> &'static str {
+        match self {
+            RelationConfidence::Confirmed => "confirmed",
+            RelationConfidence::Unverified => "unverified",
+        }
+    }
+}
+
+/// Per-sense provenance: where the fact came from, its licence, and confidence.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Provenance {
+    pub source: Source,
+    pub license: License,
+    pub confidence: RelationConfidence,
+}
+
+impl Provenance {
+    /// The hand-curated seed default.
+    pub fn seed() -> Self {
+        Provenance {
+            source: Source::HumanSeed,
+            license: License::Cc0,
+            confidence: RelationConfidence::Confirmed,
+        }
+    }
+}
+
+// ── Relations (entry-level cross references; graph layer in relations.rs) ────
+
+/// A dictionary relation kind. Only relations the source data actually carries.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Relation {
-    /// synonym — คำพ้องความหมาย
-    Synonym,
-    /// antonym — คำตรงข้าม
-    Antonym,
-    /// hypernym / "is a kind of" — เป็นชนิดของ
-    IsA,
-    /// "see also" / cross reference — ดูเพิ่มที่
-    SeeAlso,
-    /// category / domain — อยู่ในหมวด
-    Category,
-    /// generic semantic association — เกี่ยวข้องกับ. Used for complementary role
-    /// pairs (ครู/นักเรียน), converse activities (อ่าน/เขียน), and derivational
-    /// forms (สุข/ความสุข) that are genuinely *related* but are NOT true lexical
-    /// synonyms or antonyms. Keeping these honest (rather than mislabeling them
-    /// as antonyms) is what a ราชบัณฑิตยสภา lexicographer would expect.
-    RelatedTo,
+    Synonym,   // มีความหมายเหมือนกับ
+    Antonym,   // ตรงข้ามกับ
+    IsA,       // เป็นชนิดของ
+    SeeAlso,   // ดูเพิ่มที่
+    Category,  // อยู่ในหมวด
+    RelatedTo, // เกี่ยวข้องกับ
 }
 
 impl Relation {
-    /// The Thai label shown in explanations and stored as the graph relation.
     pub fn thai_label(self) -> &'static str {
         match self {
             Relation::Synonym => "มีความหมายเหมือนกับ",
@@ -50,23 +375,96 @@ impl Relation {
     }
 }
 
-/// One dictionary entry: a headword, its definition, part of speech, and the
-/// explicit relations it carries to other words.
+// ── Etymology, Sense, Entry ──────────────────────────────────────────────────
+
+/// An etymology note, e.g. `(ป. ปิตา; ส. ปิตฤ)`. `lang` is the source-language
+/// marker (ป.=บาลี, ส.=สันสกฤต, อ.=อังกฤษ, ข.=เขมร); `form` the cited form.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Etymology {
+    pub lang: String,
+    pub form: String,
+}
+
+/// One sense of an entry (RID senses are numbered ๑ ๒ ๓ and each has its own
+/// POS / subject / register).
+#[derive(Debug, Clone)]
+pub struct Sense {
+    pub pos: Option<Pos>,
+    pub subject: Option<Subject>,
+    pub register: Option<Register>,
+    pub definition: String,
+    pub examples: Vec<String>,
+    pub classifiers: Vec<String>, // ลักษณนาม
+    pub provenance: Provenance,
+}
+
+impl Sense {
+    /// Convenience constructor for a simple hand-authored sense.
+    pub fn simple(pos: Pos, definition: &str) -> Self {
+        Sense {
+            pos: Some(pos),
+            subject: None,
+            register: None,
+            definition: definition.to_string(),
+            examples: Vec::new(),
+            classifiers: Vec::new(),
+            provenance: Provenance::seed(),
+        }
+    }
+}
+
+/// A dictionary entry, RID-shaped.
 #[derive(Debug, Clone)]
 pub struct Entry {
-    pub word: String,
-    pub pos: String,
-    pub definition: String,
-    /// (relation, target-word) pairs, e.g. (Synonym, "สุนัข").
+    pub headword: String,
+    pub homograph: Option<u8>,         // แมว ๑ -> Some(1)
+    pub pronunciation: Option<String>, // "[กำ, กำมะ-]"
+    pub romanization: Option<String>,  // Royal-Institute, from Kaikki sounds[]
+    pub senses: Vec<Sense>,
+    pub etymology: Vec<Etymology>,
+    pub sub_entries: Vec<String>, // ลูกคำ
+    pub see_also: Vec<String>,    // ดู
+    /// Entry-level lexical relations (synonym/antonym/…), carried forward from
+    /// the audited seed set. Task 4 will route these through Sense graph nodes.
     pub relations: Vec<(Relation, String)>,
 }
 
+impl Entry {
+    /// A headword-only entry (e.g. a LEXiTRON word with no sense yet).
+    pub fn headword_only(word: &str) -> Self {
+        Entry {
+            headword: word.to_string(),
+            homograph: None,
+            pronunciation: None,
+            romanization: None,
+            senses: Vec::new(),
+            etymology: Vec::new(),
+            sub_entries: Vec::new(),
+            see_also: Vec::new(),
+            relations: Vec::new(),
+        }
+    }
+
+    /// The first sense's definition, if any (back-compat convenience for callers
+    /// that showed a single definition).
+    pub fn primary_definition(&self) -> Option<&str> {
+        self.senses.first().map(|s| s.definition.as_str())
+    }
+
+    /// The first sense's POS marker, if any.
+    pub fn primary_pos_marker(&self) -> Option<&'static str> {
+        self.senses.first().and_then(|s| s.pos).map(|p| p.marker())
+    }
+}
+
+// ── Dictionary store ─────────────────────────────────────────────────────────
+
 /// The dictionary: a headword-indexed store of entries plus a frequency table.
+/// Keyed by `(headword, homograph)` so homographs stay distinct.
 #[derive(Default)]
 pub struct Dictionary {
-    entries: HashMap<String, Entry>,
-    /// Insertion order for stable iteration / display.
-    order: Vec<String>,
+    entries: HashMap<(String, Option<u8>), Entry>,
+    order: Vec<(String, Option<u8>)>,
     freq: HashMap<String, u64>,
 }
 
@@ -75,22 +473,25 @@ impl Dictionary {
         Self::default()
     }
 
-    /// Insert or replace an entry.
     pub fn insert(&mut self, entry: Entry) {
-        if !self.entries.contains_key(&entry.word) {
-            self.order.push(entry.word.clone());
+        let key = (entry.headword.clone(), entry.homograph);
+        if !self.entries.contains_key(&key) {
+            self.order.push(key.clone());
         }
-        self.entries.insert(entry.word.clone(), entry);
+        self.entries.insert(key, entry);
     }
 
-    /// Look up an entry by exact headword.
+    /// Look up by headword (returns the first homograph if several).
     pub fn get(&self, word: &str) -> Option<&Entry> {
-        self.entries.get(word)
+        // Prefer the no-homograph key, else the first matching headword.
+        self.entries
+            .get(&(word.to_string(), None))
+            .or_else(|| self.order.iter().find(|(h, _)| h == word).and_then(|k| self.entries.get(k)))
     }
 
-    /// All headwords, in insertion order.
+    /// All headwords (deduplicated), in insertion order.
     pub fn words(&self) -> impl Iterator<Item = &str> {
-        self.order.iter().map(|s| s.as_str())
+        self.order.iter().map(|(h, _)| h.as_str())
     }
 
     pub fn len(&self) -> usize {
@@ -101,7 +502,6 @@ impl Dictionary {
         self.entries.is_empty()
     }
 
-    /// Load a frequency table (word \t count per line), used to rank results.
     pub fn load_frequencies(&mut self, text: &str) {
         for line in text.lines() {
             let mut parts = line.splitn(2, '\t');
@@ -113,72 +513,74 @@ impl Dictionary {
         }
     }
 
-    /// Corpus frequency of a word (0 if unknown). Higher = more common.
     pub fn frequency(&self, word: &str) -> u64 {
         self.freq.get(word).copied().unwrap_or(0)
     }
 
     pub fn all_entries(&self) -> impl Iterator<Item = &Entry> {
-        self.order.iter().filter_map(move |w| self.entries.get(w))
+        self.order.iter().filter_map(move |k| self.entries.get(k))
     }
 }
 
-/// A curated seed of real Thai dictionary entries with genuine relations.
-///
-/// These stand in for RID-derived structured entries until a real dataset is
-/// wired in. They are *real* Thai words with *real* semantic relations (not
-/// invented facts) — enough to demonstrate the explainable-relationship graph
-/// end-to-end. The relations here are exactly the kind an RID entry carries
-/// explicitly (synonym / antonym / cross-reference / category), so the
-/// extraction path in `relations.rs` transfers unchanged to real data.
+// ── Seed data ─────────────────────────────────────────────────────────────────
+
+/// The 20 hand-curated seed entries, migrated to the RID-shaped model with
+/// `Provenance::seed()` (HumanSeed / CC0 / Confirmed). Every audited relation
+/// decision from the 2026-09-13 audit is preserved verbatim.
 pub fn seed_entries() -> Vec<Entry> {
     use Relation::*;
-    let mk = |word: &str, pos: &str, def: &str, rels: &[(Relation, &str)]| Entry {
-        word: word.to_string(),
-        pos: pos.to_string(),
-        definition: def.to_string(),
+    // (headword, pos, definition, relations)
+    let mk = |word: &str, pos: Pos, def: &str, rels: &[(Relation, &str)]| Entry {
+        headword: word.to_string(),
+        homograph: None,
+        pronunciation: None,
+        romanization: None,
+        senses: vec![Sense::simple(pos, def)],
+        etymology: Vec::new(),
+        sub_entries: Vec::new(),
+        see_also: Vec::new(),
         relations: rels.iter().map(|(r, w)| (*r, w.to_string())).collect(),
     };
     vec![
-        mk("แมว", "น.", "สัตว์เลี้ยงลูกด้วยนมชนิดหนึ่ง เลี้ยงไว้ในบ้าน จับหนูเป็นอาหาร",
+        mk("แมว", Pos::Nam, "สัตว์เลี้ยงลูกด้วยนมชนิดหนึ่ง เลี้ยงไว้ในบ้าน จับหนูเป็นอาหาร",
             &[(IsA, "สัตว์"), (Category, "สัตว์เลี้ยง"), (SeeAlso, "เสือ")]),
-        mk("สุนัข", "น.", "สัตว์เลี้ยงลูกด้วยนมชนิดหนึ่ง เลี้ยงไว้เฝ้าบ้าน; หมา",
+        mk("สุนัข", Pos::Nam, "สัตว์เลี้ยงลูกด้วยนมชนิดหนึ่ง เลี้ยงไว้เฝ้าบ้าน; หมา",
             &[(IsA, "สัตว์"), (Synonym, "หมา"), (Category, "สัตว์เลี้ยง")]),
-        mk("หมา", "น.", "สุนัข",
+        mk("หมา", Pos::Nam, "สุนัข",
             &[(Synonym, "สุนัข"), (IsA, "สัตว์")]),
-        mk("เสือ", "น.", "สัตว์กินเนื้อขนาดใหญ่ในวงศ์แมว",
+        mk("เสือ", Pos::Nam, "สัตว์กินเนื้อขนาดใหญ่ในวงศ์แมว",
             &[(IsA, "สัตว์"), (SeeAlso, "แมว")]),
-        mk("สัตว์", "น.", "สิ่งมีชีวิตที่เคลื่อนไหวได้และกินสิ่งอื่นเป็นอาหาร",
+        mk("สัตว์", Pos::Nam, "สิ่งมีชีวิตที่เคลื่อนไหวได้และกินสิ่งอื่นเป็นอาหาร",
             &[(Category, "สิ่งมีชีวิต")]),
-        mk("ใหญ่", "ว.", "มีขนาดโตกว่าปรกติ",
+        mk("ใหญ่", Pos::Wiset, "มีขนาดโตกว่าปรกติ",
             &[(Antonym, "เล็ก")]),
-        mk("เล็ก", "ว.", "มีขนาดย่อมกว่าปรกติ",
+        mk("เล็ก", Pos::Wiset, "มีขนาดย่อมกว่าปรกติ",
             &[(Antonym, "ใหญ่")]),
-        mk("สุข", "น.", "ความสบายกายสบายใจ",
+        mk("สุข", Pos::Nam, "ความสบายกายสบายใจ",
             &[(Antonym, "ทุกข์"), (RelatedTo, "ความสุข")]),
-        mk("ทุกข์", "น.", "ความไม่สบายกายไม่สบายใจ",
+        mk("ทุกข์", Pos::Nam, "ความไม่สบายกายไม่สบายใจ",
             &[(Antonym, "สุข")]),
-        mk("ครู", "น.", "ผู้สั่งสอนศิษย์; ผู้ถ่ายทอดความรู้",
+        mk("ครู", Pos::Nam, "ผู้สั่งสอนศิษย์; ผู้ถ่ายทอดความรู้",
             &[(Synonym, "อาจารย์"), (Category, "การศึกษา"), (SeeAlso, "โรงเรียน")]),
-        mk("อาจารย์", "น.", "ผู้สั่งสอนวิชาความรู้ในระดับสูง",
+        mk("อาจารย์", Pos::Nam, "ผู้สั่งสอนวิชาความรู้ในระดับสูง",
             &[(Synonym, "ครู"), (Category, "การศึกษา")]),
-        mk("นักเรียน", "น.", "ผู้เรียนในโรงเรียน",
+        mk("นักเรียน", Pos::Nam, "ผู้เรียนในโรงเรียน",
             &[(Category, "การศึกษา"), (SeeAlso, "โรงเรียน"), (RelatedTo, "ครู")]),
-        mk("โรงเรียน", "น.", "สถานที่สำหรับสอนและเรียนหนังสือ",
+        mk("โรงเรียน", Pos::Nam, "สถานที่สำหรับสอนและเรียนหนังสือ",
             &[(Category, "การศึกษา"), (SeeAlso, "นักเรียน")]),
-        mk("หนังสือ", "น.", "เอกสารที่เขียนหรือพิมพ์เป็นเล่มสำหรับอ่าน",
+        mk("หนังสือ", Pos::Nam, "เอกสารที่เขียนหรือพิมพ์เป็นเล่มสำหรับอ่าน",
             &[(Category, "การศึกษา"), (SeeAlso, "พจนานุกรม")]),
-        mk("พจนานุกรม", "น.", "หนังสือรวบรวมคำและความหมายเรียงตามลำดับตัวอักษร",
+        mk("พจนานุกรม", Pos::Nam, "หนังสือรวบรวมคำและความหมายเรียงตามลำดับตัวอักษร",
             &[(IsA, "หนังสือ"), (Category, "การศึกษา"), (SeeAlso, "คำ")]),
-        mk("คำ", "น.", "เสียงพูดหรือตัวหนังสือที่มีความหมาย",
+        mk("คำ", Pos::Nam, "เสียงพูดหรือตัวหนังสือที่มีความหมาย",
             &[(SeeAlso, "ความหมาย"), (SeeAlso, "ภาษา")]),
-        mk("ความหมาย", "น.", "สิ่งที่คำหรือข้อความนั้นสื่อให้เข้าใจ",
+        mk("ความหมาย", Pos::Nam, "สิ่งที่คำหรือข้อความนั้นสื่อให้เข้าใจ",
             &[(SeeAlso, "คำ")]),
-        mk("ภาษา", "น.", "เสียงหรือตัวหนังสือที่ใช้สื่อความหมายกัน",
+        mk("ภาษา", Pos::Nam, "เสียงหรือตัวหนังสือที่ใช้สื่อความหมายกัน",
             &[(SeeAlso, "คำ"), (Category, "การศึกษา")]),
-        mk("อ่าน", "ก.", "ดูตัวหนังสือแล้วเข้าใจความหมาย; ออกเสียงตามตัวหนังสือ",
+        mk("อ่าน", Pos::Kri, "ดูตัวหนังสือแล้วเข้าใจความหมาย; ออกเสียงตามตัวหนังสือ",
             &[(SeeAlso, "หนังสือ"), (RelatedTo, "เขียน")]),
-        mk("เขียน", "ก.", "ทำให้เป็นตัวหนังสือหรือรูปด้วยเครื่องมือ",
+        mk("เขียน", Pos::Kri, "ทำให้เป็นตัวหนังสือหรือรูปด้วยเครื่องมือ",
             &[(RelatedTo, "อ่าน"), (SeeAlso, "หนังสือ")]),
     ]
 }
@@ -191,13 +593,18 @@ mod tests {
     fn insert_and_get() {
         let mut d = Dictionary::new();
         d.insert(Entry {
-            word: "แมว".into(),
-            pos: "น.".into(),
-            definition: "สัตว์".into(),
+            headword: "แมว".into(),
+            homograph: None,
+            pronunciation: None,
+            romanization: None,
+            senses: vec![Sense::simple(Pos::Nam, "สัตว์")],
+            etymology: vec![],
+            sub_entries: vec![],
+            see_also: vec![],
             relations: vec![],
         });
         assert_eq!(d.len(), 1);
-        assert_eq!(d.get("แมว").unwrap().pos, "น.");
+        assert_eq!(d.get("แมว").unwrap().primary_pos_marker(), Some("น."));
         assert!(d.get("หมา").is_none());
     }
 
@@ -210,13 +617,30 @@ mod tests {
     }
 
     #[test]
+    fn pos_subject_register_roundtrip_all_values() {
+        // Task 1 acceptance: round-trip every controlled-vocabulary value.
+        for &p in Pos::all() {
+            assert_eq!(Pos::from_marker(p.marker()), Some(p), "POS {:?}", p);
+        }
+        for s in Subject::all_named() {
+            // from_marker(tag) must return the same named variant (not Other).
+            let round = Subject::from_marker(s.tag());
+            assert_eq!(round, s, "Subject {:?}", s);
+            assert!(!matches!(round, Subject::Other(_)));
+        }
+        for &r in Register::all() {
+            assert_eq!(Register::from_marker(r.marker()), Some(r), "Register {:?}", r);
+        }
+        // Unknown subject falls back to Other.
+        assert!(matches!(Subject::from_marker("ไม่มีสาขานี้"), Subject::Other(_)));
+    }
+
+    #[test]
     fn seed_is_nonempty_and_relations_resolve() {
         let entries = seed_entries();
         assert!(entries.len() >= 15);
-        // Every relation target should ideally be a known headword (some may be
-        // category nodes that aren't headwords — that's allowed).
         let words: std::collections::HashSet<_> =
-            entries.iter().map(|e| e.word.as_str()).collect();
+            entries.iter().map(|e| e.headword.as_str()).collect();
         let mut resolved = 0;
         let mut total = 0;
         for e in &entries {
@@ -227,34 +651,31 @@ mod tests {
                 }
             }
         }
-        // Most relations should point at real headwords (sanity, not strict).
         assert!(resolved * 2 >= total, "too many dangling relation targets");
     }
 
     #[test]
-    fn antonyms_are_only_true_lexical_opposites() {
-        // Guard against the 2026-09-12 fix regressing: complementary role pairs
-        // (ครู/นักเรียน), converse activities (อ่าน/เขียน), and derivations
-        // (สุข/ความสุข) must NOT be tagged Antonym — they are RelatedTo. Only
-        // genuine gradable/complementary opposites may be Antonym.
-        let allowed_antonym_pairs: std::collections::HashSet<(&str, &str)> = [
-            ("ใหญ่", "เล็ก"),
-            ("เล็ก", "ใหญ่"),
-            ("สุข", "ทุกข์"),
-            ("ทุกข์", "สุข"),
-        ]
-        .into_iter()
-        .collect();
+    fn seed_entries_carry_seed_provenance() {
+        for e in seed_entries() {
+            for s in &e.senses {
+                assert_eq!(s.provenance.source, Source::HumanSeed);
+                assert_eq!(s.provenance.license, License::Cc0);
+                assert_eq!(s.provenance.confidence, RelationConfidence::Confirmed);
+            }
+        }
+    }
 
+    #[test]
+    fn antonyms_are_only_true_lexical_opposites() {
+        let allowed_antonym_pairs: std::collections::HashSet<(&str, &str)> = [
+            ("ใหญ่", "เล็ก"), ("เล็ก", "ใหญ่"), ("สุข", "ทุกข์"), ("ทุกข์", "สุข"),
+        ].into_iter().collect();
         for e in seed_entries() {
             for (rel, tgt) in &e.relations {
                 if *rel == Relation::Antonym {
                     assert!(
-                        allowed_antonym_pairs.contains(&(e.word.as_str(), tgt.as_str())),
-                        "'{} ตรงข้ามกับ {}' is not a true lexical antonym — \
-                         use Relation::RelatedTo instead",
-                        e.word,
-                        tgt
+                        allowed_antonym_pairs.contains(&(e.headword.as_str(), tgt.as_str())),
+                        "'{} ตรงข้ามกับ {}' is not a true lexical antonym", e.headword, tgt
                     );
                 }
             }
@@ -263,14 +684,11 @@ mod tests {
 
     #[test]
     fn known_role_pair_is_relatedto_not_antonym() {
-        // The specific bug NEXT_STEPS.md Task 1 flagged.
         let entries = seed_entries();
-        let nakrian = entries.iter().find(|e| e.word == "นักเรียน").unwrap();
+        let nakrian = entries.iter().find(|e| e.headword == "นักเรียน").unwrap();
         let (rel, _) = nakrian
-            .relations
-            .iter()
-            .find(|(_, t)| t == "ครู")
+            .relations.iter().find(|(_, t)| t == "ครู")
             .expect("นักเรียน should still relate to ครู");
-        assert_eq!(*rel, Relation::RelatedTo, "ครู/นักเรียน must be RelatedTo, not Antonym");
+        assert_eq!(*rel, Relation::RelatedTo);
     }
 }

@@ -14,6 +14,10 @@ use crate::dictionary::{Dictionary, Relation};
 use crate::graph::KnowledgeGraph;
 use std::collections::HashSet;
 
+// Confidence lives in `dictionary` (needed by `Provenance`); re-export so
+// existing `crate::relations::RelationConfidence` references keep working.
+pub use crate::dictionary::RelationConfidence;
+
 /// Where a relationship came from — its provenance, so a user (or a hackathon
 /// judge) can tell a hand-verified fact from an auto-imported one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -41,44 +45,6 @@ impl RelationSource {
         match self {
             RelationSource::Seed => "seed",
             RelationSource::WordNet => "wordnet",
-        }
-    }
-}
-
-/// Structural confidence of a relation, derived purely from the graph's own
-/// connectivity — no new data, no semantic judgment.
-///
-/// A WordNet-derived pair whose **both** endpoints connect to nothing else in
-/// the whole graph (distinct-neighbor degree 1 each) is an *isolated,
-/// uncorroborated* pair: the only evidence for it is that one synset. Thai
-/// WordNet has known cross-lingual mapping noise, and these isolated pairs are
-/// where the bad ones concentrate (verified: `ข้อหา`/`มลทิน` is exactly this
-/// shape). We mark them [`RelationConfidence::Unverified`] — meaning "not
-/// cross-corroborated by any other synset", NOT "wrong" (some, like
-/// `รถยนต์`/`ยานยนต์`, are perfectly good). Everything else — seed relations
-/// (always) and WordNet relations corroborated by ≥2 synsets — is
-/// [`RelationConfidence::Confirmed`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RelationConfidence {
-    /// Hand-verified (seed) OR cross-corroborated by more than one synset.
-    Confirmed,
-    /// WordNet-derived isolated pair (both endpoints degree 1) — not
-    /// cross-corroborated. Honest "we can't vouch for this one" marker.
-    Unverified,
-}
-
-impl RelationConfidence {
-    pub fn tag(self) -> &'static str {
-        match self {
-            RelationConfidence::Confirmed => "ยืนยัน",       // confirmed
-            RelationConfidence::Unverified => "ยังไม่ยืนยัน", // unverified
-        }
-    }
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            RelationConfidence::Confirmed => "confirmed",
-            RelationConfidence::Unverified => "unverified",
         }
     }
 }
@@ -142,9 +108,9 @@ impl RelationEngine {
         for entry in dict.all_entries() {
             for (rel, target) in &entry.relations {
                 let label = rel.thai_label();
-                let s = graph.add_entity(&entry.word);
+                let s = graph.add_entity(&entry.headword);
                 let o = graph.add_entity(target);
-                graph.add_triple(&entry.word, label, target);
+                graph.add_triple(&entry.headword, label, target);
                 triple_count += 1;
                 seed_edges.insert((s, o));
                 if *rel == Relation::Synonym {
@@ -155,7 +121,7 @@ impl RelationEngine {
                     rel,
                     Relation::Synonym | Relation::Antonym | Relation::SeeAlso | Relation::RelatedTo
                 ) {
-                    graph.add_triple(target, label, &entry.word);
+                    graph.add_triple(target, label, &entry.headword);
                     triple_count += 1;
                     seed_edges.insert((o, s));
                     if *rel == Relation::Synonym {

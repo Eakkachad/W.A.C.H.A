@@ -36,7 +36,10 @@ files too and note it here — this log is the record of *that it changed*, thos
 | Round 3 Task 10 — open-data/API documentation | **done** — `wacha/API.md` (contract spot-checked + license table); referenced from PITCH.md | 2026-09-12 |
 | Round 3 Task 11 (optional) — real Typhoon 2 if API access found (`--host` part **done**, `bec54b8`) | mostly done | 2026-09-12 |
 | Round 4 Task 12 — exhaustively review WordNet relations on the 20 seed words | **done, verified** — 47/47 pairs audited, 7 cut, group-level fix, 52/52 tests, live-confirmed | 2026-09-13 |
-| Round 4 Task 13 — sever the อ.→วันอังคาร/อังคาร bridge specifically for ครู | not started (handed to another agent to execute) | 2026-09-13 |
+| Round 5 — review + plan (ORST practice data released; real dataset comes at the event) | **done** — `NEXT_STEPS_R5.md`; measured: 78.9% empty cards, 8,879 false 2-hop links, citation corrected to FolkRank | 2026-09-13 |
+| Round 5 Tasks 1-3, 5 — RID-shaped `Entry`/`Sense`, `Importer` trait, Kaikki import, cache invalidation | not started (**critical path**) | — |
+| Round 5 Task 4 — `Sense` nodes in the graph (generalizes the Task 12/13 hand-patches) | not started | — |
+| Round 5 Tasks 6-10 — ศัพท์บัญญัติ subset, FolkRank citation, RID stub + runbook, UI/licence, re-measure | not started | — |
 | Day 2 — demo/submit | not started | — |
 
 **A real product crate now exists** (`wacha/`) in addition to the `poc/` feasibility harness. The
@@ -995,3 +998,96 @@ group, so the audited-KEEP `ครู`↔`อ.` relation is untouched. Calendar 
 (intact). 2 regression tests added (54 tests pass); `poc` 10/10; `katgpt-rs` untouched. Audit doc updated
 with a Task-13 addendum. This also means `ครู` (PITCH demo word #1) is now clean of the Tuesday/Mars
 distraction; the "we catch our own errors" pitch moment still lives on demo word #4 (`ข้อหา`), unchanged.
+
+### 2026-09-13 (Round 5 planning) — organizers released practice data; review + new plan written
+
+**No code changed this session.** A review/diagnosis pass by a supervising agent (not the executing
+agent), plus `NEXT_STEPS_R5.md`. Findings below are all measured against the current build, not assumed.
+
+**Organizer announcement (the thing that reframes the round):** ORST published four practice data
+sources and stated teams **receive the real competition dataset at the event**
+("ก่อนที่จะได้รับชุดข้อมูลจริงของการแข่งขัน"). This closes the standing `AGENT_HANDOFF.md` §6 data risk —
+and means the current LEXiTRON+WordNet layer is *practice* data. Priority shifts from acquiring data to
+**making ingestion fast**, and to reshaping `Entry` to RID's real structure so competition data drops in
+without a rewrite. Sources: `dictionary.orst.go.th` (RID 2554), `coined-word.orst.go.th`
+(ศัพท์บัญญัติ 40 สาขา), `kaikki.org/thwiktionary` (Thai Wiktionary JSONL), PyThaiNLP corpus.
+
+**Measured problems found by running the current build:**
+- **Definition coverage is 20 words.** 49,030 of 62,106 (78.9%) return an empty card; only 8,089 (13.0%)
+  have any relation at all. Frequency-weighted it is better (61% of the top-1000 words have relations),
+  but `PITCH.md` §3 invites judges to type their own words — that is a coin flip on stage.
+- **Sense flattening invents 8,879 false relations.** `wordnet.rs` discards `synsetid`; `บ้าน` is in
+  **9 distinct synsets**. Against `data/wordnet_th.db`: 26,246 genuine 1-hop pairs + **8,879 pairs
+  reachable at 2 hops sharing no synset**. Live example, rank 7 with **no ⚠ flag**:
+  `ครอบครัว --syn--> บ้าน --syn--> บ้านเกิด` (synsets 08078020-n vs 08490199-n).
+  **Note this is the third instance of the same root cause** — Task 12 and Task 13 each hand-patched one
+  case (`SUPPRESSED_SEED_MEMBERS`, `SUPPRESSED_AMBIGUOUS_MEMBERS`); Task 13's own entry names it exactly:
+  *"No word-sense layer → `อ.` is one node bridging both."* R5 Task 4 fixes the class, not the instance.
+- **Scope gap on the 84.2% figure:** it was sampled from the 26,242 **direct** pairs and never covered the
+  multi-hop output the UI actually shows. It is quoted on stage — fix the graph, then the number is honest.
+- **Unused structure already in our data:** `synsetid` encodes POS for 78,101 Thai lemmas
+  (n 62,560 / v 9,302 / a 5,250 / r 1,965); 65,025 WordNet lemmas are absent from `words_th.txt`, so
+  unioning the vocabularies gives 127,131 searchable words and lifts words-with-relations 8,089 → 29,274.
+
+**Citation resolved (closes the `BIBLE.md` §3.3 open item):** the hub-correction formula is **not**
+Milne & Witten's — their measure is an NGD-style link-overlap formula and the CIKM'08 paper contains no
+PageRank content at all. Correct precedent is **FolkRank** (Hotho et al. 2006; Jäschke et al. 2007),
+personalized PageRank minus global PageRank. Caveat: FolkRank uses a *difference*; our log-ratio is our
+own variant and must be labelled as such.
+
+**Segmentation accuracy, from the AttaCut paper (arXiv:1911.07056, Table 2, read from the PDF):**
+dictionary-based 0.67 WL-F1 on BEST-2010 vs DeepCut 0.93 — but **0.73 vs 0.63 on TNHC (classical
+literature), where it is the best system**, at 113.9× the speed. ⚠️ That 0.73 is *newmm's maximal
+matching*; `segmenter.rs:109` is *greedy* longest-match — a different, weaker algorithm. We may not quote
+it as ours. `pythainlp/wisesight1000` (CC0, ~74 kB, char-level `is_beginning` labels) is the practical way
+to measure our own.
+
+**Methodology note worth keeping:** the deep-research run's 3-vote verification **refuted a true claim
+0-3** (the TNHC result) because the PDF table would not extract for the verifier agents. It was caught
+only by opening the paper directly. Automated verification produces false negatives as well as false
+positives — spot-check refutations of load-bearing claims.
+
+**Licensing constraints discovered:**
+- `dictionary.orst.go.th`'s disclaimer (an image, OCR-read) states **educational, non-commercial** use;
+  data copyright ORST, platform copyright NECTEC. **`API.md` must stop implying RID could be republished
+  as open data.**
+- Kaikki is **CC BY-SA + GFDL**, so a combined dataset is CC BY-SA, not CC0. Fine, but must be stated
+  per-field — which is what the existing provenance system is for.
+- Neither ORST site offers bulk download. **Do not mass-scrape**; demo subset only (R5 guardrail §2.1).
+- `coined-word.orst.go.th`'s live dropdown returns 39 disciplines and **silently omits ธรณีวิทยา
+  (3,303 terms)** — hard-code the 40-item list from `about.php`.
+
+**katgpt-rs re-survey (all 31 crates):** nothing left worth taking. No BM25, no ANN/vector search, no
+fuzzy/edit-distance, no HTTP server exists there — only prose mentions in research notes. `rerank`
+(MaxSim + `ndcg_at`) and `smooth_min_similarity` are real but pull in `katgpt-core`'s ~200 default
+features; copy the maths if ever needed, never the dependency. The `Datrie` we already vendored was the
+one thing of value.
+
+**Next action:** execute `NEXT_STEPS_R5.md` Tasks 1 → 2 → 3 → 5 (critical path; converts 20 definitions
+into 25,000+ and proves the ingestion path). Tasks 6, 7, 8 are parallel-safe.
+
+### 2026-09-13 (Round 5 · Task 1) — Entry/Sense model reshaped to RID
+
+Reshaped `wacha/src/dictionary.rs` to the RID 2554 structure so the competition dataset drops in without a
+rewrite. `Entry` now = headword + homograph + pronunciation + romanization + `Vec<Sense>` + etymology +
+sub_entries + see_also + relations. `Sense` = pos/subject/register/definition/examples/classifiers +
+**per-sense `Provenance`** (source + licence + confidence).
+
+New closed-set enums with `marker()`/`from_marker()`/`Display`: `Pos` (8 RID word classes),
+`Subject` (34 named RID สาขาวิชา + `Other(String)` escape hatch), `Register` (5 ทะเบียนคำ). Plus `Source`
+(Lexitron/Kaikki/CoinedWord/Rid/HumanSeed, with merge `priority()`) and `License`
+(Cc0/CcBySa/NictPermissive/OrstEducational). `RelationConfidence` moved here (needed by `Provenance`) and
+re-exported from `relations.rs` so existing references keep working.
+
+Migrated all 20 seed entries to the new shape with `Provenance::seed()` (HumanSeed/CC0/Confirmed); every
+audited relation from the 2026-09-12/13 audits preserved verbatim (`SUPPRESSED_SEED_MEMBERS` untouched in
+`wordnet.rs`). Dictionary store rekeyed by `(headword, homograph)`.
+
+Consumers updated: `relations.rs` (`entry.word`→`entry.headword`), `lib.rs` (`EntryView` maps from
+`headword`/`primary_pos_marker`/`primary_definition`), `gen_learner.rs`. CLI/web `EntryView` API unchanged
+(Task 9 will enrich the UI).
+
+**Verified:** 56 tests pass (2 new — `pos_subject_register_roundtrip_all_values` covers all 8+34+5 values;
+`seed_entries_carry_seed_provenance`). `lookup ครู` on real data is **equivalent to before** (same
+segmentation / นิยาม น. / learner content / related words อาจารย์[ตรวจแล้ว] ครูบาอาจารย์·ผู้สอน[WordNet],
+no วันอังคาร/อังคาร — Task 13 fix preserved). Clean build, no warnings. `katgpt-rs` untouched.

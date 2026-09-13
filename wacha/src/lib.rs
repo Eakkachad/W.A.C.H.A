@@ -124,7 +124,7 @@ impl Engine {
             all_words.push(w.as_ref().to_string());
         }
         for e in entries {
-            all_words.push(e.word.clone());
+            all_words.push(e.headword.clone());
             dict.insert(e);
         }
         if let Some(ft) = freq_text {
@@ -227,9 +227,9 @@ impl Engine {
         let query = query.trim();
         let segmentation = self.segmenter.segment(query);
         let entry = self.dict.get(query).map(|e| EntryView {
-            word: e.word.clone(),
-            pos: e.pos.clone(),
-            definition: e.definition.clone(),
+            word: e.headword.clone(),
+            pos: e.primary_pos_marker().unwrap_or("").to_string(),
+            definition: e.primary_definition().unwrap_or("").to_string(),
         });
         let related = self.relations.related(query, top_k);
         let learner = self.learner.get(query).cloned();
