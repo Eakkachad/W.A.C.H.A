@@ -517,6 +517,16 @@ impl Dictionary {
         self.freq.get(word).copied().unwrap_or(0)
     }
 
+    /// The words that carry a frequency, ranked by descending frequency
+    /// (ties broken alphabetically for determinism). Used for
+    /// frequency-weighted coverage: "of the N most common Thai words, how many
+    /// does the dictionary define?"
+    pub fn freq_ranked_words(&self) -> Vec<&str> {
+        let mut v: Vec<(&str, u64)> = self.freq.iter().map(|(w, &c)| (w.as_str(), c)).collect();
+        v.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(b.0)));
+        v.into_iter().map(|(w, _)| w).collect()
+    }
+
     pub fn all_entries(&self) -> impl Iterator<Item = &Entry> {
         self.order.iter().filter_map(move |k| self.entries.get(k))
     }

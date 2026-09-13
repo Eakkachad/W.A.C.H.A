@@ -279,6 +279,11 @@ impl Engine {
         self.relations.triple_count()
     }
 
+    /// Number of distinct sense groups (Sense nodes) in the relation graph.
+    pub fn relation_sense_count(&self) -> usize {
+        self.relations.sense_count()
+    }
+
     /// Recount of cross-sense candidate pairs in the live relation graph
     /// (A2.4). Must be 0 — every related candidate shares a sense group.
     pub fn cross_sense_pair_count(&self) -> usize {
@@ -289,6 +294,28 @@ impl Engine {
     /// Used by the audit recall/absence measurement (A2).
     pub fn related_contains(&self, word: &str, other: &str, top_k: usize) -> bool {
         self.relations.related(word, top_k).iter().any(|r| r.word == other)
+    }
+
+    /// Frequency-weighted definition coverage (A3): of the top-`n` most frequent
+    /// Thai words (by `tnc_freq.txt`), how many have a non-empty definition.
+    /// Returns (defined, n_considered, pct). This answers "does a judge typing a
+    /// *common* word get a definition?" — a more honest signal than raw coverage
+    /// over a denominator full of rare inflected forms.
+    pub fn frequency_weighted_coverage(&self, n: usize) -> (usize, usize, f64) {
+        let ranked = self.dict.freq_ranked_words();
+        let considered = ranked.iter().take(n).count();
+        let defined = ranked
+            .iter()
+            .take(n)
+            .filter(|w| {
+                self.dict
+                    .get(w)
+                    .map(|e| e.senses.iter().any(|s| !s.definition.trim().is_empty()))
+                    .unwrap_or(false)
+            })
+            .count();
+        let pct = if considered == 0 { 0.0 } else { 100.0 * defined as f64 / considered as f64 };
+        (defined, considered, pct)
     }
 
     /// Segment arbitrary Thai text.

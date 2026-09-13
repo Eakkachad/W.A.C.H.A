@@ -158,10 +158,15 @@ fn print_stats(engine: &Engine) {
         engine.relation_triple_count(),
         engine.learner_count(),
     );
+    println!("graph sense nodes: {}", engine.relation_sense_count());
     let (defined, searchable, pct) = engine.definition_coverage();
     println!(
         "definition coverage: {defined}/{searchable} searchable words = {pct:.1}% have ≥1 definition"
     );
+    for n in [100usize, 1000, 5000] {
+        let (d, c, p) = engine.frequency_weighted_coverage(n);
+        println!("frequency-weighted coverage @ top-{n}: {d}/{c} = {p:.1}% (denominator = {c} most-frequent words)");
+    }
 }
 
 /// A2: the 47 hand-audited seed↔WordNet pairs from
