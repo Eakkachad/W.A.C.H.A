@@ -46,6 +46,14 @@ impl WordNet {
 
     /// Parse synonym groups from a TSV string (one group per line, tab-separated
     /// lemmas). Lines with fewer than 2 distinct non-empty lemmas are skipped.
+    ///
+    /// Audited-wrong seed relations (see `SUPPRESSED_SEED_MEMBERS` /
+    /// `data/seed_wordnet_audit_2026-09-13.md`) are pruned **at group level**:
+    /// if a synset group contains a seed word, the audited-wrong co-members are
+    /// dropped from that group entirely. This removes not just the direct wrong
+    /// pair but also the 2-hop bridges through it (e.g. นักเรียน↔นร.↔นิสิต — a
+    /// direct-pair suppression alone wouldn't stop นิสิต reaching นักเรียน via
+    /// นร., which shares the same conflated student synset).
     pub fn from_tsv(tsv: &str) -> Self {
         let mut groups = Vec::new();
         for line in tsv.lines() {
@@ -60,6 +68,7 @@ impl WordNet {
                     words.push(w.to_string());
                 }
             }
+            prune_suppressed(&mut words);
             if words.len() >= 2 {
                 groups.push(words);
             }
@@ -86,6 +95,9 @@ impl WordNet {
     /// group of size n we emit the n·(n−1) ordered pairs (both directions), so
     /// the graph walk treats synonymy as undirected. The caller labels these
     /// with [`crate::dictionary::Relation::Synonym`].
+    ///
+    /// Audited-wrong seed relations are already removed at group-construction
+    /// time (see [`WordNet::from_tsv`] / [`SUPPRESSED_SEED_MEMBERS`]).
     pub fn synonym_pairs(&self) -> impl Iterator<Item = (&str, &str)> {
         self.groups.iter().flat_map(|g| {
             g.iter().enumerate().flat_map(move |(i, a)| {
@@ -98,6 +110,34 @@ impl WordNet {
                 })
             })
         })
+    }
+}
+
+/// Seed word → co-members that a manual audit judged NOT true synonyms of it
+/// (`wacha/data/seed_wordnet_audit_2026-09-13.md`). When a WordNet synset group
+/// contains the seed word, these co-members are pruned from that group — which
+/// removes the direct wrong pair AND any multi-hop bridge through the shared
+/// synset. Source of truth for *why* each is here is the audit file.
+pub const SUPPRESSED_SEED_MEMBERS: &[(&str, &[&str])] = &[
+    // นักเรียน (secondary) conflated with tertiary-student terms by Thai WordNet;
+    // ORST keeps นักเรียน vs นักศึกษา/นิสิต distinct.
+    (
+        "นักเรียน",
+        &["นศ.", "นักศึกษา", "นิสิต", "นิสิตนักศึกษา", "นักวิชาการ"],
+    ),
+    // One-off cross-lingual sense-mapping artifacts.
+    ("ครู", &["ผู้สาธิตวิธีการ"]),
+    ("ใหญ่", &["หลัก"]),
+];
+
+/// If `words` (one synset group) contains a seed listed in
+/// [`SUPPRESSED_SEED_MEMBERS`], remove that seed's audited-wrong co-members from
+/// the group in place. (The seed word itself is never removed.)
+fn prune_suppressed(words: &mut Vec<String>) {
+    for &(seed, bad) in SUPPRESSED_SEED_MEMBERS {
+        if words.iter().any(|w| w == seed) {
+            words.retain(|w| w == seed || !bad.contains(&w.as_str()));
+        }
     }
 }
 
@@ -144,5 +184,44 @@ mod tests {
         let wn = WordNet::from_tsv("เดี่ยว\n\nก\tข\n0\t0\n");
         // Only "ก\tข" is a valid >=2 group ("0" filtered, single-word skipped).
         assert_eq!(wn.group_count(), 1);
+    }
+
+    #[test]
+    fn audited_wrong_seed_members_are_pruned_from_seed_groups() {
+        // After the 2026-09-13 seed audit, no synset group that contains a seed
+        // word may still contain that seed's audited-wrong co-members — this
+        // removes both the direct wrong pair and any bridge through the group.
+        let wn = WordNet::embedded();
+        for &(seed, bad) in SUPPRESSED_SEED_MEMBERS {
+            for g in wn.groups() {
+                if g.iter().any(|w| w == seed) {
+                    for &b in bad {
+                        assert!(
+                            !g.iter().any(|w| w == b),
+                            "audited-wrong member {b} still in a group with seed {seed}"
+                        );
+                    }
+                }
+            }
+        }
+        // Sanity: a KEEP co-member is still grouped with its seed.
+        let kru_keeps_ajarn = wn
+            .groups()
+            .iter()
+            .any(|g| g.iter().any(|w| w == "ครู") && g.iter().any(|w| w == "อาจารย์"));
+        assert!(kru_keeps_ajarn, "kept pair ครู/อาจารย์ should survive pruning");
+    }
+
+    #[test]
+    fn prune_keeps_the_seed_itself() {
+        // Pruning must never drop the seed word, only its bad co-members.
+        let mut g: Vec<String> = ["นักเรียน", "นักศึกษา", "ผู้เรียน"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        prune_suppressed(&mut g);
+        assert!(g.contains(&"นักเรียน".to_string()));   // seed kept
+        assert!(g.contains(&"ผู้เรียน".to_string()));   // good member kept
+        assert!(!g.contains(&"นักศึกษา".to_string()));  // bad member pruned
     }
 }
