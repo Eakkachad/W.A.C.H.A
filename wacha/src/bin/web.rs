@@ -271,12 +271,36 @@ fn lookup_json(engine: &Engine, query: &str) -> String {
 
     // entry
     match &r.entry {
-        Some(e) => s.push_str(&format!(
-            "\"entry\":{{\"word\":{},\"pos\":{},\"definition\":{}}},",
-            json_str(&e.word),
-            json_str(&e.pos),
-            json_str(&e.definition)
-        )),
+        Some(e) => {
+            s.push_str(&format!(
+                "\"entry\":{{\"word\":{},\"pos\":{},\"definition\":{},",
+                json_str(&e.word),
+                json_str(&e.pos),
+                json_str(&e.definition)
+            ));
+            // classifiers (ลักษณนาม)
+            s.push_str("\"classifiers\":[");
+            for (i, c) in e.classifiers.iter().enumerate() {
+                if i > 0 {
+                    s.push(',');
+                }
+                s.push_str(&json_str(c));
+            }
+            s.push_str("],");
+            // optional สาขาวิชา / register
+            match &e.subject {
+                Some(sub) => s.push_str(&format!("\"subject\":{},", json_str(sub))),
+                None => s.push_str("\"subject\":null,"),
+            }
+            match &e.register {
+                Some(reg) => s.push_str(&format!("\"register\":{},", json_str(reg))),
+                None => s.push_str("\"register\":null,"),
+            }
+            // source + licence badge
+            s.push_str(&format!("\"source\":{},", json_str(&e.source)));
+            s.push_str(&format!("\"license\":{}", json_str(&e.license)));
+            s.push_str("},");
+        }
         None => s.push_str("\"entry\":null,"),
     }
 

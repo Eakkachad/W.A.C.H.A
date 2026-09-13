@@ -79,6 +79,11 @@
   .badge.seed { background: rgba(87,217,163,.16); color: var(--accent2); border: 1px solid var(--accent2); }
   .badge.wn { background: rgba(255,157,107,.14); color: var(--oov); border: 1px solid var(--oov); }
   .badge.unv { background: rgba(255,209,102,.14); color: #ffd166; border: 1px solid #ffd166; }
+  .badge.coined { background: rgba(120,180,255,.16); color: #7ab4ff; border: 1px solid #7ab4ff; }
+  .badge.wik { background: rgba(190,150,255,.14); color: #be96ff; border: 1px solid #be96ff; }
+  .badge.src { background: rgba(160,170,190,.14); color: #a7b0c0; border: 1px solid #6b7488; }
+  .badge.lic { background: rgba(160,170,190,.10); color: #8b93a5; border: 1px solid #565d6e; }
+  .def .meta { color: #9aa3b5; font-size: .82rem; margin-top: 6px; }
   .legend { margin-top: 12px; color: var(--muted); font-size: .82rem; text-align: center; line-height: 1.9; }
   .g-node.src-wn circle { stroke: var(--oov); stroke-dasharray: 4 3; }
   .g-edge.src-wn { stroke: var(--oov); stroke-dasharray: 4 3; opacity: .7; }
@@ -119,6 +124,22 @@ function esc(s) {
   return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 }
 
+// A provenance badge for a related-word source (all 4 sources; text is a fixed
+// literal, never user input — but rw.source is validated against known values).
+function sourceBadge(source) {
+  switch (source) {
+    case "seed":
+      return `<span class="badge seed" title="ความสัมพันธ์ที่ตรวจสอบด้วยมือ">ตรวจแล้ว</span>`;
+    case "coined_word":
+      return `<span class="badge coined" title="ศัพท์บัญญัติ ราชบัณฑิตยสภา (ORST authored)">ศัพท์บัญญัติ</span>`;
+    case "wiktionary":
+      return `<span class="badge wik" title="จาก Kaikki (Thai Wiktionary) อัตโนมัติ">Wiktionary</span>`;
+    case "wordnet":
+    default:
+      return `<span class="badge wn" title="สกัดจาก Thai WordNet อัตโนมัติ ยังไม่ได้ตรวจทีละคู่">WordNet</span>`;
+  }
+}
+
 async function lookup(word) {
   word = (word || "").trim();
   if (!word) { resultEl.innerHTML = ""; return; }
@@ -153,6 +174,19 @@ function render(d) {
   if (d.entry) {
     html += `<div><span class="word">${esc(d.entry.word)}</span><span class="pos">${esc(d.entry.pos)}</span></div>`;
     html += `<div class="body">${esc(d.entry.definition)}</div>`;
+    // Sense metadata line: ลักษณนาม / สาขาวิชา / register (each optional).
+    const meta = [];
+    if (d.entry.classifiers && d.entry.classifiers.length) {
+      meta.push(`ลักษณนาม: ${d.entry.classifiers.map(esc).join(", ")}`);
+    }
+    if (d.entry.subject) meta.push(`สาขา: ${esc(d.entry.subject)}`);
+    if (d.entry.register) meta.push(`ทะเบียนคำ: ${esc(d.entry.register)}`);
+    if (meta.length) html += `<div class="meta">${meta.join(" · ")}</div>`;
+    // Source + licence badge (honest provenance, now with licence).
+    if (d.entry.source) {
+      html += `<div class="prov"><span class="badge src">${esc(d.entry.source)}</span>`
+        + ` <span class="badge lic">${esc(d.entry.license || "")}</span></div>`;
+    }
   } else {
     html += `<span class="empty">ไม่พบนิยามของคำนี้ในพจนานุกรม (no dictionary entry)</span>`;
   }
@@ -193,9 +227,7 @@ function render(d) {
   } else {
     html += `<ul class="rel">`;
     d.related.forEach((rw, i) => {
-      const badge = rw.source === "seed"
-        ? `<span class="badge seed" title="ความสัมพันธ์ที่ตรวจสอบด้วยมือ">ตรวจแล้ว</span>`
-        : `<span class="badge wn" title="สกัดจาก Thai WordNet อัตโนมัติ ยังไม่ได้ตรวจทีละคู่">WordNet</span>`;
+      const badge = sourceBadge(rw.source);
       const conf = rw.confidence === "unverified"
         ? `<span class="badge unv" title="คู่คำโดดเดี่ยวใน WordNet — ไม่มีชุดคำอื่นยืนยันซ้ำ อาจไม่แม่นยำ">⚠ ยังไม่ยืนยัน</span>`
         : "";
