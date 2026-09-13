@@ -21,3 +21,9 @@ demo-fallback/index_snapshot.html
 
 # ศัพท์บัญญัติ raw HTML cache (fetched once, offline; not committed)
 data/coined_word_cache/
+
+# WASM build artifacts (regenerate via wacha-wasm/web/build.sh)
+wacha-wasm/target/
+wacha-wasm/web/wacha_wasm.wasm
+# Embedded reduced segmenter cache (regenerate via wacha/examples/gen_reduced_cache.rs)
+wacha-wasm/assets/words_th.seg

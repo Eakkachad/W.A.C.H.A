@@ -1,0 +1,22 @@
+[package]
+name = "wacha-wasm"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "วาจา (WACHA) offline WASM build — the whole segmenter + explainable-relationship engine in a browser tab, no backend, no network after load. Raw extern-C ABI (no wasm-bindgen tooling dependency)."
+
+[lib]
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[dependencies]
+wacha = { path = "../wacha" }
+
+# Small, fast wasm artifact: optimize for size, abort on panic (no unwinding
+# tables), strip. This is a browser payload, not a server binary.
+[profile.release]
+opt-level = "s"
+lto = true
+panic = "abort"
+codegen-units = 1
+strip = true

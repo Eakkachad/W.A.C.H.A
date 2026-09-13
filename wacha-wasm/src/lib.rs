@@ -1,0 +1,191 @@
+//! วาจา (WACHA) offline WASM build — Round 6, Phase W (flagship).
+//!
+//! The whole modelless engine (Datrie segmenter + explainable relationship
+//! graph with provenance/confidence) compiled to WebAssembly and run **in the
+//! browser tab** — no backend, no GPU, no network after first load. This is the
+//! "modelless / deterministic / explainable" thesis made physical: a judge can
+//! open it on their phone, turn on airplane mode, and it still works.
+//!
+//! **Raw `extern "C"` ABI, not wasm-bindgen.** The unattended build box has no
+//! `wasm-bindgen` CLI; rather than block on installing tooling, we expose a
+//! tiny hand-written ABI (alloc / dealloc / segment / lookup) callable directly
+//! from JS via the browser's `WebAssembly` API + a `Uint8Array` view over the
+//! module's linear memory. Fewer moving parts, self-contained, and verifiable
+//! with plain `node`. (A wasm-bindgen wrapper is a drop-in future nicety.)
+//!
+//! **Reduced dataset (stop rule W).** The full engine also merges an 82 MB
+//! Kaikki JSONL — far over the ~25 MB WASM budget. This build ships the
+//! **segmenter (62k CC0 words) + hand-verified seed relations + embedded Thai
+//! WordNet synonyms** only; it does NOT include the 29k Kaikki definitions. So
+//! in-browser you get full Thai segmentation and explainable WordNet/seed
+//! relationships, but definitions only for the seed words. The UI says so
+//! plainly. Adding the Kaikki layer is the Phase-M footprint work (front-coded
+//! dictionary blob) — deliberately out of scope for this build.
+
+use std::cell::RefCell;
+use wacha::Engine;
+
+// The 62k CC0 LEXiTRON word list, embedded so the segmenter needs no fetch.
+// (~1.5 MB of Thai text; compresses well.)
+const WORDS_TH: &str = include_str!("../../data/words_th.txt");
+
+// Prebuilt segmenter trie cache for the reduced (words_th + seed) vocab, so the
+// browser skips the ~200 s cold trie build entirely and is interactive in ~ms.
+// Generated natively by `wacha/examples/gen_reduced_cache.rs`.
+const SEG_CACHE: &[u8] = include_bytes!("../assets/words_th.seg");
+
+thread_local! {
+    static ENGINE: RefCell<Option<Engine>> = const { RefCell::new(None) };
+}
+
+fn with_engine<R>(f: impl FnOnce(&Engine) -> R) -> R {
+    ENGINE.with(|cell| {
+        let mut opt = cell.borrow_mut();
+        if opt.is_none() {
+            // Load the prebuilt segmenter from the embedded cache (no trie
+            // build, no fs, no network); seed entries + embedded WordNet drive
+            // relations. Falls back to building from words if the cache is
+            // somehow unreadable (should never happen — it's compiled in).
+            let words: Vec<&str> = WORDS_TH.lines().filter(|l| !l.trim().is_empty()).collect();
+            let entries = wacha::dictionary::seed_entries();
+            let eng = match wacha::segmenter::Segmenter::from_cache_bytes(SEG_CACHE) {
+                Ok(seg) => Engine::build_from_segmenter(words, entries, None, seg),
+                Err(_) => Engine::build(words, entries, None),
+            };
+            *opt = Some(eng);
+        }
+        f(opt.as_ref().unwrap())
+    })
+}
+
+// ── Raw ABI ──────────────────────────────────────────────────────────────────
+
+/// Allocate `len` bytes in the module's linear memory; returns a pointer the JS
+/// side writes the query bytes into.
+#[no_mangle]
+pub extern "C" fn wacha_alloc(len: usize) -> *mut u8 {
+    let mut buf = Vec::<u8>::with_capacity(len);
+    let ptr = buf.as_mut_ptr();
+    std::mem::forget(buf);
+    ptr
+}
+
+/// Free a buffer previously returned by `wacha_alloc` / a result buffer.
+#[no_mangle]
+pub extern "C" fn wacha_free(ptr: *mut u8, len: usize) {
+    if !ptr.is_null() && len > 0 {
+        unsafe {
+            drop(Vec::from_raw_parts(ptr, 0, len));
+        }
+    }
+}
+
+/// Force-build the engine now (so JS can show a spinner during the one-time
+/// build) and return the searchable word count as a readiness signal.
+#[no_mangle]
+pub extern "C" fn wacha_init() -> u32 {
+    with_engine(|e| e.word_count() as u32)
+}
+
+/// Segment `query` (UTF-8 at ptr/len). Returns a pointer to a length-prefixed
+/// result buffer: `[u32 little-endian json_len][json_len bytes of UTF-8 JSON]`.
+/// JS reads the length, copies the JSON, then calls `wacha_free(ptr, 4+len)`.
+#[no_mangle]
+pub extern "C" fn wacha_segment(ptr: *const u8, len: usize) -> *mut u8 {
+    let query = read_str(ptr, len);
+    let json = with_engine(|e| {
+        let toks = e.segment(&query);
+        let mut s = String::from("[");
+        for (i, t) in toks.iter().enumerate() {
+            if i > 0 { s.push(','); }
+            s.push_str(&format!("{{\"text\":{},\"in_vocab\":{}}}", json_str(&t.text), t.in_vocab));
+        }
+        s.push(']');
+        s
+    });
+    pack(&json)
+}
+
+/// Look up `query`; returns length-prefixed JSON (same envelope as segment):
+/// `{ "query", "segmentation":[…], "entry":{…}|null, "related":[…] }`.
+#[no_mangle]
+pub extern "C" fn wacha_lookup(ptr: *const u8, len: usize) -> *mut u8 {
+    let query = read_str(ptr, len);
+    let json = with_engine(|e| lookup_json(e, &query));
+    pack(&json)
+}
+
+// ── helpers ────────────────────────────────────────────────────────────────
+
+fn read_str(ptr: *const u8, len: usize) -> String {
+    if ptr.is_null() || len == 0 {
+        return String::new();
+    }
+    let bytes = unsafe { std::slice::from_raw_parts(ptr, len) };
+    String::from_utf8_lossy(bytes).into_owned()
+}
+
+/// Pack a string into a freshly-allocated `[u32 len][bytes]` buffer, leak it,
+/// return the pointer. JS frees via `wacha_free(ptr, 4 + len)`.
+fn pack(s: &str) -> *mut u8 {
+    let body = s.as_bytes();
+    let mut buf = Vec::<u8>::with_capacity(4 + body.len());
+    buf.extend_from_slice(&(body.len() as u32).to_le_bytes());
+    buf.extend_from_slice(body);
+    let ptr = buf.as_mut_ptr();
+    std::mem::forget(buf);
+    ptr
+}
+
+fn lookup_json(engine: &Engine, query: &str) -> String {
+    let r = engine.lookup(query, 8);
+    let mut s = String::from("{");
+    s.push_str(&format!("\"query\":{},", json_str(query)));
+    s.push_str("\"segmentation\":[");
+    for (i, t) in r.segmentation.iter().enumerate() {
+        if i > 0 { s.push(','); }
+        s.push_str(&format!("{{\"text\":{},\"in_vocab\":{}}}", json_str(&t.text), t.in_vocab));
+    }
+    s.push_str("],");
+    match &r.entry {
+        Some(e) => s.push_str(&format!(
+            "\"entry\":{{\"word\":{},\"pos\":{},\"definition\":{},\"source\":{},\"license\":{}}},",
+            json_str(&e.word), json_str(&e.pos), json_str(&e.definition),
+            json_str(&e.source), json_str(&e.license)
+        )),
+        None => s.push_str("\"entry\":null,"),
+    }
+    s.push_str("\"related\":[");
+    for (i, rw) in r.related.iter().enumerate() {
+        if i > 0 { s.push(','); }
+        s.push_str(&format!(
+            "{{\"word\":{},\"score\":{:.4},\"source\":{},\"confidence\":{},\"path\":[",
+            json_str(&rw.word), rw.score, json_str(rw.source.as_str()), json_str(rw.confidence.as_str())
+        ));
+        for (j, edge) in rw.path.iter().enumerate() {
+            if j > 0 { s.push(','); }
+            s.push_str(&json_str(edge));
+        }
+        s.push_str("]}");
+    }
+    s.push_str("]}");
+    s
+}
+
+fn json_str(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('"');
+    for c in s.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}

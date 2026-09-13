@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>วาจา (WACHA) — offline · in your browser</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0b0f1a">
+<style>
+  :root { --bg:#0b0f1a; --card:#141a2b; --fg:#e6e9f0; --accent:#57d9a3; --accent2:#7ab4ff; --muted:#9aa3b5; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font-family:system-ui,-apple-system,"Segoe UI",sans-serif; }
+  header { padding:20px; border-bottom:1px solid #222a3f; }
+  h1 { margin:0 0 4px; font-size:1.3rem; }
+  .sub { color:var(--muted); font-size:.85rem; }
+  .offline-badge { display:inline-block; margin-top:8px; font-size:.72rem; padding:2px 9px; border-radius:999px;
+    background:rgba(87,217,163,.15); color:var(--accent); border:1px solid var(--accent); }
+  main { padding:20px; max-width:820px; margin:0 auto; }
+  .status { color:var(--muted); font-size:.85rem; margin-bottom:12px; }
+  input { width:100%; padding:12px 14px; font-size:1.1rem; border-radius:10px; border:1px solid #2b3350;
+    background:#0e1424; color:var(--fg); }
+  .note { background:rgba(255,209,102,.10); border:1px solid #ffd166; color:#ffd166; padding:10px 12px;
+    border-radius:8px; font-size:.8rem; margin:14px 0; }
+  .card { background:var(--card); border:1px solid #222a3f; border-radius:12px; padding:16px; margin-top:14px; }
+  h2 { font-size:.95rem; color:var(--accent2); margin:0 0 10px; }
+  .word { font-size:1.2rem; font-weight:600; }
+  .pos { color:var(--accent2); margin-left:8px; }
+  .badge { font-size:.68rem; padding:1px 7px; border-radius:999px; margin-left:6px; }
+  .seed { background:rgba(87,217,163,.16); color:var(--accent); border:1px solid var(--accent); }
+  .wn { background:rgba(255,157,107,.14); color:#ff9d6b; border:1px solid #ff9d6b; }
+  .unv { background:rgba(255,209,102,.14); color:#ffd166; border:1px solid #ffd166; }
+  .seg span { display:inline-block; background:#0e1424; border:1px solid #2b3350; border-radius:6px; padding:3px 8px; margin:2px; }
+  .seg span.oov { border-style:dashed; color:var(--muted); }
+  ul { list-style:none; padding:0; margin:0; }
+  li { padding:6px 0; border-bottom:1px solid #1c2336; }
+  .edge { color:var(--muted); font-size:.8rem; margin-left:18px; }
+  .empty { color:var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>วาจา (WACHA)</h1>
+  <div class="sub">พจนานุกรมอัจฉริยะไทย — ตัดคำ + อธิบายความสัมพันธ์ของคำ · ทำงานทั้งหมดในเบราว์เซอร์</div>
+  <div class="offline-badge" id="offline">⬤ ทำงานออฟไลน์ (ไม่ต้องต่อเน็ตหลังโหลดครั้งแรก)</div>
+</header>
+<main>
+  <div class="status" id="status">กำลังโหลดเครื่องยนต์ WebAssembly…</div>
+  <input id="q" placeholder="พิมพ์คำหรือข้อความไทย เช่น ครู, บ้าน, เด็กน้อยรักสุนัข" disabled autocomplete="off">
+  <div class="note">
+    เดโมนี้เป็น <b>ชุดข้อมูลย่อ</b> (offline WASM): มีรายการคำ 62,106 คำ (CC0) สำหรับ<b>ตัดคำ</b> +
+    ความสัมพันธ์จาก seed ที่ตรวจมือ และ Thai WordNet — แต่ <b>ไม่รวมนิยาม 29,000 คำจาก Kaikki</b>
+    (ไฟล์ 82 MB ใหญ่เกินสำหรับเบราว์เซอร์) ฉบับเต็มรันบนเซิร์ฟเวอร์ ดู <code>wacha-web</code>.
+  </div>
+  <div id="result"></div>
+</main>
+<script>
+// Raw-ABI WASM glue (no wasm-bindgen). Loads wacha_wasm.wasm, calls the
+// alloc/segment/lookup exports via a Uint8Array view over linear memory.
+let ex, enc = new TextEncoder(), dec = new TextDecoder();
+const mem = () => new Uint8Array(ex.memory.buffer);
+function call(fn, s) {
+  const b = enc.encode(s);
+  const p = ex.wacha_alloc(b.length);
+  mem().set(b, p);
+  const rp = fn(p, b.length);
+  const dv = new DataView(ex.memory.buffer);
+  const len = dv.getUint32(rp, true);
+  const out = dec.decode(mem().subarray(rp + 4, rp + 4 + len));
+  ex.wacha_free(rp, 4 + len);
+  ex.wacha_free(p, b.length);
+  return out;
+}
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function badge(src){ if(src==='seed')return '<span class="badge seed">ตรวจแล้ว</span>';
+  if(src==='wordnet')return '<span class="badge wn">WordNet</span>';
+  if(src==='wiktionary')return '<span class="badge wn">Wiktionary</span>';
+  if(src==='coined_word')return '<span class="badge seed">ศัพท์บัญญัติ</span>'; return ''; }
+function render(d){
+  let h = '<div class="card"><h2>การตัดคำ</h2><div class="seg">';
+  h += d.segmentation.map(t=>`<span class="${t.in_vocab?'':'oov'}">${esc(t.text)}</span>`).join('');
+  h += '</div></div><div class="card"><h2>นิยาม</h2>';
+  if(d.entry){ h += `<div><span class="word">${esc(d.entry.word)}</span><span class="pos">${esc(d.entry.pos)}</span></div><div>${esc(d.entry.definition)}</div>`; }
+  else { h += '<span class="empty">ไม่มีนิยามในชุดข้อมูลย่อ (มีเฉพาะคำ seed) — ฉบับเต็มมี 29,000 นิยาม</span>'; }
+  h += '</div><div class="card"><h2>คำที่เกี่ยวข้อง (อธิบายได้)</h2>';
+  if(!d.related.length){ h += '<span class="empty">ไม่มีข้อมูลความสัมพันธ์</span>'; }
+  else { h += '<ul>' + d.related.map((r,i)=>{
+    const cf = r.confidence==='unverified' ? '<span class="badge unv">⚠ ยังไม่ยืนยัน</span>' : '';
+    const paths = (r.path||[]).map(p=>`<div class="edge">↳ ${esc(p)}</div>`).join('');
+    return `<li>${i+1}. <b>${esc(r.word)}</b> ${badge(r.source)}${cf}${paths}</li>`;
+  }).join('') + '</ul>'; }
+  h += '</div>';
+  document.getElementById('result').innerHTML = h;
+}
+async function boot(){
+  const t0 = performance.now();
+  const resp = await fetch('wacha_wasm.wasm');
+  const { instance } = await WebAssembly.instantiateStreaming(resp, {}).catch(async () => {
+    const buf = await (await fetch('wacha_wasm.wasm')).arrayBuffer();
+    return WebAssembly.instantiate(buf, {});
+  });
+  ex = instance.exports;
+  const wc = ex.wacha_init();
+  const dt = Math.round(performance.now() - t0);
+  document.getElementById('status').textContent = `พร้อมใช้ · ${wc.toLocaleString()} คำ · โหลด+สร้างเครื่องยนต์ ${dt} ms · ไม่มีการต่อเน็ตอีก`;
+  const q = document.getElementById('q');
+  q.disabled = false; q.focus();
+  let timer;
+  q.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(() => {
+    const v = q.value.trim(); if(!v){ document.getElementById('result').innerHTML=''; return; }
+    render(JSON.parse(call(ex.wacha_lookup, v)));
+  }, 120); });
+  window.addEventListener('online', ()=>document.getElementById('offline').textContent='⬤ ออนไลน์ (แต่ก็ไม่ได้ใช้เน็ต)');
+}
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
+boot();
+</script>
+</body>
+</html>
