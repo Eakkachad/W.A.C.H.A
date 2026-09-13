@@ -86,3 +86,6 @@ echo -n "personalized_pagerank occurrences in relations.rs: "
 grep -c "personalized_pagerank" src/relations.rs
 
 hr "done"
+
+hr "8. pitch regression (T4) — PITCH.md §3 demo claims vs live engine"
+bash "$(dirname "$0")/verify_pitch.sh" || echo "PITCH REGRESSION FAILED — fix PITCH.md §3"
