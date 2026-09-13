@@ -121,6 +121,17 @@ struct SenseGroup {
     tag: String,
 }
 
+/// A distinct related pair with its cross-source attestation (Phase N).
+#[derive(Debug, Clone)]
+pub struct PairInfo {
+    pub a: String,
+    pub b: String,
+    /// Bitmask of attesting sources (see `source_set_names`).
+    pub src_set: u8,
+    /// Corroboration tier (0..=3), same definition used for ranking.
+    pub tier: u8,
+}
+
 /// One related word plus the explanation of how it connects to the query word.
 #[derive(Debug, Clone)]
 pub struct RelatedWord {
@@ -500,6 +511,52 @@ impl RelationEngine {
         } else {
             None
         }
+    }
+
+    /// Enumerate every distinct unordered related pair (a < b by word id) in the
+    /// graph, each with its attesting-source SET (bitmask) and corroboration
+    /// tier. Used by the Phase N precision-by-tier and source-overlap
+    /// measurement (`wacha corroboration`). Deterministic order (by word).
+    pub fn enumerate_pairs(&self) -> Vec<PairInfo> {
+        use std::collections::HashMap;
+        // (a,b) -> (src_set, max_group_size)
+        let mut acc: HashMap<(usize, usize), (u8, usize)> = HashMap::new();
+        for sg in &self.senses {
+            let bit = Self::source_bit(sg.source);
+            let gsize = sg.members.len();
+            for i in 0..sg.members.len() {
+                for j in (i + 1)..sg.members.len() {
+                    let (a, b) = (sg.members[i].min(sg.members[j]), sg.members[i].max(sg.members[j]));
+                    let e = acc.entry((a, b)).or_insert((0, 0));
+                    e.0 |= bit;
+                    if gsize > e.1 {
+                        e.1 = gsize;
+                    }
+                }
+            }
+        }
+        let mut out: Vec<PairInfo> = acc
+            .into_iter()
+            .map(|((a, b), (src_set, max_gsize))| PairInfo {
+                a: self.words[a].clone(),
+                b: self.words[b].clone(),
+                src_set,
+                tier: Self::corroboration_tier(src_set, max_gsize),
+            })
+            .collect();
+        out.sort_by(|x, y| x.a.cmp(&y.a).then_with(|| x.b.cmp(&y.b)));
+        out
+    }
+
+    /// Human-readable names of the sources in a bitmask (Seed/CoinedWord/
+    /// WordNet/Wiktionary), for the source-overlap table.
+    pub fn source_set_names(src_set: u8) -> Vec<&'static str> {
+        let mut v = Vec::new();
+        if src_set & 0b0001 != 0 { v.push("seed"); }
+        if src_set & 0b0010 != 0 { v.push("coined_word"); }
+        if src_set & 0b0100 != 0 { v.push("wordnet"); }
+        if src_set & 0b1000 != 0 { v.push("wiktionary"); }
+        v
     }
 
     /// Recount, from the live graph, how many (query, related-candidate) pairs

@@ -63,6 +63,7 @@ fn main() {
         Some((cmd, rest)) => match cmd.as_str() {
             "stats" => print_stats(&engine),
             "audit" => print_audit(&engine),
+            "corroboration" => print_corroboration(&engine),
             "field" => {
                 let english = rest.join(" ");
                 if english.is_empty() {
@@ -291,6 +292,67 @@ fn print_field(data_dir: Option<&str>, english: &str) {
         None => {
             eprintln!("no cached ศัพท์บัญญัติ result for \"{english}\" (run scripts/fetch_coined_word.sh)");
             std::process::exit(1);
+        }
+    }
+}
+
+/// Phase N: cross-source corroboration — source-overlap table + a seeded,
+/// stratified-by-tier sample for hand-audit. Tiers are PRE-REGISTERED in
+/// `relations::corroboration_tier` (defined before any audit).
+fn print_corroboration(engine: &Engine) {
+    use std::collections::BTreeMap;
+    let pairs = engine.enumerate_relation_pairs();
+    println!("total distinct related pairs: {}", pairs.len());
+
+    // Source-overlap table: count pairs by their exact attesting-source SET.
+    let mut by_set: BTreeMap<String, usize> = BTreeMap::new();
+    let mut by_tier: BTreeMap<u8, usize> = BTreeMap::new();
+    // "unique to one source" vs "corroborated (≥2 sources)".
+    let (mut unique, mut corroborated) = (0usize, 0usize);
+    let mut per_source_total: BTreeMap<&str, usize> = BTreeMap::new();
+    for p in &pairs {
+        let names = wacha::relations::RelationEngine::source_set_names(p.src_set);
+        let key = names.join("+");
+        *by_set.entry(key).or_default() += 1;
+        *by_tier.entry(p.tier).or_default() += 1;
+        if p.src_set.count_ones() >= 2 { corroborated += 1; } else { unique += 1; }
+        for n in &names { *per_source_total.entry(n).or_default() += 1; }
+    }
+    println!("\n[source-overlap] pairs by attesting-source set:");
+    for (k, v) in &by_set {
+        println!("  {:<28} {}", k, v);
+    }
+    println!("\n[source-overlap] pairs each source participates in (any tier):");
+    for (k, v) in &per_source_total {
+        println!("  {:<12} {}", k, v);
+    }
+    println!("\n[source-overlap] single-source: {unique}  ·  multi-source (≥2, corroborated): {corroborated}");
+
+    println!("\n[tiers] pairs per pre-registered corroboration tier:");
+    let tname = |t: u8| match t { 3 => "ORST-attested", 2 => "multi-source(≥2)", 1 => "single-source-corroborated(synset≥3)", _ => "isolated-pair" };
+    for (t, v) in by_tier.iter().rev() {
+        println!("  tier {t} {:<38} {v}", tname(*t));
+    }
+
+    // Stratified sample: up to 40 pairs per tier, deterministic (FIXED SEED).
+    // Deterministic LCG (no rand dep). Seed pre-registered = 0xN6_2026.
+    const SEED: u64 = 0x4e36_2026;
+    const PER_TIER: usize = 40;
+    println!("\n[sample] stratified by tier, {PER_TIER}/tier, FIXED SEED {SEED:#x} — hand-audit these:");
+    for tier in (0u8..=3).rev() {
+        let mut idxs: Vec<usize> = pairs.iter().enumerate().filter(|(_, p)| p.tier == tier).map(|(i, _)| i).collect();
+        // Deterministic shuffle: sort by a hash of (seed, index).
+        idxs.sort_by_key(|&i| {
+            let mut h = SEED ^ (i as u64).wrapping_mul(0x9E3779B97F4A7C15);
+            h ^= h >> 33; h = h.wrapping_mul(0xff51afd7ed558ccd); h ^= h >> 33;
+            h
+        });
+        let take = idxs.len().min(PER_TIER);
+        println!("\n--- tier {tier} ({}) — n_available={}, sampled={} ---", tname(tier), idxs.len(), take);
+        for &i in idxs.iter().take(take) {
+            let p = &pairs[i];
+            let names = wacha::relations::RelationEngine::source_set_names(p.src_set).join("+");
+            println!("  {} ⟷ {}   [{}]", p.a, p.b, names);
         }
     }
 }

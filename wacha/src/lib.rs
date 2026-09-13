@@ -345,6 +345,11 @@ impl Engine {
         self.relations.related(word, top_k).iter().any(|r| r.word == other)
     }
 
+    /// All distinct related pairs with cross-source attestation + tier (Phase N).
+    pub fn enumerate_relation_pairs(&self) -> Vec<crate::relations::PairInfo> {
+        self.relations.enumerate_pairs()
+    }
+
     /// Frequency-weighted definition coverage (A3): of the top-`n` most frequent
     /// Thai words (by `tnc_freq.txt`), how many have a non-empty definition.
     /// Returns (defined, n_considered, pct). This answers "does a judge typing a

@@ -70,12 +70,18 @@ impl Importer for CoinedWordImporter {
             let html = std::fs::read_to_string(&file)?;
             let rows = parse_html(&html);
 
-            // Collect the distinct Thai terms this English word maps to (across
-            // all disciplines) so we can cross-link them as CoinedWord synonyms.
-            let mut thai_terms: Vec<String> = Vec::new();
+            // Group Thai terms by discipline. Only terms that ORST lists for the
+            // SAME English word IN THE SAME DISCIPLINE are genuine synonyms
+            // (e.g. คณิตศาสตร์: ฟีลด์ ~ ฟีลด์). Terms from *different* disciplines
+            // (kernel → เนื้อในเมล็ด [botany] vs ส่วนกลาง [computing]) are NOT
+            // synonyms — cross-linking them was a real bug (Phase N audit found
+            // it polluted the ORST tier). So we link only within a discipline.
+            use std::collections::BTreeMap as Map2;
+            let mut by_disc: Map2<String, Vec<String>> = Map2::new();
             for row in &rows {
-                if !thai_terms.contains(&row.thai) {
-                    thai_terms.push(row.thai.clone());
+                let v = by_disc.entry(row.discipline.clone()).or_default();
+                if !v.contains(&row.thai) {
+                    v.push(row.thai.clone());
                 }
             }
 
@@ -105,12 +111,15 @@ impl Importer for CoinedWordImporter {
                     .entry(row.thai.clone())
                     .or_insert_with(|| Entry::headword_only(&row.thai));
                 entry.senses.push(sense);
-                // Link to the other Thai equivalents of the SAME English word.
-                for other in &thai_terms {
-                    if other != &row.thai {
-                        let rel = (Relation::Synonym, other.clone());
-                        if !entry.relations.contains(&rel) {
-                            entry.relations.push(rel);
+                // Link ONLY to the other Thai equivalents in the SAME discipline
+                // (genuine same-concept synonyms).
+                if let Some(siblings) = by_disc.get(&row.discipline) {
+                    for other in siblings {
+                        if other != &row.thai {
+                            let rel = (Relation::Synonym, other.clone());
+                            if !entry.relations.contains(&rel) {
+                                entry.relations.push(rel);
+                            }
                         }
                     }
                 }
