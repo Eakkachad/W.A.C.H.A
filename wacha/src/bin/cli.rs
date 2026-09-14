@@ -66,6 +66,7 @@ fn main() {
             "corroboration" => print_corroboration(&engine),
             "auditbands" => print_audit_bands(&engine, rest),
             "patk" => print_patk(&engine, rest),
+            "rankguard" => print_rank_guard(&engine, rest),
             "probe" => {
                 if rest.len() != 2 {
                     eprintln!("usage: wacha probe <query> <candidate>  (V1 flag diagnostic)");
@@ -286,6 +287,58 @@ fn print_audit(engine: &Engine) {
         let ok = if keep == present { "ok " } else { "MISS" };
         let state = if present { "present" } else { "absent " };
         println!("  [{ok}] {verdict} {a} ⟷ {b}: {state}");
+    }
+}
+
+/// G1 (R9): automated ranking-regression guard. For every audited **KEEP** pair
+/// whose query has ≥5 related candidates, check whether the KEEP co-member is
+/// actually in the query's **top-5** ranked results (not just present at depth).
+/// This is the exact failure R6 (`เรือน` fell out) and R7 (tier order) exhibited
+/// — a genuine relation dropping out of the top of the ranked list. It is fully
+/// automated against the committed 47-pair gold set (no human judgment), so it
+/// can live in `verify_r5.sh` and fail loudly on a ranking regression.
+///
+/// Prints `RANK_GUARD p@5 = hit/total = XX.X%` and, if a threshold arg is given,
+/// exits non-zero when below it (default just reports). Deterministic.
+fn print_rank_guard(engine: &Engine, rest: &[String]) {
+    const TOP5: usize = 5;
+    let threshold: Option<f64> = rest.first().and_then(|s| s.trim_end_matches('%').parse().ok());
+    let (mut total, mut hit) = (0usize, 0usize);
+    let mut misses: Vec<(String, String)> = Vec::new();
+    for &(a, b, keep) in AUDIT_PAIRS {
+        if !keep {
+            continue;
+        }
+        // Query direction: use whichever endpoint has ≥5 related (so the
+        // "top-5" test is meaningful); prefer a. Symmetric relation.
+        for (q, other) in [(a, b), (b, a)] {
+            let top = engine.related_ranked(q, TOP5);
+            if top.len() < TOP5 {
+                continue; // query too sparse to have a "top-5"
+            }
+            total += 1;
+            if top.iter().any(|r| r.word == other) {
+                hit += 1;
+            } else {
+                misses.push((q.to_string(), other.to_string()));
+            }
+            break; // count each KEEP pair once, from the first ≥5-related side
+        }
+    }
+    let pct = if total > 0 { 100.0 * hit as f64 / total as f64 } else { 100.0 };
+    println!("RANK_GUARD p@5 (KEEP-in-top5, gold set n={total}) = {hit}/{total} = {pct:.1}%");
+    if !misses.is_empty() {
+        println!("  KEEP pairs NOT in top-5 (ranking pushed them down):");
+        for (q, o) in &misses {
+            println!("    {q} ⤳ {o}");
+        }
+    }
+    if let Some(t) = threshold {
+        if pct < t {
+            eprintln!("RANK_GUARD FAIL: p@5 {pct:.1}% < threshold {t:.1}% — ranking regressed");
+            std::process::exit(1);
+        }
+        println!("RANK_GUARD OK: {pct:.1}% ≥ {t:.1}%");
     }
 }
 

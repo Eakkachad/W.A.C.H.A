@@ -107,3 +107,21 @@ else
   node "$WASM_DIR/smoke.mjs" "$WASM_DIR/web/wacha_wasm.wasm" \
     || echo "WASM SMOKE FAILED — the offline flagship is broken, do not ship"
 fi
+
+hr "10. ranking-regression guard (G1) — the one hole in the safety net until R9"
+# Why this exists: ranking is band -> PPR -> freq, empirically tuned, and it
+# broke TWICE (R6: เรือน fell out; R7: tier order promoted the 55% tier) — both
+# caught only by a human happening to look. This guards it automatically.
+#
+# Metric: automated p@5 over the committed 47-pair KEEP gold set — for every
+# audited KEEP pair whose query has >=5 related, is the KEEP co-member in the
+# query's TOP-5 ranked results? This is a RANKING metric (a genuine relation
+# dropping out of the top is exactly the R6/R7 failure), computed with no human
+# judgment, so it can gate CI. It is DISTINCT from the hand-audited precision@5
+# in BENCHMARKS §4.1 (that one judges whether the returned top-5 are *good*, and
+# needs a rater). Threshold 50%: the shipped band->PPR->freq scores 51.3%, while
+# the two known-worse orderings score below it (freq-primary 48.7%, raw-tier
+# 46.2%) — so a regression toward either trips this guard. Prints the number
+# every run so slow drift is visible, not just a threshold breach.
+"$CLI" --data "$DATA" rankguard 50 2>&1 | grep -vE "^loaded|^vocab_hash|^segmenter cache|^global PageRank" \
+  || echo "RANK GUARD FAILED — ranking regressed below threshold, DO NOT SHIP"
