@@ -216,7 +216,24 @@ impl Engine {
     ///
     /// `log` receives human-readable progress lines (pass e.g. `|m| eprintln!("{m}")`
     /// or a no-op closure).
-    pub fn load_from_dir(dir: &std::path::Path, mut log: impl FnMut(&str)) -> std::io::Result<Self> {
+    pub fn load_from_dir(dir: &std::path::Path, log: impl FnMut(&str)) -> std::io::Result<Self> {
+        // Full build: includes the ORST-educational-licensed sources (RID 2554 +
+        // ศัพท์บัญญัติ). This is the local/judge-facing build.
+        Self::load_from_dir_opts(dir, true, log)
+    }
+
+    /// Like [`Engine::load_from_dir`], but `include_orst_licensed` gates the two
+    /// sources whose licence is "ORST educational, non-commercial" and therefore
+    /// **not cleared for public redistribution** (R10 Phase R3 / R9 Phase D1):
+    /// the real RID 2554 excerpt (`data/rid/`) and ศัพท์บัญญัติ (`coined_word_cache/`).
+    /// Pass `false` when generating the public WASM assets so those definitions
+    /// never reach a publicly-deployed artifact; the public build then rests only
+    /// on open-licensed sources (PyThaiNLP CC0, WordNet, Kaikki/Wiktionary CC BY-SA).
+    pub fn load_from_dir_opts(
+        dir: &std::path::Path,
+        include_orst_licensed: bool,
+        mut log: impl FnMut(&str),
+    ) -> std::io::Result<Self> {
         use std::time::Instant;
         use crate::import::kaikki::KaikkiImporter;
         use crate::import::Importer;
@@ -241,7 +258,7 @@ impl Engine {
         // Real RID data (Task 8) — the organizer's dataset drops into data/rid/.
         // Highest merge priority (Rid > HumanSeed > CoinedWord > Kaikki > Lexitron).
         let rid_dir = dir.join("rid");
-        if rid_dir.is_dir() {
+        if include_orst_licensed && rid_dir.is_dir() {
             use crate::import::rid::RidImporter;
             let t = Instant::now();
             match RidImporter.load(&rid_dir) {
@@ -278,7 +295,7 @@ impl Engine {
         // in data/coined_word_cache/ if the dir exists and is non-empty (fetched
         // once, offline, by scripts/fetch_coined_word.sh). Never fetches here.
         let coined_dir = dir.join("coined_word_cache");
-        if coined_dir.is_dir() {
+        if include_orst_licensed && coined_dir.is_dir() {
             use crate::import::coined_word::CoinedWordImporter;
             let has_html = std::fs::read_dir(&coined_dir)
                 .map(|mut it| it.any(|e| e.ok().map(|e| e.path().extension().map(|x| x == "html").unwrap_or(false)).unwrap_or(false)))

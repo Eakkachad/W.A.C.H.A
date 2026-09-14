@@ -4,7 +4,9 @@
 use wacha::Engine;
 fn main() {
     let dir = std::path::Path::new("../data");
-    let engine = Engine::load_from_dir(dir, |_| {}).expect("engine");
+    // PUBLIC WASM asset: exclude the ORST-educational-licensed sources (RID 2554
+    // + ศัพท์บัญญัติ) — not cleared for public redistribution (R10 R3 / R9 D1).
+    let engine = Engine::load_from_dir_opts(dir, false, |_| {}).expect("engine");
     let idx = engine.build_reverse_index();
     eprintln!(
         "reverse index: {} docs / {} terms / ~{:.2} MB (in-mem)",

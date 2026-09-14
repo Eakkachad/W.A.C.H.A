@@ -18,7 +18,9 @@ fn src_code(label: &str) -> u8 {
 }
 fn main() {
     let dir = std::path::Path::new("../data");
-    let engine = Engine::load_from_dir(dir, |_| {}).expect("engine");
+    // PUBLIC WASM asset: exclude the ORST-educational-licensed sources (RID 2554
+    // + ศัพท์บัญญัติ) — not cleared for public redistribution (R10 R3 / R9 D1).
+    let engine = Engine::load_from_dir_opts(dir, false, |_| {}).expect("engine");
     let defs = engine.export_definitions_with_examples(3);
     let with_ex = defs.iter().filter(|(_, _, _, ex)| !ex.is_empty()).count();
     eprintln!("defined headwords: {} ({} carry >=1 usage example)", defs.len(), with_ex);
