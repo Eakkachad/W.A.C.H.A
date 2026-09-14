@@ -6,13 +6,19 @@ for the ORST "เปิดคลังคำ พลิกคลังคิด" 
 (as in สัตย์วาจา, "word of honor"); every letter of the backronym maps to a real, verified piece of the
 system (see `wacha/README.md` for the full breakdown), not a marketing label.
 
-Status: **win-readiness round (Round 3) in progress — core product is demo-complete.** `wacha/` (Datrie
-segmenter, vendored graph engine, WordNet-expanded relationships with provenance/confidence tagging,
-offline learner content, web UI with graph viz) passes 50 tests and runs end-to-end on the real 62k-word
-CC0 list + ~29k WordNet-derived relations. Pitch materials (`PITCH.md`) and a rehearsed/adversarially-tested
-demo are done; see `PROGRESS.md` for the full dated history. Event dates not yet confirmed. This folder
-exists so any agent or session (including a fresh one with no memory of how this plan was made) can pick
-the work up cold — that is the explicit purpose of this file and the others below.
+Status: **Round 12 done (2026-09-15) — real official data ingested, job-menu front door + deterministic
+intent detection shipped, deployed to the team's Tailscale network for the event.** `wacha/` now runs on
+**76,649 words / 40,681 entries** (the real ORST RID 2554 excerpt, official transliteration list, 3
+specialized-domain dictionaries, and a 3-edition word-evolution timeline — not just the original CC0
+practice data), passes **126 tests** (121 lib + 4 poc + 1 alloc), and answers a query in **~14 ms** (p95).
+The product concept has grown from "search a word" to **"วันนี้อยากให้ภาษาไทยทำอะไรให้คุณดี"** — one
+free-text box, a rule-based intent router (no LLM), and 5 task-shaped modes (naming from real etymology,
+register/rhyme-aware writing help, cross-discipline specialized terms, root/evolution exploration, official
+transliteration). Pitch materials (`PITCH.md`, `PITCH_DECK.md`, `MENTOR_BRIEF.md`) are current as of Round
+12. Full dated history: `PROGRESS.md`. Round-by-round task lists and verification reports live in
+[`rounds/`](./rounds). This folder exists so any agent or session (including a fresh one with no memory of
+how this plan was made) can pick the work up cold — that is the explicit purpose of this file and the
+others below.
 
 ---
 
@@ -42,9 +48,14 @@ the work up cold — that is the explicit purpose of this file and the others be
    superseded by `wacha/` for anything except historical reference.
 7. **[PITCH.md](./PITCH.md)** — the demo/presentation script (Thai): 2–3 min pitch leading with the
    positioning, honest Q&A for hard questions, and a pre-verified demo word list with real output.
-   **[PITCH_DECK.md](./PITCH_DECK.md)** — the slide-by-slide deck draft (10 slides + a 5-page Q&A-only
-   appendix), each slide with its content, a punchline, a speaker note, and anticipated hard questions.
-8. Background research (not this-project-scoped, but cited and reusable): [`../knowledge-base/topics/thai-dictionary-hackathon.md`](../knowledge-base/topics/thai-dictionary-hackathon.md).
+   **[PITCH_DECK.md](./PITCH_DECK.md)** — the AI-slide-generation brief (9 content pages + a 5-page
+   Q&A-only appendix), each page with exact copy, numbers with citations, a visualization suggestion, a
+   layout note, and a speaker note. **[MENTOR_BRIEF.md](./MENTOR_BRIEF.md)** — a non-technical soft-pitch
+   covering all 8 mandatory slide topics, written for a mentor/judge who has never seen this project.
+8. **[rounds/](./rounds)** — every past round's task list (`NEXT_STEPS_RX.md`) and verification report
+   (`VERIFY_RX.md`), archived once done. The *current* round's plan (if one is in flight) lives at the
+   repo root until it's finished, then moves here.
+9. Background research (not this-project-scoped, but cited and reusable): [`../knowledge-base/topics/thai-dictionary-hackathon.md`](../knowledge-base/topics/thai-dictionary-hackathon.md).
 
 ## One-line orientation
 
@@ -59,19 +70,25 @@ the work up cold — that is the explicit purpose of this file and the others be
 - **What's NOT in scope:** `katgpt-transformer` (confirmed non-functional for real checkpoints — random-init
   only), the rest of AXIOM beyond `graph.rs` (self-labeled "forensic archive"), and anything from the
   separate, unrelated [Green Mind AI 2026 / mango-a100](../neural-engines/mango-a100/) track.
-- **Data source:** resolved (2026-09-04) — a real CC0 62,107-word Thai list (NECTEC LEXiTRON via
-  PyThaiNLP), not a hypothetical risk anymore. See `PROGRESS.md`.
-- **Remaining open items (2026-09-12, Round 3):** Tasks 7–10 are done (confidence tagging + measured
-  84.2% WordNet precision, `PITCH.md`, rehearsed/adversarially-tested demo, and `wacha/API.md` — the
-  `/api/lookup` contract + data-license "open data" story). Only Task 11.2 remains (optional — real
-  Typhoon 2 access to upgrade learner content from `human_seed` provenance). See `NEXT_STEPS.md`'s
-  "Round 3" and `PROGRESS.md` for the full detail.
-- **Feasibility POC → real build → win-readiness:** the POC (2026-09-04) proved both halves of the hybrid
-  work on real Thai text; a real product crate (`wacha/`) now exists with 50 passing tests and
-  verified-by-actually-running output at every stage. See `PROGRESS.md` for the full history, including
-  every real bug found by actually executing the code rather than trusting tests/logs or a prior agent's
-  summary (a codepoint-vs-Thai-Character-Cluster OOV bug, a 42s build-time bug now fixed via a trie cache,
-  and a real WordNet data-quality/confidence-tagging gap now closed with a measured 84.2% precision).
+- **Data source:** the CC0 62,107-word practice list (NECTEC LEXiTRON via PyThaiNLP) was the Day-0
+  fallback; **the real event data arrived 2026-09-14** (`nextect.zip`, staged at `data/official/`,
+  git-ignored) and is now ingested: RID 2554 (11,265 entries / 13,395 senses, ก–ซ only, as provided),
+  official คำทับศัพท์ (2,256 pairs), 3 specialized-domain dictionaries (4,986 entries), and a 3-edition
+  word-evolution timeline (2542→2554→2569, ก only). See `rounds/VERIFY_R10.md`.
+- **Round 11-12 (2026-09-14/15):** the product reframed from "search a word" to a job-menu front door
+  ("วันนี้อยากให้ภาษาไทยทำอะไรให้คุณดี") with a deterministic (no-LLM) intent router — type anything into
+  one box, a rule table + a `thai2fit_wv` (PyThaiNLP, MIT) vector fallback guesses which of 5 modes you
+  want, with a one-tap correction if it guesses wrong. Also shipped: an etymology-grounded naming
+  assistant (a real, cited market gap — every existing Thai naming tool is numerology-based), a
+  deterministic sound-symbolism score, register/rhyme search, and a PIE→English-cognate "bonus" layer
+  cross-verified against Wiktionary (38/43 = 88.4% corroborated) before shipping. See `rounds/
+  VERIFY_R11.md` / `VERIFY_R12.md`.
+- **Feasibility POC → real build → win-readiness → real event data → job-menu + intent:** the POC
+  (2026-09-04) proved both halves of the hybrid work on real Thai text; the product crate (`wacha/`) now
+  passes **126 tests** and has been verified by actually running it (HTTP calls, CLI lookups, live
+  spot-checks), not by trusting logs or a prior agent's summary — see `PROGRESS.md` for the full history
+  of real bugs found this way, most recently a `{register}` tag-parsing bug (R12 WRITE) that had silently
+  dropped 1,212 tags.
 - **Persistent cross-session context:** Claude's memory system, `hackathon-dictionary-reimagined-2026`
   entry — kept in sync with this folder, but this folder is the canonical, detailed version.
 
