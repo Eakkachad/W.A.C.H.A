@@ -427,12 +427,38 @@ impl Engine {
         self.dict.words().map(|s| s.to_string()).collect()
     }
 
-    /// Build the reverse-dictionary index (Phase C): segment every entry's
-    /// primary definition with THIS engine's own segmenter and index it with
-    /// BM25. Deterministic. See [`crate::reverse::ReverseIndex`].
+    /// Build the reverse-dictionary index (Phase C / Q2): segment every entry's
+    /// **enriched** document with THIS engine's own segmenter and index with BM25.
+    /// Q2 enrichment = primary definition + all usage examples + related-word
+    /// headwords (so a query containing a synonym finds the entry), joined by
+    /// spaces and segmented as one string. Deterministic.
     pub fn build_reverse_index(&self) -> crate::reverse::ReverseIndex {
-        let defs = self.export_definitions(); // (hw, def, src), sorted
-        let pairs: Vec<(String, String)> = defs.into_iter().map(|(h, d, _)| (h, d)).collect();
+        // Build enriched (headword, text) for every entry with a definition.
+        let mut pairs: Vec<(String, String)> = Vec::new();
+        for e in self.dict.all_entries() {
+            let primary = match e.senses.iter().find(|s| !s.definition.trim().is_empty()) {
+                Some(s) => s,
+                None => continue,
+            };
+            let mut doc = primary.definition.clone();
+            // Append usage examples (from primary sense, then any other sense).
+            for s in &e.senses {
+                for ex in &s.examples {
+                    doc.push(' ');
+                    doc.push_str(ex);
+                }
+            }
+            // Append related-word headwords (synonyms, hypernyms, etc.) — these
+            // are real Thai words that describe the same concept, so a query
+            // containing any of them should find this entry.
+            for (_rel, target) in &e.relations {
+                doc.push(' ');
+                doc.push_str(target);
+            }
+            pairs.push((e.headword.clone(), doc));
+        }
+        pairs.sort_by(|a, b| a.0.cmp(&b.0));
+        pairs.dedup_by(|a, b| a.0 == b.0);
         let seg = &self.segmenter;
         crate::reverse::ReverseIndex::build(
             pairs.iter().map(|(h, d)| (h.as_str(), d.as_str())),

@@ -231,6 +231,27 @@ therefore make **no zero-alloc claim** for relation lookup; the counter says oth
 optimization target (cache/prune the per-query PPR working set) rather than something to paper over. Run:
 `cargo test --release --test alloc_hotpath -- --nocapture`.
 
+### 4.4 Reverse dictionary (R8 C build + R9 Q2 v2 enrich/damp, measured)
+
+Own BM25 (k1=1.2, b=0.75) over segmented definitions, CSR postings, matched-token explanations; CLI
+`reverse`, web `/api/reverse`, and offline in WASM. **Q2 v2** enriched each document with the entry's
+usage examples + related-word headwords, and added a coverage damping factor (`score × coverage^1.0`).
+
+| metric | R8 C (v1) | R9 Q2 (v2) |
+|---|---|---|
+| indexed docs | 29,584 | 29,763 |
+| distinct terms | 18,873 | **28,829** (examples + related words added) |
+| index size (in-mem) | ~2.30 MB | ~2.81 MB |
+| search p95 | 0.341 ms | sub-ms (unchanged order) |
+
+**Honest quality (10 hand-checked queries, un-curated — full table in `VERIFY_R9.md` §Q2):** 3/10 clear
+hits (ความรู้สึกเสียใจอย่างมาก→น้ำตาตกใน; น้ำที่ตกลงมาจากฟ้า→ฝน; เครื่องดนตรีที่มีสาย→พิณ/ไวโอลิน), several
+partials, and the **2 known structural failures persist** (สัตว์เลี้ยงสี่ขาเห่าได้→สุนัข,
+เครื่องมือสำหรับเขียนหนังสือ→ปากกา) — the targets' terse ORST-style glosses simply do not contain the
+query's descriptive words, so BM25 over glosses cannot reach them. v2's enrichment helped multi-word
+conceptual queries and its damping compressed single-rare-term noise (R3's top score fell 11 → 2.7), but it
+is not a fix for the structural cases. Reported as-is, not curated.
+
 ---
 
 ## 5. Analytical (computed, not measured)

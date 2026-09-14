@@ -22,6 +22,11 @@ use std::collections::HashMap;
 
 const K1: f32 = 1.2;
 const B: f32 = 0.75;
+/// Q2 coordination/coverage exponent: final score is BM25 × coverage^COORD_ALPHA,
+/// where coverage = (distinct query terms matched) / (distinct query terms). This
+/// damps a hit that matches only one rare high-IDF query word. 1.0 = linear
+/// coverage weighting (a doc matching half the query keeps half its score).
+const COORD_ALPHA: f32 = 1.0;
 
 /// Ultra-frequent Thai function words that carry no discriminative meaning.
 /// Skipped at index and query time. Deliberately small and conservative.
@@ -195,10 +200,22 @@ impl ReverseIndex {
         }
         let mut hits: Vec<ReverseHit> = acc
             .into_iter()
-            .map(|(did, (score, matched))| ReverseHit {
-                word: self.docs[did as usize].clone(),
-                score,
-                matched,
+            .map(|(did, (score, matched))| {
+                // Q2 damping: a coordination/coverage factor so one rare
+                // high-IDF query term cannot carry a hit on its own. A doc that
+                // matches more of the DISTINCT query terms is boosted; a doc
+                // matching only 1 of, say, 4 query terms is damped hard.
+                // coverage = matched_distinct / query_distinct ∈ (0,1].
+                // We use coverage^COORD_ALPHA so the effect is strong but a
+                // single-term match on a 1-term query is unaffected (coverage=1).
+                let q = q_terms.len().max(1) as f32;
+                let coverage = (matched.len() as f32 / q).clamp(0.0, 1.0);
+                let damped = score * coverage.powf(COORD_ALPHA);
+                ReverseHit {
+                    word: self.docs[did as usize].clone(),
+                    score: damped,
+                    matched,
+                }
             })
             .collect();
         hits.sort_by(|a, b| {
