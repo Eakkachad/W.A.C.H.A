@@ -68,6 +68,7 @@ files too and note it here — this log is the record of *that it changed*, thos
 | **Round 10** — ingest real ORST event data (RID ๒๕๕๔ + คำทับศัพท์ + ศัพท์เฉพาะทาง + วิวัฒนาการ ๓ ยุค) | **done** — 8 phases (U1/R/R3/T/E/W/U2/P), X cut; 40,681 entries; public WASM licence-gated; `rounds/VERIFY_R10.md` | 2026-09-15 |
 | **Round 11** — job-menu front door + naming assistant + sound-symbolism + register/rhyme + pretrained vectors | **done** — ROUTER/NAME/SOUND/WRITE/VEC/P shipped, BRIDGE cut; thai2fit (MIT) 45.9% overlap; 114 lib tests; `VERIFY_R11.md` | 2026-09-14 |
 | **Round 12** — deterministic intent detection (one free-text box) + PIE/English-cognate BRIDGE revived | **done** — INTENT-1/2/3 + BRIDGE-1/2/3, nothing cut; intent rules 22/22 + vector 6/10; cognates 38/43=88.4% corroborated; 121 lib tests; `VERIFY_R12.md` | 2026-09-14 |
+| **Round 13** — Astro + pnpm frontend on digital library design + rewiring to real backend + all 5 modes + intent router | **done** — Phase 0/1/3/2/4; 6 modes + intent confirmation + 2569-draft timeline; new UI at :4321, fallback at :8090; `VERIFY_R13.md` | 2026-09-15 |
 | Day 2 — demo/submit | not started | — |
 
 **A real product crate now exists** (`wacha/`) in addition to the `poc/` feasibility harness. The
@@ -1921,3 +1922,26 @@ stays git-ignored.
 
 The product concept shifted from "search a word" to "tell it what you want, in one box." Full detail in
 `VERIFY_R12.md`; intent hit rates + latency in `BENCHMARKS.md` §4.8; `MENTOR_BRIEF.md` TL;DR + §4 updated.
+
+### 2026-09-15 (Round 13) — Astro + pnpm frontend on digital library design + rewiring to real backend + all 5 modes + intent router
+
+Replaced the reference frontend mockup at `data/uidesign_ref/` with a production Astro application (`webapp/`) managed via `pnpm`, completely rewired to our single live Rust backend (`wacha-web` running at `http://100.76.70.14:8090`). Followed the mandated phased plan from `NEXT_STEPS_R13.md` (Phase 0 → Phase 1 → Phase 3 → Phase 2 → Phase 4). **Zero changes were made to the Rust backend**; `katgpt-rs` was completely untouched; and the fallback web UI at `http://100.76.70.14:8090/` remained running and unmodified throughout.
+
+**Phase 0 (`6096f89`) — Astro Scaffold via pnpm.** Initialized minimal Astro project in `webapp/` using `pnpm create astro --template minimal --install --no-git --typescript strict`. Integrated existing CSS/JS design system (`data/uidesign_ref/`) into `webapp/public/` (`style.css`, `app.js`, `d3_graph.js`) and created the root page at `webapp/src/pages/index.astro`.
+
+**Phase 1 (`f4d4fe5`) — Rewiring General and Etymology to single backend.** Completely eliminated the hardcoded dependency on nonexistent port 8089. Pointed all API calls to `API_BASE = 'http://100.76.70.14:8090'`. General mode hits `/api/lookup?q=`. Etymology/roots mode hits `/api/lookup` for base entry details (`entry.etymology` + `entry.english_cognates`), and queries `/api/evolution?q=` for 3-edition historical progression. Embedded the mandatory 2569-draft disclaimer badge (`is_draft: true` → "ร่าง อยู่ระหว่างดำเนินการ ยังไม่เป็นข้อมูลทางการ") into the evolution timeline. Rewired `d3_graph.js` with an adapter supporting both PIE cognate trees and semantic relations from `entry.related[]`.
+
+**Phase 3 & Phase 2 (`0131c5f`) — Free-text intent router + confirmation UI + remaining job-menu modes.**
+- **Intent Router:** free-text search queries `/api/intent?q=`. Implemented the mandatory confirmation banner (`เราคิดว่าคุณอยาก [X] — ใช่ไหม?`) showing detected intent, reasoning, confidence percentage, vector disclaimers where applicable, and 1-tap chip overrides allowing immediate correction.
+- **Naming Mode:** direct word profile via `/api/lookup` plus context-clue reverse search via `/api/reverse?q=` (BM25 matches linking to word profiles).
+- **Writing Mode:** loose rhyme finder via `/api/rhyme?q=` plus dynamic interactive register filtering (`แบบ`, `ราชา`, `โบ`, `ปาก`, `เลิก`) via `/api/register?reg=&q=`.
+- **Translit Mode:** ORST 2563 romanization search via `/api/translit?q=`.
+- **Specialized Mode:** domain terminology search highlighting `entry.subject` and specialized relations via `/api/lookup?q=`.
+
+**Phase 4 — Verification and Deployment:**
+- Production build `pnpm --dir webapp build` succeeded.
+- Astro preview server running as daemon PID 25969 on `http://100.76.70.14:4321/` (tailnet) and `http://localhost:4321/`.
+- Fallback UI PID 6353 running untouched on `http://100.76.70.14:8090/`.
+- End-to-end verification script tested with live queries (`ชื่อลูกผู้หญิง`, `มารดา`, `คำคล้องจอง`, `internet`, `คอมพิวเตอร์`, `กนก`, `ใจ`, `ภาวะซึมเศร้า`, `ปลา`) against the backend — all passed.
+- Full verification write-up recorded in `VERIFY_R13.md`.
+
