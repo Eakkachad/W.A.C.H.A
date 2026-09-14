@@ -1608,5 +1608,10 @@ rater; second rater dropped (allowed).
 disciplines (all hard limits honored, no non-200), yielding **402 entries / 834 senses** so a judge from
 any field finds their own vocabulary. Not a corpus-share change; the pitch states the mix honestly.
 
-**Deferred:** A3 (synthetic scale headroom) and E1 (CountingAllocator) — both droppable, left clean.
-Full detail + raw numbers in `VERIFY_R8.md`; benchmark tables updated per-task in `BENCHMARKS.md`.
+**A3 + E1 (`1af8685`, `748dfe5`) — the two "droppable" analytical tasks also landed.** E1's
+`CountingAllocator` measured the hot paths: `segment` is ~2 allocs/word, but `related_ranked` is ~31k
+allocs/query (per-query PageRank) — so no zero-alloc claim is made for relations; it's flagged as an
+optimization target. A3's **synthetic** scale curve (1×–10× the ~40k RID scale) shows the byte-trie build
+is super-linear (25 s → 42 min), memory linear; `COMPETITION_DAY.md` was re-timed to **61 s** cold at the
+current scale. Full detail + raw numbers in `VERIFY_R8.md`; benchmark tables updated per-task in
+`BENCHMARKS.md`. **All eleven R8 tasks complete** (S1b stopped correctly; nothing left half-done).

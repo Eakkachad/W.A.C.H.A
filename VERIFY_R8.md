@@ -6,7 +6,9 @@ script, no silent substitution (STOP + document if a task can't be done cleanly)
 updates all docs in one final pass, so staleness in `README/PITCH/BIBLE` was left alone — the exception is
 statements that are actually **false** (none found this round beyond code bugs, which were fixed).
 
-**Headline:** the whole weakness list from R8 §0 was addressed. The two highest-impact outcomes:
+**Headline:** all eleven R8 tasks landed — the mandatory spine (V1, D2, L1, C, W3, A1, A2) plus the two
+"droppable" analytical tasks (A3, E1); S1b was correctly STOPPED on its correctness gate. The two
+highest-impact outcomes:
 1. **W3 found and fixed a real bug that broke the WASM demo in every strict wasm runtime** —
    `std::time::Instant::now()` is called during engine build and panics on `wasm32-unknown-unknown`
    ("time not implemented"). The flagship offline demo trapped on init. Fixed + init cut **8000 ms → 45 ms**.
@@ -27,9 +29,9 @@ statements that are actually **false** (none found this round beyond code bugs, 
 | **W3** WASM init time | ✅ done | `2ded674` | **8000 ms → 45 ms** (prebuilt PageRank blob) **+ fixed the Instant panic** that trapped WASM on init. |
 | **A1** ศัพท์บัญญัติ breadth | ✅ done | `aa9725c` | 39 → **174** curated queries across ~40 disciplines ⇒ **402 entries / 834 senses**. Hard limits honored, no non-200. |
 | **A2** corroboration n=100/band | ✅ done | `3003bdd` | Fresh seed. Band A **96%**, B **90%**, C **42%** (n=100). Finding holds, firmer. Single rater. |
-| **A3** scale headroom | ⏭️ droppable | — | see §4. |
-| **E1** CountingAllocator | ⏭️ droppable | — | see §4. |
-| Deliverables | ✅ done | (this commit) | `VERIFY_R8.md` + `BENCHMARKS.md` (updated per-task) + `PROGRESS.md`. |
+| **A3** scale headroom | ✅ done | `1af8685` | SYNTHETIC 1×–10× curve; build is super-linear (25s→2493s), memory linear. COMPETITION_DAY re-timed **61 s** cold. |
+| **E1** CountingAllocator | ✅ done | `748dfe5` | segment 2 allocs/word; **related_ranked 31,084 allocs/query** (per-query PPR) — no zero-alloc claim for relations. |
+| Deliverables | ✅ done | `5ea373a` (+updates) | `VERIFY_R8.md` + `BENCHMARKS.md` (per-task) + `PROGRESS.md`. |
 
 ---
 
@@ -79,11 +81,15 @@ statements that are actually **false** (none found this round beyond code bugs, 
   base-region invariant violation that dense contiguous symbol ids expose, needing a base-allocation rework
   (free-list / disjoint-window) — more than one unattended night. Byte production path untouched; spike
   stays unwired; numbers reproducible via `examples/s1b_{time,diff}.rs`.
-- **A3 (scale headroom) — not started.** Droppable per plan §4. The day-of story is still supported by
-  `COMPETITION_DAY.md` (measured against fixtures in R6) and the merge-order design; A3 would add a
-  synthetic 1×/2×/5×/10× timing curve. Left for a future round.
-- **E1 (CountingAllocator) — not started.** Droppable per plan §4. No zero-alloc claim is made anywhere that
-  isn't already backed by code inspection; E1 would let us *assert* it with a counter.
+- **A3 (scale headroom) — DONE** (`1af8685`), though it was droppable. A **synthetic** corpus (labeled, in
+  BENCHMARKS §5.1) at 1×/2×/5×/10× the ~40k RID scale shows the byte-trie build is super-linear
+  (25.4 s → 2,493 s) while trie memory is linear (~0.34 MB/1k words). `COMPETITION_DAY.md` re-timed cold
+  end-to-end at the current scale: **61 s** (was a ~3-min estimate), warm restart ~0.5 s. The day-of story
+  holds at real-RID scale; beyond ~2× it needs S1b.
+- **E1 (CountingAllocator) — DONE** (`748dfe5`), though it was droppable. Measured (BENCHMARKS §4.3):
+  `segment` ≈2 allocs/word (cheap, linear); **`related_ranked` ≈31,084 allocs/query** (per-query PPR over
+  the whole graph). We make **no** zero-alloc claim for the relation path — the counter says otherwise; it
+  is flagged as a concrete optimization target.
 - **A2 second rater — dropped** (allowed). All audits are single-rater, stated in the audit doc.
 
 ---
@@ -102,4 +108,4 @@ statements that are actually **false** (none found this round beyond code bugs, 
 ## 6. R8 commits
 
 `ea256b4` V1 · `555ca93` S1b (stopped) · `1a70b40` D2 · `cd8cc6a` L1 · `bf9a3bd` C · `2ded674` W3 ·
-`aa9725c` A1 · `3003bdd` A2 · (this commit) deliverables.
+`aa9725c` A1 · `3003bdd` A2 · `5ea373a` deliverables · `748dfe5` E1 · `1af8685` A3 (+ this doc update).
