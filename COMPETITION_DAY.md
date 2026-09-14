@@ -2,9 +2,18 @@
 
 **Purpose.** On event day the organizer (ORST) may hand out the real พจนานุกรม
 ฉบับราชบัณฑิตยสถาน ๒๕๕๔ dataset. This is the exact, timed runbook to ingest it —
-no code archaeology required. Target: **under 10 minutes** end-to-end. (Dry-run
-against the test fixtures: measured **~3 minutes** including the trie rebuild —
-see PROGRESS.md.)
+no code archaeology required. Target: **under 10 minutes** end-to-end.
+
+**Re-timed 2026-09-14 (R8 A3), cold end-to-end at the current ~72k-word scale:**
+**61 s real** (max RSS ~188 MB) — trie build ~57 s (dominant) + Kaikki import
+~0.3 s + global PageRank recompute ~1.0 s. After the first build both the trie
+and the PageRank vector are cached, so every subsequent start is **~0.5 s**
+(PageRank loads in ~70 µs). Well under the 10-minute target.
+
+**Scale caveat (see BENCHMARKS §5.1, synthetic):** the byte-trie build is
+super-linear — a 5–10× larger drop (200k–400k words) would be a 7–42 min cold
+build. At the real RID's ~40k scale that is a non-issue; beyond ~2× it needs the
+S1b dense-alphabet trie (stopped on its correctness gate, not abandoned).
 
 The ingestion point already exists: `RidImporter` (`wacha/src/import/rid.rs`) is
 wired into `Engine::load_from_dir`, which auto-loads `data/rid/` if it exists,

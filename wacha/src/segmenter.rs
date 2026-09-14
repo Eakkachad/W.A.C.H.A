@@ -242,6 +242,12 @@ impl Segmenter {
         self.word_count
     }
 
+    /// Total bytes of the double-array trie arrays (base+check+value) — for the
+    /// A3 scale-headroom measurement.
+    pub fn trie_bytes(&self) -> usize {
+        self.vocab.inner_bytes()
+    }
+
     /// Is `word` an exact entry in the word list?
     pub fn contains(&self, word: &str) -> bool {
         // longest_prefix from position 0 that consumes the whole word means it's

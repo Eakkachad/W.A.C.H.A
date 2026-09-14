@@ -231,4 +231,26 @@ optimization target (cache/prune the per-query PPR working set) rather than some
   projection from the spike's array-size measurement, not an end-to-end measured build** — it is not
   claimed as achieved, and depends on first fixing the differential-test failure.
 
+### 5.1 SYNTHETIC scale-headroom curve (R8 A3 — synthetic corpus, NOT real RID)
+
+To probe day-of ingestion capability without possessing the RID, a **synthetic** Thai-shaped word list was
+generated at multiples of the ~40k real-RID scale and the dominant cost (the byte-trie segmenter build)
+measured (`cargo run --release --example a3_scale`). **This is synthetic data, clearly separated from the
+measured §1–§4 numbers.**
+
+| × real RID | synthetic words | segmenter build | trie arrays | ms / 1k words |
+|---|---|---|---|---|
+| 1× | 40,000 | 25.4 s | 8.39 MB | 636 |
+| 2× | 80,000 | 96.9 s | 16.78 MB | 1,212 |
+| 5× | 200,000 | 452 s (7.5 min) | 33.55 MB | 2,261 |
+| 10× | 400,000 | 2,493 s (42 min) | 134.22 MB | 6,233 |
+
+**Honest finding: the byte-trie build is super-linear (≈quadratic) in vocabulary size** — per-1k-word cost
+rises 636 → 6,233 ms across the 10× range. Trie *memory* scales linearly (~0.34 MB/1k words). So the
+current ingestion path handles the real ~40k RID comfortably (~25 s cold, then cached to ms), but a
+much larger drop (5–10×) would be a multi-minute cold build. **This is exactly the cost S1b's
+dense-alphabet trie targets (~7× faster build) — which is why S1b matters and why it is not abandoned,
+only stopped on its correctness gate.** The day-of story stands for the real RID scale; beyond ~2× it
+needs S1b. Numbers are synthetic; the real RID may differ in word-length distribution.
+
 No other analytical numbers appear in this document; everything in §1–§4 was produced by a command.
