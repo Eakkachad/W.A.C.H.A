@@ -1559,3 +1559,54 @@ grepping real definition strings out of the `.wasm` binary, single `fetch`, no b
 correctness gate); relations are ~84% Wiktionary-derived; the 92.5% multi-source precision covers only
 0.68% of pairs; tier audits are n=40 and single-rater (±10–15 pp, no inter-rater agreement); C (reverse
 dictionary), S1b and E1 not started.
+
+### 2026-09-14 (Round 8) — close every remaining weakness
+
+Unattended overnight run against `NEXT_STEPS_R8.md`. Eight tasks landed (V1, S1b-stopped, D2, L1, C, W3,
+A1, A2); the two droppable analytical tasks (A3, E1) were left for a future round. 94 tests pass; graph
+57,202 / 74,018; `cross_sense=0`, KEEP 40/40, CUT 7/7; `katgpt-rs` untouched; `README.md` (concurrent
+session) not touched. One commit per task, each demoable.
+
+**W3 (`2ded674`) — the round's most important fix: the WASM demo was silently broken.** The engine build
+called `std::time::Instant::now()` during PageRank, which **panics on `wasm32-unknown-unknown`** ("time not
+implemented") — so the flagship offline demo trapped on `wacha_init` in every strict wasm runtime (browser
+included). Found via a temporary panic hook, fixed by guarding all build-path timers behind
+`#[cfg(not(target_arch="wasm32"))]`. Then init time itself was cut **8000 ms → 45 ms** by embedding a
+prebuilt PageRank blob (graph-hash-keyed, 117 KB) instead of recomputing. Node-verified: lookup + examples
++ reverse all work; แมว related words load (proves the PR vector loaded). This retroactively makes L1 and C
+verifiable in the real wasm runtime, not just by inspecting the embedded blobs.
+
+**S1b (`555ca93`) — STOPPED again, correctly.** The dense-alphabet trie hits **6.96×** cold build
+(57.1 s → 8.2 s, arrays 16.78 → 8.39 MB) but the byte-identical differential still **fails (8990
+mismatches)**, so it is not merged and the byte path stays. Two real defects were fixed on the way
+(non-deterministic alphabet → sorted; in-place relocation overlap → snapshot), and the root cause was
+isolated: a double-array **base-region invariant violation** that dense contiguous symbol ids trigger
+(two parents whose base differs by 1 map a child to the same slot) — the byte trie's sparse layout hides
+it. Fixing it is a base-allocation rework, out of scope for one night. Same stop discipline as R6.
+
+**V1 (`ea256b4`) — the ⚠ flag is correct (document-if-right).** The reviewer suspected `เดิน→ดำเนิน`
+(a Kaikki pair) warned wrongly, assuming a 2-member group. The new `wacha probe` diagnostic shows the two
+words share a **size-46** single-source Wiktionary synset, so `max_group_size ≥ 3` → tier 1 → band C →
+warns. Correct: a Wiktionary "synonyms" list is a large single-source synset, exactly the ~42–55% band-C
+class. Regression test added.
+
+**Product work — L1 (`cd8cc6a`) + C (`bf9a3bd`), the two ORST objectives we served worst.** L1 surfaces
+Kaikki usage examples (**5,505/29,601** entries) in CLI + web + WASM with provenance. C is a reverse
+dictionary — our own BM25 over segmented definitions (CSR postings, matched-token explanations), shipped
+offline in WASM; 29,584 docs / 18,873 terms, build 186 ms, p95 **0.341 ms**. Honest result: the plan's
+acceptance query `สัตว์เลี้ยงสี่ขาเห่าได้` does **not** surface `สุนัข` (the definition lacks "สี่ขา"/"เห่า"
+and greedy tokenization splits differently), but `สัตว์เลี้ยงเฝ้าบ้าน` → `สุนัข` #1. Reported un-curated.
+
+**Measurement — D2 (`1a70b40`) + A2 (`3003bdd`).** D2 measured word-level F1 on wisesight1000 (AttaCut
+protocol): **0.6611 ± 0.2120** / micro 0.634 — 0.14–0.15 below the char-level boundary 0.8015, exactly as
+expected, and **below** newmm's 0.74 WL (stated plainly). A2 re-ran the corroboration audit at **n=100 per
+band** with a fresh seed: band A **96%**, B **90%**, C **42%** — CIs ~⅓ narrower than R7's n=40, and the
+finding holds firmer (band C is the low-trust band, validating the T2 warn-band-C-only decision). Single
+rater; second rater dropped (allowed).
+
+**A1 (`aa9725c`) — demo breadth.** Expanded the ศัพท์บัญญัติ curated sample 39 → 174 queries across ~40
+disciplines (all hard limits honored, no non-200), yielding **402 entries / 834 senses** so a judge from
+any field finds their own vocabulary. Not a corpus-share change; the pitch states the mix honestly.
+
+**Deferred:** A3 (synthetic scale headroom) and E1 (CountingAllocator) — both droppable, left clean.
+Full detail + raw numbers in `VERIFY_R8.md`; benchmark tables updated per-task in `BENCHMARKS.md`.
