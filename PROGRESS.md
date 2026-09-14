@@ -36,7 +36,7 @@ files too and note it here — this log is the record of *that it changed*, thos
 | Round 3 Task 10 — open-data/API documentation | **done** — `wacha/API.md` (contract spot-checked + license table); referenced from PITCH.md | 2026-09-12 |
 | Round 3 Task 11 (optional) — real Typhoon 2 if API access found (`--host` part **done**, `bec54b8`) | mostly done | 2026-09-12 |
 | Round 4 Task 12 — exhaustively review WordNet relations on the 20 seed words | **done, verified** — 47/47 pairs audited, 7 cut, group-level fix, 52/52 tests, live-confirmed | 2026-09-13 |
-| Round 5 — review + plan (ORST practice data released; real dataset comes at the event) | **done** — `NEXT_STEPS_R5.md`; measured: 78.9% empty cards, 8,879 false 2-hop links, citation corrected to FolkRank | 2026-09-13 |
+| Round 5 — review + plan (ORST practice data released; real dataset comes at the event) | **done** — `rounds/NEXT_STEPS_R5.md`; measured: 78.9% empty cards, 8,879 false 2-hop links, citation corrected to FolkRank | 2026-09-13 |
 | Round 5 Tasks 1-3, 5 — RID-shaped `Entry`/`Sense`, `Importer` trait, Kaikki import, cache invalidation | **done** — `7c0bdf6`/`022410f`/`d446d44`/`5a7c9cf`; 29,540 Kaikki entries | 2026-09-13 |
 | Round 5 Task 4 — `Sense` nodes in the graph | **done** (structural) then **rejected on review** (silently replaced PPR with edge counting) → **fixed in R5B A1** | 2026-09-13 |
 | Round 5 Task 7 — FolkRank citation fix | **done** — `c733acc` | 2026-09-13 |
@@ -47,15 +47,15 @@ files too and note it here — this log is the record of *that it changed*, thos
 | **Round 5B B2** — RID importer stub + `COMPETITION_DAY.md` | **done, verified** — `4078b6b`; 7 fixture tests, runbook run in 66s | 2026-09-13 |
 | **Round 5B C1** — UI + API licence accuracy | **done, verified** — `aeed967`; sense metadata + source/licence badges; 11-case XSS battery re-passed | 2026-09-13 |
 | **Round 5B C2** — re-measure & fix the pitch | **done, verified** — `2a6fc6c`; dead demo word replaced, coverage w/ denominators, BIBLE §6.4 matches reality | 2026-09-13 |
-| **Round 5B D1** — segmentation accuracy (optional) | **skipped by design** — see `VERIFY_R5.md` §4 (risk to demo, needs dataset fetch, deprioritized) | 2026-09-13 |
-| Round 5B — final report | **done** — `VERIFY_R5.md` at repo root | 2026-09-13 |
+| **Round 5B D1** — segmentation accuracy (optional) | **skipped by design** — see `rounds/VERIFY_R5.md` §4 (risk to demo, needs dataset fetch, deprioritized) | 2026-09-13 |
+| Round 5B — final report | **done** — `rounds/VERIFY_R5.md` | 2026-09-13 |
 | **Round 6 P1** — vocab_hash O(n) no-sort | **done** — `aa20ab2`; 3.7ms vs 9.6ms (2.6×); honest finding: hash wasn't the ~1s bottleneck | 2026-09-14 |
 | **Round 6 P2/N** — corroboration-tier ranking + measured precision | **done** — `deb984a`+`3157a3e`; บ้าน→เรือน #1; tier-2 92.5%; CoinedWord cross-discipline bug fixed | 2026-09-14 |
 | **Round 6 P3** — honest Kaikki label / stale timings / gold-set scope | **done** — `4deed80` | 2026-09-14 |
 | **Round 6 S1** — dense-alphabet trie | **STOPPED (documented)** — `d3de78a`; 6.9× build but differential test failed → not merged, byte path kept | 2026-09-14 |
 | **Round 6 W** — offline WASM flagship | **done** — `3b5d78d`; 3.17MB gzip, seg byte-identical to native, PWA, reduced dataset | 2026-09-14 |
 | **Round 6 C/D1/E1** — reverse dict / seg-F1 / allocator | not started (optional; honest-scoping — spine finished cleanly instead) | — |
-| **Round 6** — deliverables | **done** — `VERIFY_R6.md` + `BENCHMARKS.md` | 2026-09-14 |
+| **Round 6** — deliverables | **done** — `rounds/VERIFY_R6.md` + `BENCHMARKS.md` | 2026-09-14 |
 | **Round 7 T1** — re-base ranking on measured-precision bands | **done** — `d59ad83`; band→PPR→freq p@5 79.3% shipped; freq-primary 75.3% measured & rejected | 2026-09-14 |
 | **Round 7 T2** — un-invert the ⚠ confidence flag | **done** — `58ea8a6`; warn band C (55%), not isolated (80%) | 2026-09-14 |
 | **Round 7 T3** — statistical honesty (CIs / scope / corpus shift) | **done** — `9d0a690`; 55vs80 separates, 92.5vs82.5 doesn't; 0.68% scope; 84% Wiktionary | 2026-09-14 |
@@ -64,8 +64,8 @@ files too and note it here — this log is the record of *that it changed*, thos
 | **Round 7 S2** — cache global PageRank | **done** — `996b56a`; warm engine build 1.097s→69ms | 2026-09-14 |
 | **Round 7 D1** — measured segmentation boundary-F1 | **done** — `7845867`; wisesight1000 0.8015±0.1660 (our own number) | 2026-09-14 |
 | **Round 7 C/S1b/E1** — reverse dict / dense trie / allocator | not started (optional, droppable; spine finished cleanly) | — |
-| **Round 7** — deliverables | **done** — `VERIFY_R7.md` + `BENCHMARKS.md` | 2026-09-14 |
-| **Round 10** — ingest real ORST event data (RID ๒๕๕๔ + คำทับศัพท์ + ศัพท์เฉพาะทาง + วิวัฒนาการ ๓ ยุค) | **done** — 8 phases (U1/R/R3/T/E/W/U2/P), X cut; 40,681 entries; public WASM licence-gated; `VERIFY_R10.md` | 2026-09-15 |
+| **Round 7** — deliverables | **done** — `rounds/VERIFY_R7.md` + `BENCHMARKS.md` | 2026-09-14 |
+| **Round 10** — ingest real ORST event data (RID ๒๕๕๔ + คำทับศัพท์ + ศัพท์เฉพาะทาง + วิวัฒนาการ ๓ ยุค) | **done** — 8 phases (U1/R/R3/T/E/W/U2/P), X cut; 40,681 entries; public WASM licence-gated; `rounds/VERIFY_R10.md` | 2026-09-15 |
 | Day 2 — demo/submit | not started | — |
 
 **A real product crate now exists** (`wacha/`) in addition to the `poc/` feasibility harness. The
@@ -1028,7 +1028,7 @@ distraction; the "we catch our own errors" pitch moment still lives on demo word
 ### 2026-09-13 (Round 5 planning) — organizers released practice data; review + new plan written
 
 **No code changed this session.** A review/diagnosis pass by a supervising agent (not the executing
-agent), plus `NEXT_STEPS_R5.md`. Findings below are all measured against the current build, not assumed.
+agent), plus `rounds/NEXT_STEPS_R5.md`. Findings below are all measured against the current build, not assumed.
 
 **Organizer announcement (the thing that reframes the round):** ORST published four practice data
 sources and stated teams **receive the real competition dataset at the event**
@@ -1089,7 +1089,7 @@ fuzzy/edit-distance, no HTTP server exists there — only prose mentions in rese
 features; copy the maths if ever needed, never the dependency. The `Datrie` we already vendored was the
 one thing of value.
 
-**Next action:** execute `NEXT_STEPS_R5.md` Tasks 1 → 2 → 3 → 5 (critical path; converts 20 definitions
+**Next action:** execute `rounds/NEXT_STEPS_R5.md` Tasks 1 → 2 → 3 → 5 (critical path; converts 20 definitions
 into 25,000+ and proves the ingestion path). Tasks 6, 7, 8 are parallel-safe.
 
 ### 2026-09-13 (Round 5 · Task 1) — Entry/Sense model reshaped to RID
@@ -1300,7 +1300,7 @@ audited; Wiktionary/CoinedWord tiers are separately provenance-tagged, not cover
 ### 2026-09-13 (Round 5 review) — Tasks 1/2/3/5/7 accepted, Task 4 rejected on review
 
 Verification pass by the reviewing agent (ran the built binary and queried the source data directly; no
-code changed this session). Plan for the remainder: `NEXT_STEPS_R5B.md`.
+code changed this session). Plan for the remainder: `rounds/NEXT_STEPS_R5B.md`.
 
 **Accepted, independently re-measured:**
 - Coverage 31.4% raw / **40.9% union** (72,135 vocab, 29,537 defined) — recount matched the agent's
@@ -1340,13 +1340,13 @@ not recount 150,018 → 0 independently, because doing so requires reimplementin
 this should ship as a **test that recounts from the live graph and asserts 0** (R5B A2.4), not as a number
 in prose — it turns a re-derivation into a one-command check.
 
-**Next action:** execute `NEXT_STEPS_R5B.md` end-to-end unattended, then a single review pass against
-`scripts/verify_r5.sh` + `VERIFY_R5.md`.
+**Next action:** execute `rounds/NEXT_STEPS_R5B.md` end-to-end unattended, then a single review pass against
+`scripts/verify_r5.sh` + `rounds/VERIFY_R5.md`.
 
 ### 2026-09-13 (Round 5B) — finish R5 unattended: PPR restored, recall measured, ศัพท์บัญญัติ + RID, honest docs
 
-Executed `NEXT_STEPS_R5B.md` end-to-end in one unattended run. Every number here is from
-`wacha/scripts/verify_r5.sh`; the full report is `VERIFY_R5.md` at the repo root.
+Executed `rounds/NEXT_STEPS_R5B.md` end-to-end in one unattended run. Every number here is from
+`wacha/scripts/verify_r5.sh`; the full report is `rounds/VERIFY_R5.md`.
 
 **Why this round existed:** Task 4 (`fa246bb`) hit its structural goal (sense-scoping kills cross-synset
 leakage) but **silently replaced Personalized PageRank with edge counting** — scores collapsed to integers,
@@ -1404,7 +1404,7 @@ freq-weighted **100 / 93.9 / 81.3%** (top-100/1000/5000); cross-sense pairs **0*
 CUT-absence **7/7**; cold **61.5 s** / warm **1.45 s**; p95 **13.7 ms**; `katgpt-rs` untouched.
 
 **D1 (segmentation accuracy) skipped by design** — optional, deprioritized, and changing the segmenter
-unattended risks demo regressions + needs a dataset fetch (see `VERIFY_R5.md` §4). No STOP condition was
+unattended risks demo regressions + needs a dataset fetch (see `rounds/VERIFY_R5.md` §4). No STOP condition was
 hit anywhere; A1's counting-fallback did not fire.
 
 **Guardrails honored:** one commit per task (each leaves `wacha-web` serving), no silent substitution
@@ -1413,8 +1413,8 @@ edit) left untouched.
 
 ### 2026-09-14 (Round 6) — correctness fixes, the corroboration novelty, S1 stop, and the WASM flagship
 
-Executed `NEXT_STEPS_R6.md` (incl. the ADDENDUM) unattended. Spine **P1 → P2/N → P3 → S1 → W** complete.
-Full report: `VERIFY_R6.md`; all numbers: `BENCHMARKS.md`. Optional C/D1/E1 left for a future round per the
+Executed `rounds/NEXT_STEPS_R6.md` (incl. the ADDENDUM) unattended. Spine **P1 → P2/N → P3 → S1 → W** complete.
+Full report: `rounds/VERIFY_R6.md`; all numbers: `BENCHMARKS.md`. Optional C/D1/E1 left for a future round per the
 plan's honest-scoping note (finish the spine cleanly > leave phases half-done).
 
 **P1 (`aa20ab2`) — vocab_hash O(n), no sort.** Replaced the sort-72k-strings-per-startup hash with an
@@ -1462,10 +1462,10 @@ session) not committed; one commit per task, each leaving the product demoable.
 
 ### 2026-09-14 (Round 7) — make the ranking + flags follow the evidence; finish the flagship
 
-Executed `NEXT_STEPS_R7.md`. The round's premise: R6's acceptance criterion ("`เรือน` must be top 3")
+Executed `rounds/NEXT_STEPS_R7.md`. The round's premise: R6's acceptance criterion ("`เรือน` must be top 3")
 was itself the bug — it locked a word to a rank via a rule (tier 1 synset) the audit said was the *worst*
 (55%). R7 forbids pinning any word to any rank and measures ranking quality directly. Full report:
-`VERIFY_R7.md`; numbers: `BENCHMARKS.md`.
+`rounds/VERIFY_R7.md`; numbers: `BENCHMARKS.md`.
 
 **T1 (`d59ad83`) — ranking re-based on MEASURED bands, and the plan's own freq-primary proposal measured &
 rejected.** Tiers are now collapsed to 3 precision bands (A=multi-source 92.5%, B=ORST+isolated ~80-82%,
@@ -1535,7 +1535,7 @@ DeepCut 0.93 on BEST-2010; PyThaiNLP 0.74 on Wisesight-1000) are **word-level F1
 metric. The AttaCut authors say so themselves (§4.2: *"measuring only the character-level metrics would
 overestimate the tokenization performance of word tokenizers"*) — which is why they added WL. Without this
 warning, a NECTEC reader would naturally read 0.8015 as beating newmm's 0.74. It does not: **our
-word-level F1 is unmeasured and would be lower.** Warning added to `BENCHMARKS.md` §4.2 and `VERIFY_R7.md`.
+word-level F1 is unmeasured and would be lower.** Warning added to `BENCHMARKS.md` §4.2 and `rounds/VERIFY_R7.md`.
 
 **Open task carried forward:** measure word-level F1 on the same wisesight1000 split under the AttaCut
 protocol (per-sample mean ± std) and report it beside the boundary figure. Only then can we make any
@@ -1563,7 +1563,7 @@ dictionary), S1b and E1 not started.
 
 ### 2026-09-14 (Round 8) — close every remaining weakness
 
-Unattended overnight run against `NEXT_STEPS_R8.md`. Eight tasks landed (V1, S1b-stopped, D2, L1, C, W3,
+Unattended overnight run against `rounds/NEXT_STEPS_R8.md`. Eight tasks landed (V1, S1b-stopped, D2, L1, C, W3,
 A1, A2); the two droppable analytical tasks (A3, E1) were left for a future round. 94 tests pass; graph
 57,202 / 74,018; `cross_sense=0`, KEEP 40/40, CUT 7/7; `katgpt-rs` untouched; `README.md` (concurrent
 session) not touched. One commit per task, each demoable.
@@ -1614,7 +1614,7 @@ any field finds their own vocabulary. Not a corpus-share change; the pitch state
 allocs/query (per-query PageRank) — so no zero-alloc claim is made for relations; it's flagged as an
 optimization target. A3's **synthetic** scale curve (1×–10× the ~40k RID scale) shows the byte-trie build
 is super-linear (25 s → 42 min), memory linear; `COMPETITION_DAY.md` was re-timed to **61 s** cold at the
-current scale. Full detail + raw numbers in `VERIFY_R8.md`; benchmark tables updated per-task in
+current scale. Full detail + raw numbers in `rounds/VERIFY_R8.md`; benchmark tables updated per-task in
 `BENCHMARKS.md`. **All eleven R8 tasks complete** (S1b stopped correctly; nothing left half-done).
 
 ### 2026-09-14 (Round 8 review) — WASM regression gap closed
@@ -1639,7 +1639,7 @@ all, and the W2/W3 measurements were taken in node ad-hoc rather than by a commi
 
 **Still open, and it needs a human:** node catches traps, panics and wrong output, but **not** the service
 worker, a real offline toggle, or phone rendering — the things a judge actually touches. The flagship has
-**never been confirmed in a real browser**; `VERIFY_R7.md` says so itself ("CLI cannot drive a browser's
+**never been confirmed in a real browser**; `rounds/VERIFY_R7.md` says so itself ("CLI cannot drive a browser's
 DevTools offline toggle"). A concrete checklist was added to `PITCH.md` §4 (serve `wacha-wasm/web`, look up
 a non-seed word, run a reverse query, toggle DevTools offline, then repeat on the actual demo phone in
 airplane mode, and record the real time-to-first-lookup). **Do this before the event.**
@@ -1667,7 +1667,7 @@ it would take that 61 s to roughly 9 s and make live on-stage ingestion comforta
 
 ### 2026-09-14 (Round 9) — close known weaknesses before feature work
 
-Unattended run against `NEXT_STEPS_R9.md`. All eight tasks resolved (G1, G2, D1, D2, Q1, Q2, Q3, X1);
+Unattended run against `rounds/NEXT_STEPS_R9.md`. All eight tasks resolved (G1, G2, D1, D2, Q1, Q2, Q3, X1);
 S1b stopped a third time and was deleted per its deadline. 93 tests (2 spike unit tests removed with
 `symbol_trie.rs`) + 1 alloc + 4 poc; 0 build warnings; `katgpt-rs` untouched; `README.md` not touched;
 one commit per task, each demoable.
@@ -1700,7 +1700,7 @@ the residual is our LEXiTRON word list + TCC OOV, not just the algorithm. `verif
 **Q2 (`d46ea4b`) — reverse dictionary v2, reported un-curated.** Enriched each indexed document with the
 entry's usage examples + related-word headwords (18,873 → 28,829 terms) and added a coverage/coordination
 damping factor so one rare high-IDF query word can't carry a hit. All ten hand-checked queries (4 reviewer
-+ 6 new) are in `VERIFY_R9.md` §Q2: **3 clear hits** (ความรู้สึกเสียใจ→น้ำตาตกใน; น้ำที่ตกลงมาจากฟ้า→ฝน;
++ 6 new) are in `rounds/VERIFY_R9.md` §Q2: **3 clear hits** (ความรู้สึกเสียใจ→น้ำตาตกใน; น้ำที่ตกลงมาจากฟ้า→ฝน;
 เครื่องดนตรีที่มีสาย→พิณ/ไวโอลิน), several partials, and the **two known structural failures persist**
 (สัตว์เลี้ยงสี่ขาเห่าได้→สุนัข, เครื่องมือสำหรับเขียนหนังสือ→ปากกา) because the targets' terse glosses simply
 don't contain the query's descriptive words. Enrichment helped conceptual queries; damping compressed the
@@ -1718,7 +1718,7 @@ unchanged.
 figures, so it was not integrated (stop rule). The data concentration remains a stated limitation with no
 licence-safe fix available today (RID/ศัพท์บัญญัติ settled no-scrape; Wikidata too young).
 
-Full detail + raw numbers in `VERIFY_R9.md`; benchmark tables updated per task in `BENCHMARKS.md`
+Full detail + raw numbers in `rounds/VERIFY_R9.md`; benchmark tables updated per task in `BENCHMARKS.md`
 (§3.3 S1b saga, §4.2 both seg modes, §4.4 reverse v2).
 
 ### 2026-09-14 (Round 9 review) — two corrections applied in place
@@ -1765,7 +1765,7 @@ into the final documentation pass.
 Triggered by a real external event, not a review: the organizer's data bundle (`nextect.zip`) landed and
 was staged git-ignored at `data/official/`. This is the moment `COMPETITION_DAY.md` and `AGENT_HANDOFF.md`
 §6 anticipated since Round 5 — the practice/CC0 data was the correct call *until tonight*, and stops being
-correct the moment real assigned data exists. Ran `NEXT_STEPS_R10.md` order 0→U1→R1→R2→R3→T→E→W→U2→P→X.
+correct the moment real assigned data exists. Ran `rounds/NEXT_STEPS_R10.md` order 0→U1→R1→R2→R3→T→E→W→U2→P→X.
 Eight phases landed (one commit each), X cut per plan. 103 lib + 4 poc + 1 alloc tests green after every
 phase; `verify_pitch` + `verify_r5` §8/§9/§10 all pass; `katgpt-rs` untouched; `README.md`/`.gitignore`
 not touched; `data/official/` raw never committed (only derived .txt/.tsv projections).
@@ -1824,5 +1824,5 @@ tonight and every must-do + should-do phase already clean, X (legacy .doc parsin
 criteria) is the lowest leverage. Deliberately not attempted; recorded rather than silently skipped.
 
 Data now: 76,649 words / 40,681 entries / 59,542 graph entities / 73,020 triples. Full detail + raw numbers
-in `VERIFY_R10.md`. The product now demonstrably uses three of the four official assigned data groups plus
+in `rounds/VERIFY_R10.md`. The product now demonstrably uses three of the four official assigned data groups plus
 the cross-edition timeline — Problem Fit (25%) + Innovation (20%) = the 45% that matters most.

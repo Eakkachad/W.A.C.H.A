@@ -261,7 +261,7 @@ usage examples + related-word headwords, and added a coverage damping factor (`s
 | index size (in-mem) | ~2.30 MB | ~2.81 MB |
 | search p95 | 0.341 ms | sub-ms (unchanged order) |
 
-**Honest quality (10 hand-checked queries, un-curated — full table in `VERIFY_R9.md` §Q2):** 3/10 clear
+**Honest quality (10 hand-checked queries, un-curated — full table in `rounds/VERIFY_R9.md` §Q2):** 3/10 clear
 hits (ความรู้สึกเสียใจอย่างมาก→น้ำตาตกใน; น้ำที่ตกลงมาจากฟ้า→ฝน; เครื่องดนตรีที่มีสาย→พิณ/ไวโอลิน), several
 partials, and the **2 known structural failures persist** (สัตว์เลี้ยงสี่ขาเห่าได้→สุนัข,
 เครื่องมือสำหรับเขียนหนังสือ→ปากกา) — the targets' terse ORST-style glosses simply do not contain the

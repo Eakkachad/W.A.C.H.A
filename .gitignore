@@ -26,6 +26,12 @@ demo-fallback/index_snapshot.html
 # ศัพท์บัญญัติ raw HTML cache (fetched once, offline; not committed)
 data/coined_word_cache/
 
+# Real organizer-provided source files (xlsx/docx/pdf, ~43MB, ORST/NECTEC
+# educational licence) — never committed raw. Reshape scripts (NEXT_STEPS_R10)
+# derive small committed .tsv/.txt projections from these, same pattern as
+# kaikki_th.jsonl / wordnet_th.db above.
+data/official/
+
 # WASM build artifacts (regenerate via wacha-wasm/web/build.sh)
 wacha-wasm/target/
 wacha-wasm/web/wacha_wasm.wasm

@@ -2,7 +2,7 @@
 # fetch_coined_word.sh — polite, bounded fetch of a DEMO SUBSET of ศัพท์บัญญัติ
 # (coined-word.orst.go.th) term equivalences, one English query at a time.
 #
-# HARD LIMITS (R5B / NEXT_STEPS_R5.md §2.1 — do not raise):
+# HARD LIMITS (R5B / rounds/NEXT_STEPS_R5.md §2.1 — do not raise):
 #   * demo subset only — the curated TERMS list below (well under 300)
 #   * >= 500 ms between requests, single-threaded
 #   * STOP on the first non-200 response (no retry loop)
