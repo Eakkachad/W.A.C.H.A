@@ -75,23 +75,21 @@ fn hot_path_allocation_counts_are_bounded_and_reported() {
     println!("segment(\"x\") [OOV 1-char] allocs = {a_lookup_miss}");
     println!("total allocs so far = {}", ALLOC_COUNT.load(Ordering::Relaxed));
 
-    // MEASURED FINDINGS (honest, from the counter — see VERIFY_R8 §E1):
+    // MEASURED FINDINGS (honest, from the counter — see VERIFY_R9 §E1/Q1):
     //
-    // * `segment` is cheap and O(tokens): a single in-vocab word is 2 allocs
-    //   (output Vec + the token's owned String); a 10-token sentence is ~94
-    //   (~9/token — each Token owns a String built via from_utf8_lossy, plus
-    //   the TCC fallback for OOV spans). Small and linear, NOT zero-alloc.
-    // * `related_ranked` is ALLOC-HEAVY: measured tens of thousands of allocs,
-    //   because `related()` runs a per-query personalized PageRank over the
-    //   whole graph (the FolkRank π_q − π subtraction). We therefore make NO
-    //   zero-alloc claim for the relation path — the counter says otherwise, and
-    //   E1's whole point is to only claim what the counter supports.
+    // * `segment` (default = maximal-matching DP since R9 Q1) is still cheap and
+    //   O(tokens), just a higher constant than greedy: a single in-vocab word is
+    //   ~14 allocs (the DP's cost/prev/ends vectors + owned token Strings), a
+    //   10-token sentence ~132. Bounded and linear, NOT zero-alloc.
+    // * `related_ranked` is ALLOC-HEAVY: tens of thousands of allocs, because
+    //   `related()` runs a per-query personalized PageRank over the whole graph.
+    //   No zero-alloc claim is made for the relation path.
     //
-    // Assertions: pin down the segment path's small linear bound; assert the
-    // relation path is simply finite (documented as heavy, not claimed light).
-    assert!(a_one <= 4, "single-word segment should be a handful of allocs, got {a_one}");
+    // Assertions pin the segment path's small linear bound; the relation path is
+    // asserted only to be finite (documented as heavy, not claimed light).
+    assert!(a_one <= 32, "single-word segment should be a bounded handful of allocs, got {a_one}");
     assert!(
-        a_sentence <= 16 * (n_tokens + 1),
+        a_sentence <= 24 * (n_tokens + 1),
         "segment allocs ({a_sentence}) must be O(tokens={n_tokens})"
     );
     assert!(a_related > 0, "related_ranked ran"); // heavy; count reported, not bounded-claimed

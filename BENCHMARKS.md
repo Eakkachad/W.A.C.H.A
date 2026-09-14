@@ -157,18 +157,27 @@ Frequency-primary was the plan's proposal; it was **measured and rejected** beca
 frequent-but-loose words (น้ำ/น้ำมัน for น้ำมันมนตร์, หัว/หัวใจ for หัวคันนา) into the top 5. Reproduce
 both via `WACHA_RANK={tier,freq} wacha --data ../data patk 30`.
 
-### 4.2 Segmentation F1 on wisesight1000 (R7 D1 boundary + R8 D2 word-level, measured — our own numbers)
+### 4.2 Segmentation F1 on wisesight1000 (R7 D1 + R8 D2 + R9 Q1 both modes, measured — our own numbers)
 
-Evaluated our **greedy longest-match** segmenter on `pythainlp/wisesight1000` (CC0, 993 human-tokenised
-social-media samples), char-level `is_beginning` boundary protocol
-(`data/eval/wisesight1000.label`, run via `cargo run --release --example seg_f1`):
+Evaluated on `pythainlp/wisesight1000` (CC0, 993 human-tokenised social-media samples), both under the
+char-level `is_beginning` boundary protocol and the AttaCut word-level (exact-span) protocol
+(`data/eval/wisesight1000.label`, run via `cargo run --release --example seg_wl_f1` — measures BOTH modes).
 
-| metric | value |
-|---|---|
-| per-sample boundary-F1 (mean ± std) | **0.8015 ± 0.1660** |
-| micro precision / recall / F1 (boundary) | 0.685 / 0.911 / **0.782** |
-| per-sample **word-level** F1 (mean ± std) — R8 D2 | **0.6611 ± 0.2120** |
-| micro precision / recall / F1 (**word-level**) — R8 D2 | 0.558 / 0.734 / **0.634** |
+**Two segmentation modes (R9 Q1).** Greedy longest-match (original) vs newmm-style **maximal matching**
+(DP minimising total tokens). Both use the same trie + TCC OOV fallback; they differ only in how known
+words chain. Measured, our own numbers:
+
+| mode | word-level F1 (per-sample) | word-level micro F1 | boundary F1 (per-sample) | boundary micro F1 |
+|---|---|---|---|---|
+| greedy longest-match | 0.6611 ± 0.2120 | 0.6343 | 0.8015 ± 0.1660 | 0.7822 |
+| **maximal matching (SHIPPED)** | **0.6809 ± 0.2054** | **0.6508** | **0.8195 ± 0.1548** | **0.7957** |
+
+**Maximal matching wins on every metric, so it is the shipped default** (`Segmenter::segment`); greedy
+stays available via `segment_with(_, SegMode::Greedy)`. **But the win is modest (+~0.02 word-level), not
+the gap-closer hypothesised** — it does **not** reach newmm's published **0.74** word-level on
+Wisesight-1000 (we sit at 0.6508 micro / 0.6809 per-sample). The residual gap is not just greedy-vs-DP;
+it is our word list (LEXiTRON, not newmm's) and the TCC fallback on social-media OOV. `verify_pitch.sh`
+passes under the new default and the WASM artifact was rebuilt + smoke-tested.
 
 This is **our own measured number**, not a citation.
 
@@ -189,15 +198,15 @@ The AttaCut authors make this point themselves — *"measuring only the characte
 overestimate the tokenization performance of word tokenizers"* (§4.2) — which is precisely why they
 added WL.
 
-**Word-level F1, measured (R8 D2, `cargo run --release --example seg_wl_f1`).** Under the AttaCut protocol
-(a predicted word is a true positive only if its exact `(start,end)` span matches a gold word), our
-segmenter scores **per-sample 0.6611 ± 0.2120 / micro F1 0.634** on the same 993 wisesight1000 samples —
-**0.14–0.15 lower than the boundary figure**, exactly as expected: a single wrong internal boundary breaks
-two words. The precision/recall split holds (micro P 0.558 < R 0.734), confirming the over-segmentation
-signature. **On the like-for-like word-level metric, our greedy longest-match does NOT beat PyThaiNLP's
-0.74 on Wisesight-1000 — we sit below it (0.634 micro).** We report only our own numbers; our word list is
-NECTEC LEXiTRON and our setup differs, so this is a self-measurement, not a ranking claim. This is the
-honest, expected outcome for a dictionary-driven greedy segmenter with no learned disambiguation.
+**Word-level F1, measured (R8 D2 + R9 Q1, `cargo run --release --example seg_wl_f1`).** Under the AttaCut
+protocol (a predicted word is a true positive only if its exact `(start,end)` span matches a gold word),
+the **shipped maximal-matching** segmenter scores **per-sample 0.6809 ± 0.2054 / micro F1 0.6508** (greedy:
+0.6611 / 0.6343) on the 993 wisesight1000 samples — **~0.14 lower than its boundary figure**, exactly as
+expected: a single wrong internal boundary breaks two words. Precision < recall (micro P 0.576 < R 0.748),
+the over-segmentation signature. **On the like-for-like word-level metric neither mode beats PyThaiNLP's
+0.74 on Wisesight-1000 — maximal matching sits at 0.6508 micro, below it.** We report only our own numbers;
+our word list is NECTEC LEXiTRON and our setup differs, so this is a self-measurement, not a ranking claim.
+This is the honest, expected outcome for a dictionary-driven, learned-disambiguation-free segmenter.
 
 **We also do NOT quote newmm's 0.73 TNHC figure as ours** — different algorithm, different corpus, different
 metric. Our word list is NECTEC LEXiTRON (credited in the pitch); the benchmark is PyThaiNLP's.

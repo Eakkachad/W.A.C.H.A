@@ -268,9 +268,27 @@ impl Datrie {
         }
         best
     }
-}
 
-// ── DatrieVocab ──────────────────────────────────────────────────────────────
+    /// Collect the byte-end offset of EVERY vocabulary word that is a prefix of
+    /// `input[start..]` (not just the longest), pushed into `out` in increasing
+    /// order. Used by the maximal-matching DP (Q1), which needs all candidate
+    /// word boundaries at a position, not only the greedy-longest one.
+    #[inline]
+    fn prefix_ends(&self, input: &[u8], start: usize, out: &mut Vec<usize>) {
+        out.clear();
+        let mut state: usize = 0;
+        for (i, &byte) in input.iter().enumerate().skip(start) {
+            let child = (self.base[state] as usize).wrapping_add(byte as usize);
+            if child >= self.check.len() || self.check[child] != state as u32 {
+                break;
+            }
+            state = child;
+            if self.value[state].is_some() {
+                out.push(i + 1);
+            }
+        }
+    }
+}
 
 /// Double-array trie replacing `HashMap<Vec<u8>, usize>` for token vocab lookup.
 ///
@@ -315,6 +333,13 @@ impl DatrieVocab {
         self.inner
             .longest_prefix(input, start)
             .map(|(v, end)| (v as usize, end))
+    }
+
+    /// All vocabulary-word end offsets that are prefixes of `input[start..]`
+    /// (increasing), for the maximal-matching DP (Q1).
+    #[inline]
+    pub fn prefix_ends(&self, input: &[u8], start: usize, out: &mut Vec<usize>) {
+        self.inner.prefix_ends(input, start, out);
     }
 
     /// Total bytes used by the internal arrays (base + check + value).

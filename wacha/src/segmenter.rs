@@ -11,6 +11,15 @@ use crate::datrie::DatrieVocab;
 use crate::tcc;
 use std::collections::HashMap;
 
+/// Segmentation strategy (Q1). Both share the trie + TCC OOV fallback.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SegMode {
+    /// Longest-match at each position (original behaviour, the default).
+    Greedy,
+    /// newmm-style DP minimising the total number of tokens over the string.
+    MaximalMatching,
+}
+
 /// A segmenter built from a Thai word list.
 ///
 /// The built `DatrieVocab` can be cached to disk (see [`Segmenter::save_cache`]
@@ -259,8 +268,28 @@ impl Segmenter {
         }
     }
 
-    /// Segment `text` into tokens (greedy longest match, TCC-aware OOV fallback).
+    /// Segment `text` into tokens. **Default = maximal matching** (Q1, R9): it
+    /// measured higher word-level F1 on wisesight1000 (0.6809 vs greedy 0.6611)
+    /// and higher boundary F1 (0.8195 vs 0.8015), so it is the shipped default.
+    /// Greedy remains available via [`Segmenter::segment_with`].
     pub fn segment(&self, text: &str) -> Vec<Token> {
+        self.segment_with(text, SegMode::MaximalMatching)
+    }
+
+    /// Segment `text` under an explicit mode (Q1). `Greedy` = longest-match at
+    /// each position (the original behaviour); `MaximalMatching` = newmm-style
+    /// DP that minimises the total number of tokens over the whole string,
+    /// breaking ties toward fewer OOV clusters then the greedy choice. Both use
+    /// the same trie and the same TCC OOV fallback, so an unknown span segments
+    /// identically; they differ only in how known words are chained.
+    pub fn segment_with(&self, text: &str, mode: SegMode) -> Vec<Token> {
+        match mode {
+            SegMode::Greedy => self.segment_greedy(text),
+            SegMode::MaximalMatching => self.segment_maximal(text),
+        }
+    }
+
+    fn segment_greedy(&self, text: &str) -> Vec<Token> {
         let bytes = text.as_bytes();
         let mut pos = 0;
         let mut out = Vec::new();
@@ -286,6 +315,76 @@ impl Segmenter {
             pos = end;
         }
         out
+    }
+
+    /// Maximal matching (Q1): dynamic program over byte positions minimising the
+    /// total number of tokens (newmm's objective). At each covered position the
+    /// candidate next-boundaries are every vocab word starting there (all
+    /// prefix ends, not just the longest) plus a single TCC cluster for the OOV
+    /// case. `cost[i]` = (min #tokens, min #oov-tokens) to cover `[0..i]`, with
+    /// the OOV count as a deterministic tiebreaker so a vocab chain is preferred
+    /// over cutting the same span into unknown clusters. Recovers the boundaries
+    /// by storing the chosen predecessor.
+    fn segment_maximal(&self, text: &str) -> Vec<Token> {
+        let bytes = text.as_bytes();
+        let n = bytes.len();
+        if n == 0 {
+            return Vec::new();
+        }
+        // (tokens, oov_tokens); INF sentinel for unreachable.
+        const INF: u32 = u32::MAX;
+        let mut cost: Vec<(u32, u32)> = vec![(INF, INF); n + 1];
+        let mut prev: Vec<usize> = vec![usize::MAX; n + 1];
+        let mut prev_oov: Vec<bool> = vec![false; n + 1];
+        cost[0] = (0, 0);
+        let mut ends: Vec<usize> = Vec::new();
+        for i in 0..n {
+            if cost[i].0 == INF {
+                continue; // position i not on a char boundary reachable so far
+            }
+            let (ti, oi) = cost[i];
+            // Vocab word candidates from i.
+            self.vocab.prefix_ends(bytes, i, &mut ends);
+            let mut had_vocab = false;
+            for &e in &ends {
+                had_vocab = true;
+                let cand = (ti + 1, oi);
+                if cand < cost[e] {
+                    cost[e] = cand;
+                    prev[e] = i;
+                    prev_oov[e] = false;
+                }
+            }
+            // OOV fallback: exactly one TCC cluster (always available, always
+            // makes progress). Considered even when a vocab word exists, so the
+            // DP can prefer an OOV split only if it yields fewer total tokens —
+            // in practice the tiebreaker keeps vocab, but a rare case where a
+            // long OOV cluster beats several tiny vocab words is handled.
+            let e = self.next_cluster_end(bytes, i);
+            let cand = (ti + 1, oi + 1);
+            if cand < cost[e] {
+                cost[e] = cand;
+                prev[e] = i;
+                prev_oov[e] = true;
+            }
+            let _ = had_vocab;
+        }
+        // Backtrack from n.
+        let mut cuts: Vec<(usize, usize, bool)> = Vec::new(); // (start, end, oov)
+        let mut p = n;
+        while p > 0 {
+            let s = prev[p];
+            debug_assert!(s != usize::MAX, "DP must reach every boundary via TCC fallback");
+            cuts.push((s, p, prev_oov[p]));
+            p = s;
+        }
+        cuts.reverse();
+        cuts.into_iter()
+            .map(|(s, e, oov)| Token {
+                text: String::from_utf8_lossy(&bytes[s..e]).into_owned(),
+                in_vocab: !oov,
+            })
+            .collect()
     }
 
     /// Convenience: segmented surface strings only.
@@ -343,6 +442,37 @@ mod tests {
         let seg = tiny_segmenter();
         let words = seg.segment_words("นักเรียนอ่านหนังสือที่โรงเรียน");
         assert_eq!(words, vec!["นักเรียน", "อ่าน", "หนังสือ", "ที่", "โรงเรียน"]);
+    }
+
+    #[test]
+    fn maximal_matching_reconstructs_and_is_not_more_tokens_than_greedy() {
+        let seg = tiny_segmenter();
+        for text in [
+            "นักเรียนอ่านหนังสือที่โรงเรียน",
+            "แมวกินปลา",
+            "ครูสอนภาษาไทยที่โรงเรียนใหญ่",
+            "เด็กน้อยรักสุนัข", // has OOV spans
+        ] {
+            let g = seg.segment_with(text, SegMode::Greedy);
+            let m = seg.segment_with(text, SegMode::MaximalMatching);
+            // Both must exactly reconstruct the input.
+            let gj: String = g.iter().map(|t| t.text.as_str()).collect();
+            let mj: String = m.iter().map(|t| t.text.as_str()).collect();
+            assert_eq!(gj, text, "greedy must reconstruct");
+            assert_eq!(mj, text, "maximal must reconstruct");
+            // Maximal matching minimises token count → never MORE than greedy.
+            assert!(
+                m.len() <= g.len(),
+                "maximal ({}) must not exceed greedy ({}) token count for {text:?}",
+                m.len(), g.len()
+            );
+        }
+        // On a fully-in-vocab clean sentence both agree.
+        assert_eq!(
+            seg.segment_words("นักเรียนอ่านหนังสือที่โรงเรียน"),
+            seg.segment_with("นักเรียนอ่านหนังสือที่โรงเรียน", SegMode::MaximalMatching)
+                .into_iter().map(|t| t.text).collect::<Vec<_>>()
+        );
     }
 
     #[test]
