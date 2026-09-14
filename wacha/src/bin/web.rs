@@ -331,11 +331,15 @@ fn reverse_json(engine: &Engine, rindex: &wacha::reverse::ReverseIndex, query: &
     let mut s = String::from("{");
     s.push_str(&format!("\"query\":{},", json_str(query)));
     s.push_str("\"hits\":[");
-    for (i, h) in hits.iter().enumerate() {
-        if i > 0 {
+    let mut seen: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    let mut emitted = 0usize;
+    for h in hits.iter() {
+        if emitted > 0 {
             s.push(',');
         }
-        s.push_str(&format!("{{\"word\":{},\"score\":{:.4},\"matched\":[", json_str(&h.word), h.score));
+        emitted += 1;
+        seen.insert(h.word.clone());
+        s.push_str(&format!("{{\"word\":{},\"score\":{:.4},\"source\":\"bm25\",\"matched\":[", json_str(&h.word), h.score));
         for (j, m) in h.matched.iter().enumerate() {
             if j > 0 {
                 s.push(',');
@@ -343,6 +347,33 @@ fn reverse_json(engine: &Engine, rindex: &wacha::reverse::ReverseIndex, query: &
             s.push_str(&json_str(m));
         }
         s.push_str("]}");
+    }
+    // R11 VEC — additional, clearly-labeled candidate source: semantic neighbours
+    // (thai2fit cosine) of the query's own tokens. Composed WITH BM25, never
+    // replacing it (same graded-confidence discipline as the relation tiers).
+    if engine.vector_count() > 0 {
+        let mut vec_cands: Vec<(String, f32, String)> = Vec::new();
+        for tok in engine.segment_words(query) {
+            for (w, sim) in engine.vector_neighbours(&tok, 5) {
+                if !seen.contains(&w) && engine.lookup(&w, 0).entry.is_some() {
+                    vec_cands.push((w, sim, tok.clone()));
+                }
+            }
+        }
+        vec_cands.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal).then(a.0.cmp(&b.0)));
+        vec_cands.dedup_by(|a, b| a.0 == b.0);
+        for (w, sim, via) in vec_cands.into_iter().take(5) {
+            if seen.insert(w.clone()) {
+                if emitted > 0 {
+                    s.push(',');
+                }
+                emitted += 1;
+                s.push_str(&format!(
+                    "{{\"word\":{},\"score\":{:.4},\"source\":\"vector\",\"matched\":[{}]}}",
+                    json_str(&w), sim, json_str(&format!("≈{via}"))
+                ));
+            }
+        }
     }
     s.push_str("]}");
     s

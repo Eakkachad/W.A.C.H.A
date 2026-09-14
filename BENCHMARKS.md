@@ -294,6 +294,26 @@ importer only read `(parens)` — so RID register tags were silently dropped unt
 composable with the reverse-dictionary candidate set when a topic query is given. CLI `register`, web
 `/api/register`. Self-contained scan over the dictionary — no separate index, sub-ms.
 
+### 4.7 Pretrained semantic vectors — thai2fit_wv (R11 VEC, measured)
+
+Integrated PyThaiNLP's **MIT-licensed** `thai2fit_wv` (51,358 words × 300-dim, word2vec, trained on Thai
+Wikipedia — **nothing trained by us**). Licence confirmed before download (thai2fit repo LICENSE = MIT);
+used in the local/judge build, gated out of any public deploy per the same caution as RID/ศัพท์บัญญัติ.
+
+| metric | value |
+|---|---|
+| thai2fit vocab | 51,358 × 300-dim |
+| **overlap with wacha vocab (measured)** | **28,589 words = 45.9% of wacha, 55.7% of thai2fit** |
+| overlap blob size | ~35 MB (gitignored, regenerable via `scripts/gen_thai2fit_overlap.py`) |
+| NN search (flat array + cosine, linear scan) | **~3.9 ms** avg over 100 lookups (28,589 words) — no ANN index needed |
+
+**NN sanity (5 known pairs, measured):** related pairs are far closer than unrelated — หมา~แมว 0.52,
+ครู~อาจารย์ 0.45, แม่~พ่อ 0.65, กิน~ดื่ม 0.29, รถ~เรือ 0.36 vs หมา~คอมพิวเตอร์ 0.07, ครู~ก้อนหิน 0.05. Agrees
+with the hand-verified relation graph (no contradiction → safe to ship). **Reverse recall (measured):** for
+`ความกล้าหาญ`, BM25 returns 6 definitional hits (วีรบุรุษ/วีรกรรม/…); the vector source *adds* 4 semantically-
+adjacent candidates (ความบริสุทธิ์ 0.74, ความจงรักภักดี 0.73, ความยิ่งใหญ่ 0.72, ความซื่อสัตย์ 0.71), clearly
+labeled `source:"vector"` and composed with (never replacing) BM25.
+
 **⚠️ v2 also caused a regression, found on review (2026-09-14).** `ที่เก็บเงินของรัฐ` returned **`คลัง`
 at rank 1 in v1**; in v2 `คลัง` **falls out of the top 5 entirely** (now: หัวเบี้ย, ค่าธรรมเนียม, ส่วนลด,
 เงินตรา, ภาษี). The coverage damping that fixed the single-rare-term noise penalises entries with **terse**

@@ -31,6 +31,7 @@ pub mod segmenter;
 pub mod sound;
 pub mod tcc;
 pub mod translit;
+pub mod vectors;
 pub mod wordnet;
 
 use dictionary::{Dictionary, Entry};
@@ -50,6 +51,9 @@ pub struct Engine {
     /// Optional word-evolution timeline (R10 Phase W, ก only). Empty unless
     /// loaded from `data/evolution_ko.tsv`.
     evolution: crate::evolution::Evolution,
+    /// Optional pretrained semantic vectors (R11 Phase VEC). Empty unless the
+    /// gitignored `data/thai2fit_overlap.vec.blob` is present (local/judge build).
+    vectors: crate::vectors::Vectors,
 }
 
 /// The result of the full lookup journey for one query word.
@@ -130,7 +134,7 @@ impl Engine {
         let (all_words, dict) = Self::assemble_dict(word_list, entries, freq_text);
         let segmenter = Segmenter::from_words(all_words);
         let relations = RelationEngine::from_dictionary_with_wordnet(&dict, &wordnet::WordNet::embedded());
-        Self { dict, segmenter, relations, learner: LearnerStore::embedded(), translit: crate::translit::Translit::default(), evolution: crate::evolution::Evolution::default() }
+        Self { dict, segmenter, relations, learner: LearnerStore::embedded(), translit: crate::translit::Translit::default(), evolution: crate::evolution::Evolution::default(), vectors: crate::vectors::Vectors::default() }
     }
 
     /// Same as [`Engine::build`], but reuses an already-built (e.g. disk-cached)
@@ -174,7 +178,7 @@ impl Engine {
             &wordnet::WordNet::embedded(),
             cache_dir,
         );
-        Self { dict, segmenter, relations, learner: LearnerStore::embedded(), translit: crate::translit::Translit::default(), evolution: crate::evolution::Evolution::default() }
+        Self { dict, segmenter, relations, learner: LearnerStore::embedded(), translit: crate::translit::Translit::default(), evolution: crate::evolution::Evolution::default(), vectors: crate::vectors::Vectors::default() }
     }
 
     /// Same as [`Engine::build_from_segmenter`], but injects a PREBUILT global
@@ -199,7 +203,7 @@ impl Engine {
             &wordnet::WordNet::embedded(),
             pr_bytes,
         );
-        Self { dict, segmenter, relations, learner: LearnerStore::embedded(), translit: crate::translit::Translit::default(), evolution: crate::evolution::Evolution::default() }
+        Self { dict, segmenter, relations, learner: LearnerStore::embedded(), translit: crate::translit::Translit::default(), evolution: crate::evolution::Evolution::default(), vectors: crate::vectors::Vectors::default() }
     }
 
     /// Shared helper: fold a word list + entries + optional freq table into the
@@ -394,6 +398,16 @@ impl Engine {
         } else {
             crate::evolution::Evolution::default()
         };
+        // R11 VEC: pretrained thai2fit_wv overlap vectors (MIT; gitignored blob).
+        // Loaded in the local/judge build only (not embedded in the public WASM).
+        let vectors = match std::fs::read(dir.join("thai2fit_overlap.vec.blob")) {
+            Ok(b) => {
+                let v = crate::vectors::Vectors::from_blob(&b);
+                log(&format!("loaded {} thai2fit vectors ({}-dim) from thai2fit_overlap.vec.blob", v.len(), v.dim()));
+                v
+            }
+            Err(_) => crate::vectors::Vectors::default(),
+        };
         // Expected hash of the FULL merged vocab (words_th + all entry headwords).
         let t_hash = Instant::now();
         let expected_hash = crate::segmenter::vocab_hash(word_list.iter());
@@ -413,6 +427,7 @@ impl Engine {
                     );
                     engine.translit = translit;
                     engine.evolution = evolution;
+                    engine.vectors = vectors;
                     log(&format!(
                         "loaded segmenter from cache {} in {:?} (skipped ~43s trie build)",
                         cache_path.display(),
@@ -432,6 +447,7 @@ impl Engine {
         let mut engine = Self::build(word_list, entries, freq_txt.as_deref());
         engine.translit = translit;
         engine.evolution = evolution;
+        engine.vectors = vectors;
         log(&format!("engine built in {:?}", t.elapsed()));
         match engine.segmenter().save_cache(&cache_path) {
             Ok(()) => log(&format!("wrote segmenter cache to {}", cache_path.display())),
@@ -510,6 +526,22 @@ impl Engine {
     /// Word frequency (for ranking rhyme candidates).
     pub fn frequency(&self, word: &str) -> u64 {
         self.dict.frequency(word)
+    }
+
+    /// R11 VEC — top-`k` semantic nearest neighbours (thai2fit cosine). Empty if
+    /// the vectors blob wasn't loaded or the word is out of the overlap vocab.
+    pub fn vector_neighbours(&self, word: &str, k: usize) -> Vec<(String, f32)> {
+        self.vectors.neighbours(word, k)
+    }
+
+    /// Cosine similarity between two words in the vector space, if both present.
+    pub fn vector_similarity(&self, a: &str, b: &str) -> Option<f32> {
+        self.vectors.similarity(a, b)
+    }
+
+    /// Number of pretrained vectors loaded (overlap subset).
+    pub fn vector_count(&self) -> usize {
+        self.vectors.len()
     }
 
     pub fn word_count(&self) -> usize {
