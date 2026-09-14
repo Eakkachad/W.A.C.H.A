@@ -17,6 +17,7 @@ use std::path::Path;
 pub mod coined_word;
 pub mod kaikki;
 pub mod rid;
+pub mod specialized;
 
 /// A boxed, thread-safe error (dependency-free stand-in for `anyhow::Error`).
 pub type ImportError = Box<dyn Error + Send + Sync>;

@@ -320,6 +320,27 @@ impl Engine {
                 }
             }
         }
+        // Specialized-domain terms (R10 Phase E) — ORST-authored ศัพท์บัญญัติ from
+        // the 3 discipline dictionaries (จิตวิทยา / ปรัชญา / แพทยศาสตร์). Gated with
+        // the other ORST-educational sources (not public-redistributable), like RID.
+        let spec_path = dir.join("specialized_terms.tsv");
+        if include_orst_licensed && spec_path.is_file() {
+            use crate::import::specialized::SpecializedImporter;
+            let t = Instant::now();
+            match SpecializedImporter.load(&spec_path) {
+                Ok(sp) if !sp.is_empty() => {
+                    let (n_e, n_s) = (sp.len(), sp.iter().map(|e| e.senses.len()).sum::<usize>());
+                    log(&format!(
+                        "loaded {n_e} specialized-domain entries / {n_s} senses from {} in {:?}",
+                        spec_path.display(),
+                        t.elapsed()
+                    ));
+                    source_lists.push(sp);
+                }
+                Ok(_) => {}
+                Err(e) => log(&format!("warning: specialized-terms load failed ({e}); continuing")),
+            }
+        }
         let entries = crate::import::merge(source_lists);
         // Extend the segmenter vocab with any entry headwords not already present.
         for e in &entries {
