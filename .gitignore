@@ -38,6 +38,14 @@ data/official/
 # makes that true).
 data/thai2fit_overlap.vec.blob
 
+# Reference copy of the separate ThaiDict_Script/"Etymological Bridge" repo
+# (paldee/ThaiDict_Script, ~25MB — mostly a redundant re-parse of the same
+# official DICT_2542/2554 we already have in data/official/) — R12 BRIDGE
+# reads its seed_corpus.py as a candidate seed to cross-verify against
+# kaikki_th.jsonl, never ships any of it uncorroborated. Not our code, not
+# committed raw.
+data/thaidict_script_ref/
+
 # WASM build artifacts (regenerate via wacha-wasm/web/build.sh)
 wacha-wasm/target/
 wacha-wasm/web/wacha_wasm.wasm
