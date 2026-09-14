@@ -26,7 +26,6 @@ pub mod learner;
 pub mod relations;
 pub mod reverse;
 pub mod segmenter;
-pub mod symbol_trie;
 pub mod tcc;
 pub mod wordnet;
 
@@ -421,8 +420,8 @@ impl Engine {
         self.relations.words_with_min_related(min)
     }
 
-    /// Every dictionary headword (deduplicated, insertion order) — used by the
-    /// S1b trie differential to reconstruct the exact segmenter vocab union.
+    /// Every dictionary headword (deduplicated, insertion order). Public accessor
+    /// over the merged vocabulary.
     pub fn dict_headwords(&self) -> Vec<String> {
         self.dict.words().map(|s| s.to_string()).collect()
     }

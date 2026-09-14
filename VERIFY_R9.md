@@ -140,3 +140,14 @@ remain.** The enrichment + damping genuinely improved the multi-word conceptual 
 น้ำตกจากฟ้า→ฝน) and compressed single-rare-term noise (R3's top score fell 11→2.7). It did **not** fix the
 structural cases where the target's gloss simply does not contain the query's descriptive words — that is a
 property of terse ORST-style glosses, not a ranking bug, and matches R8's finding. Query set not curated.
+
+## Q3 — S1b third attempt: STOPPED and DELETED (per G2)
+
+Third and final attempt at the dense-alphabet trie. Re-measured on the current vocab:
+**byte 59.1 s → symbol 8.4 s = 7.02×** cold build, arrays 16.78 → 8.39 MB — but the byte-identical
+differential **still FAILS (26 mismatches, deterministic)**, same base-region invariant class as R8 (a
+longer word matches only its shorter prefix because a transition is dropped under dense-id relocation).
+The fix remains a base-allocation rework, out of scope. Per the **G2 deadline rule** (three stops is
+enough), `symbol_trie.rs` (439 lines) and its two `examples/s1b_*` harnesses were **deleted** this round;
+the full three-attempt record + numbers + root cause are preserved in `BENCHMARKS.md` §3.3. Production
+byte-keyed `datrie.rs` unchanged. Build has 0 warnings; 93 tests (the 2 spike unit tests went with it).

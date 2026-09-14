@@ -69,16 +69,33 @@ PageRank recompute), which S2 (not done) would cache. P1 is a real but small win
 | BEFORE | บ้านเรือน (Wiktionary, score 15.653) | **absent** | top 8 |
 | **AFTER** | **เรือน** (WordNet synset, tier 1) | **#1** | dropped out of top 8 |
 
-### 3.3 S1 — dense-alphabet trie spike (measured, NOT merged)
+### 3.3 S1/S1b — dense-alphabet trie spike (measured, NEVER merged; DELETED R9 per G2)
 
-| | cold build | trie arrays | alphabet |
-|---|---|---|---|
-| byte-keyed (production) | 58.3 s | 16.7 MB | 256 (bytes) |
-| symbol-keyed (spike) | **8.5 s** | **8.4 MB** | 136 (chars) |
-| ratio | **6.9×** | 2.0× | — |
+A dense-`char`-symbol double-array trie was prototyped to cut the byte-trie's ~58 s cold build (Thai's
+3-byte UTF-8 makes the byte trie's collision scans pathological). It was attempted **three times** and
+stopped every time on its non-negotiable byte-identical differential gate, then **deleted in R9** per the
+G2 deadline rule. The measurements are kept here because they are real and they justify the effort:
 
-**Differential test: FAILED** — 23 of 62,107 vocab words segment to a shorter end offset than the byte
-trie (pattern: เปล/เปร clusters), a scale-triggered collision-relocation bug in the port. Not merged.
+| attempt | cold build (byte → symbol) | speedup | trie arrays | differential mismatches |
+|---|---|---|---|---|
+| S1 (R6) | 58.3 s → 8.5 s | 6.9× | 16.7 → 8.4 MB | 23 / 62,107 words |
+| S1b (R8) | 57.1 s → 8.2 s | 6.96× | 16.78 → 8.39 MB | 8,990 (deterministic, sorted alphabet) |
+| S1b (R9 Q3) | 59.1 s → 8.4 s | **7.02×** | 16.78 → 8.39 MB | **26** (current vocab) |
+
+**Every attempt hit ~7× build speedup and ~2× smaller arrays — and every attempt FAILED the
+byte-identical differential**, so it was never merged (a faster segmenter that segments *differently* is a
+regression, not an optimisation). Two real defects were fixed en route in R8 (non-deterministic alphabet →
+sorted; in-place relocation overlap → snapshot). The **root cause** is a double-array **base-region
+invariant violation** that only the dense contiguous symbol ids expose: under heavy relocation a node's
+new slot / a sibling's base window can overlap another node's occupied child region, silently dropping a
+transition (so a longer word matches only its shorter prefix). The proper fix is a base-allocation rework
+(free-list / disjoint-window, à la darts-clone) — genuinely more than an unattended-night change.
+
+**R9 decision (G2):** three stops is enough. `symbol_trie.rs` (439 lines, wired to nothing) and its two
+`examples/s1b_*` harnesses were **deleted** in R9 Q3 to stop dead code from rotting. The capability it
+targeted — cutting the ~59 s day-of ingestion to ~9 s — remains a real, quantified opportunity for anyone
+who wants to do the base-allocation rework; this table is the starting point. The production byte-keyed
+`datrie.rs` is unchanged and correct.
 
 ### 3.4 W — offline WASM
 
