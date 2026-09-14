@@ -23,6 +23,7 @@ pub mod dictionary;
 pub mod evolution;
 pub mod graph;
 pub mod import;
+pub mod intent;
 pub mod learner;
 pub mod relations;
 pub mod reverse;
