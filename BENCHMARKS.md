@@ -135,7 +135,7 @@ Frequency-primary was the plan's proposal; it was **measured and rejected** beca
 frequent-but-loose words (น้ำ/น้ำมัน for น้ำมันมนตร์, หัว/หัวใจ for หัวคันนา) into the top 5. Reproduce
 both via `WACHA_RANK={tier,freq} wacha --data ../data patk 30`.
 
-### 4.2 Segmentation boundary-F1 on wisesight1000 (R7 D1, measured — our own number)
+### 4.2 Segmentation F1 on wisesight1000 (R7 D1 boundary + R8 D2 word-level, measured — our own numbers)
 
 Evaluated our **greedy longest-match** segmenter on `pythainlp/wisesight1000` (CC0, 993 human-tokenised
 social-media samples), char-level `is_beginning` boundary protocol
@@ -144,7 +144,9 @@ social-media samples), char-level `is_beginning` boundary protocol
 | metric | value |
 |---|---|
 | per-sample boundary-F1 (mean ± std) | **0.8015 ± 0.1660** |
-| micro precision / recall / F1 | 0.685 / 0.911 / **0.782** |
+| micro precision / recall / F1 (boundary) | 0.685 / 0.911 / **0.782** |
+| per-sample **word-level** F1 (mean ± std) — R8 D2 | **0.6611 ± 0.2120** |
+| micro precision / recall / F1 (**word-level**) — R8 D2 | 0.558 / 0.734 / **0.634** |
 
 This is **our own measured number**, not a citation.
 
@@ -157,21 +159,26 @@ which are short and therefore introduce extra boundaries. *(An earlier version o
 this as an "over-merge signature" that "splits less than a human" — that was backwards, and is corrected
 here rather than quietly deleted.)*
 
-**⚠️ This number is NOT comparable to the word-level F1 figures in the Thai segmentation literature.**
-Ours is **character-level boundary F1**; the widely-cited table (AttaCut, arXiv:1911.07056, Table 2 —
-PyThaiNLP 0.67 / DeepCut 0.93 on BEST-2010, PyThaiNLP 0.74 on Wisesight-1000) reports **word-level (WL)
-F1**, which is a strictly harder metric: one wrong boundary invalidates the whole word. The AttaCut
-authors make this point themselves — *"measuring only the character-level metrics would overestimate the
-tokenization performance of word tokenizers"* (§4.2) — which is precisely why they added WL. **Our
-word-level F1 would be lower than 0.8015, and we have not measured it yet.** Until we do, do not place
-0.8015 next to those numbers, and do not claim any comparison with newmm, DeepCut or AttaCut.
+**⚠️ The boundary figure is NOT comparable to the word-level F1 figures in the Thai segmentation
+literature.** The 0.8015 is **character-level boundary F1**; the widely-cited table (AttaCut,
+arXiv:1911.07056, Table 2 — PyThaiNLP 0.67 / DeepCut 0.93 on BEST-2010, PyThaiNLP 0.74 on Wisesight-1000)
+reports **word-level (WL) F1**, a strictly harder metric: one wrong boundary invalidates the whole word.
+The AttaCut authors make this point themselves — *"measuring only the character-level metrics would
+overestimate the tokenization performance of word tokenizers"* (§4.2) — which is precisely why they
+added WL.
+
+**Word-level F1, measured (R8 D2, `cargo run --release --example seg_wl_f1`).** Under the AttaCut protocol
+(a predicted word is a true positive only if its exact `(start,end)` span matches a gold word), our
+segmenter scores **per-sample 0.6611 ± 0.2120 / micro F1 0.634** on the same 993 wisesight1000 samples —
+**0.14–0.15 lower than the boundary figure**, exactly as expected: a single wrong internal boundary breaks
+two words. The precision/recall split holds (micro P 0.558 < R 0.734), confirming the over-segmentation
+signature. **On the like-for-like word-level metric, our greedy longest-match does NOT beat PyThaiNLP's
+0.74 on Wisesight-1000 — we sit below it (0.634 micro).** We report only our own numbers; our word list is
+NECTEC LEXiTRON and our setup differs, so this is a self-measurement, not a ranking claim. This is the
+honest, expected outcome for a dictionary-driven greedy segmenter with no learned disambiguation.
 
 **We also do NOT quote newmm's 0.73 TNHC figure as ours** — different algorithm, different corpus, different
 metric. Our word list is NECTEC LEXiTRON (credited in the pitch); the benchmark is PyThaiNLP's.
-
-**Open task:** measure word-level F1 on the same wisesight1000 split, following the AttaCut protocol
-(per-sample mean ± std), and report it beside the boundary figure. Only then is a like-for-like statement
-about where we sit relative to published baselines possible.
 
 ---
 
