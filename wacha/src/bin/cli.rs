@@ -114,6 +114,14 @@ fn main() {
                 }
                 print_translit(&engine, &term);
             }
+            "evolution" => {
+                let hw = rest.join(" ");
+                if hw.is_empty() {
+                    eprintln!("usage: wacha evolution <ก-headword>  (2542→2554→2569 timeline)");
+                    std::process::exit(2);
+                }
+                print_evolution(&engine, &hw);
+            }
             // Bare word with no subcommand -> treat as a lookup.
             other => {
                 let word = std::iter::once(other.to_string())
@@ -582,6 +590,23 @@ fn print_segmentation(tokens: &[Token]) {
         println!("  ({oov} out-of-vocabulary cluster(s), shown in [brackets])");
     }
 }
+fn print_evolution(engine: &Engine, headword: &str) {
+    use wacha::evolution::DRAFT_2569_LABEL;
+    let timeline = engine.evolution_timeline(headword);
+    println!("\n──────── วิวัฒนาการคำ: {headword} ────────");
+    if timeline.is_empty() {
+        println!("(ไม่มีไทม์ไลน์ ๓ ยุคของคำนี้ — อักษร ก เท่านั้น)");
+        return;
+    }
+    for e in &timeline {
+        println!("\nพจนานุกรม พ.ศ. {}:", e.edition);
+        println!("  {}", e.definition);
+        if e.is_draft {
+            println!("  ⚠ {DRAFT_2569_LABEL}");
+        }
+    }
+}
+
 fn print_translit(engine: &Engine, term: &str) {
     use wacha::translit::TRANSLIT_SOURCE;
     let hits = engine.translit_lookup(term);

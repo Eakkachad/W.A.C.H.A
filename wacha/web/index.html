@@ -93,6 +93,8 @@
   .chip.subword { display: inline-block; padding: 2px 10px; margin: 2px 2px; border-radius: 12px;
     background: #1c2740; border: 1px solid #2a3550; cursor: pointer; font-size: .98rem; }
   .chip.subword:hover { background: #26334f; border-color: var(--accent2); }
+  .evo-ed { margin: 10px 0; padding: 8px 12px; border-left: 3px solid var(--accent2); background: #161f33; }
+  .evo-ed .draft { margin-top: 6px; color: #ffcc66; font-size: .9rem; font-weight: 600; }
   .legend { margin-top: 12px; color: var(--muted); font-size: .82rem; text-align: center; line-height: 1.9; }
   .g-node.src-wn circle { stroke: var(--oov); stroke-dasharray: 4 3; }
   .g-edge.src-wn { stroke: var(--oov); stroke-dasharray: 4 3; opacity: .7; }
@@ -118,6 +120,7 @@
     <button id="go">ค้นหา</button>
     <button id="rev" title="ค้นคำจากคำอธิบายความหมาย (reverse dictionary)">ค้นจากความหมาย</button>
     <button id="tl" title="คำทับศัพท์ทางการ อังกฤษ⇄ไทย (ราชบัณฑิตยสภา)">คำทับศัพท์</button>
+    <button id="ev" title="วิวัฒนาการคำ ๓ ยุค ๒๕๔๒→๒๕๕๔→๒๕๖๙ (อักษร ก)">วิวัฒนาการคำ</button>
   </div>
   <div class="hint">
     ลอง: <code>แมว</code> <code>ครู</code> <code>อ่าน</code> <code>สุนัข</code> <code>พจนานุกรม</code>
@@ -164,6 +167,32 @@ async function lookup(word) {
     resultEl.innerHTML = `<div class="card"><span class="empty">เกิดข้อผิดพลาด: ${esc(e)}</span></div>`;
   }
 }
+async function evolutionSearch(hw) {
+  hw = (hw || "").trim();
+  if (!hw) { resultEl.innerHTML = ""; return; }
+  resultEl.innerHTML = `<div class="card"><span class="empty">กำลังค้นวิวัฒนาการคำ “${esc(hw)}”…</span></div>`;
+  try {
+    const res = await fetch(`/api/evolution?q=${encodeURIComponent(hw)}`);
+    const data = await res.json();
+    let html = `<div class="card def"><h2>วิวัฒนาการคำ (word evolution): “${esc(hw)}”</h2>`;
+    if (!data.timeline || !data.timeline.length) {
+      html += `<span class="empty">ไม่มีไทม์ไลน์ ๓ ยุคของคำนี้ (อักษร ก เท่านั้น)</span></div>`;
+      resultEl.innerHTML = html;
+      return;
+    }
+    for (const e of data.timeline) {
+      html += `<div class="evo-ed"><div class="ex-h">พจนานุกรม พ.ศ. ${esc(e.edition)}</div>`;
+      html += `<div class="body">${esc(e.definition)}</div>`;
+      if (e.is_draft) html += `<div class="draft">⚠ ${esc(e.draft_label)}</div>`;
+      html += `</div>`;
+    }
+    html += `<div class="legend">ราชบัณฑิตยสภาชำระพจนานุกรมต่อเนื่อง ๒๕๔๒ → ๒๕๕๔ → ๒๕๖๙</div></div>`;
+    resultEl.innerHTML = html;
+  } catch (e) {
+    resultEl.innerHTML = `<div class="card"><span class="empty">เกิดข้อผิดพลาด: ${esc(e)}</span></div>`;
+  }
+}
+
 async function translitSearch(term) {
   term = (term || "").trim();
   if (!term) { resultEl.innerHTML = ""; return; }
@@ -440,6 +469,7 @@ function buildGraphSvg(d) {
 $("#go").addEventListener("click", () => lookup(qEl.value));
 $("#rev").addEventListener("click", () => reverseSearch(qEl.value));
 $("#tl").addEventListener("click", () => translitSearch(qEl.value));
+$("#ev").addEventListener("click", () => evolutionSearch(qEl.value));
 qEl.addEventListener("keydown", (e) => { if (e.key === "Enter") lookup(qEl.value); });
 document.querySelectorAll(".hint code").forEach(c => {
   c.addEventListener("click", () => { qEl.value = c.textContent; lookup(c.textContent); });

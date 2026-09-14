@@ -20,6 +20,7 @@
 
 pub mod datrie;
 pub mod dictionary;
+pub mod evolution;
 pub mod graph;
 pub mod import;
 pub mod learner;
@@ -44,6 +45,9 @@ pub struct Engine {
     /// Optional ORST transliteration index (R10 Phase T). Empty unless loaded
     /// from `data/translit.tsv` via `load_from_dir*`.
     translit: crate::translit::Translit,
+    /// Optional word-evolution timeline (R10 Phase W, ก only). Empty unless
+    /// loaded from `data/evolution_ko.tsv`.
+    evolution: crate::evolution::Evolution,
 }
 
 /// The result of the full lookup journey for one query word.
@@ -108,7 +112,7 @@ impl Engine {
         let (all_words, dict) = Self::assemble_dict(word_list, entries, freq_text);
         let segmenter = Segmenter::from_words(all_words);
         let relations = RelationEngine::from_dictionary_with_wordnet(&dict, &wordnet::WordNet::embedded());
-        Self { dict, segmenter, relations, learner: LearnerStore::embedded(), translit: crate::translit::Translit::default() }
+        Self { dict, segmenter, relations, learner: LearnerStore::embedded(), translit: crate::translit::Translit::default(), evolution: crate::evolution::Evolution::default() }
     }
 
     /// Same as [`Engine::build`], but reuses an already-built (e.g. disk-cached)
@@ -152,7 +156,7 @@ impl Engine {
             &wordnet::WordNet::embedded(),
             cache_dir,
         );
-        Self { dict, segmenter, relations, learner: LearnerStore::embedded(), translit: crate::translit::Translit::default() }
+        Self { dict, segmenter, relations, learner: LearnerStore::embedded(), translit: crate::translit::Translit::default(), evolution: crate::evolution::Evolution::default() }
     }
 
     /// Same as [`Engine::build_from_segmenter`], but injects a PREBUILT global
@@ -177,7 +181,7 @@ impl Engine {
             &wordnet::WordNet::embedded(),
             pr_bytes,
         );
-        Self { dict, segmenter, relations, learner: LearnerStore::embedded(), translit: crate::translit::Translit::default() }
+        Self { dict, segmenter, relations, learner: LearnerStore::embedded(), translit: crate::translit::Translit::default(), evolution: crate::evolution::Evolution::default() }
     }
 
     /// Shared helper: fold a word list + entries + optional freq table into the
@@ -358,6 +362,20 @@ impl Engine {
             }
             Err(_) => crate::translit::Translit::default(),
         };
+        // Word-evolution timeline (R10 Phase W). Contains RID-edition definitions
+        // (2542/2554/2569) → gated with the other ORST-educational sources.
+        let evolution = if include_orst_licensed {
+            match std::fs::read_to_string(dir.join("evolution_ko.tsv")) {
+                Ok(txt) => {
+                    let e = crate::evolution::Evolution::from_tsv(&txt);
+                    log(&format!("loaded {} evolution-timeline headwords from evolution_ko.tsv", e.len()));
+                    e
+                }
+                Err(_) => crate::evolution::Evolution::default(),
+            }
+        } else {
+            crate::evolution::Evolution::default()
+        };
         // Expected hash of the FULL merged vocab (words_th + all entry headwords).
         let t_hash = Instant::now();
         let expected_hash = crate::segmenter::vocab_hash(word_list.iter());
@@ -376,6 +394,7 @@ impl Engine {
                         Some(dir),
                     );
                     engine.translit = translit;
+                    engine.evolution = evolution;
                     log(&format!(
                         "loaded segmenter from cache {} in {:?} (skipped ~43s trie build)",
                         cache_path.display(),
@@ -394,6 +413,7 @@ impl Engine {
         let t = Instant::now();
         let mut engine = Self::build(word_list, entries, freq_txt.as_deref());
         engine.translit = translit;
+        engine.evolution = evolution;
         log(&format!("engine built in {:?}", t.elapsed()));
         match engine.segmenter().save_cache(&cache_path) {
             Ok(()) => log(&format!("wrote segmenter cache to {}", cache_path.display())),
@@ -415,6 +435,17 @@ impl Engine {
     /// Number of transliteration pairs loaded.
     pub fn translit_count(&self) -> usize {
         self.translit.len()
+    }
+
+    /// Word-evolution timeline for a headword (R10 Phase W), chronological across
+    /// the 2542/2554/2569 editions. Empty unless `data/evolution_ko.tsv` was loaded.
+    pub fn evolution_timeline(&self, headword: &str) -> Vec<crate::evolution::EvolutionEntry> {
+        self.evolution.timeline(headword)
+    }
+
+    /// Number of headwords with an evolution timeline.
+    pub fn evolution_count(&self) -> usize {
+        self.evolution.len()
     }
 
     pub fn word_count(&self) -> usize {

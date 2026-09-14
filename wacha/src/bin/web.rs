@@ -205,7 +205,35 @@ fn route(path: &str, engine: &Engine, rindex: &wacha::reverse::ReverseIndex) -> 
         let json = translit_json(engine, &query);
         return ("200 OK", "application/json; charset=utf-8", json.into_bytes());
     }
+    if let Some(qs) = path.strip_prefix("/api/evolution") {
+        let query = extract_query_param(qs, "q").unwrap_or_default();
+        let json = evolution_json(engine, &query);
+        return ("200 OK", "application/json; charset=utf-8", json.into_bytes());
+    }
     ("404 Not Found", "text/plain; charset=utf-8", b"not found".to_vec())
+}
+
+/// Evolution-timeline JSON: `{ "query", "timeline":[{ "edition","definition","is_draft","draft_label" }] }`.
+fn evolution_json(engine: &Engine, query: &str) -> String {
+    let timeline = engine.evolution_timeline(query);
+    let mut s = String::from("{");
+    s.push_str(&format!("\"query\":{},", json_str(query)));
+    s.push_str("\"timeline\":[");
+    for (i, e) in timeline.iter().enumerate() {
+        if i > 0 {
+            s.push(',');
+        }
+        let label = if e.is_draft { wacha::evolution::DRAFT_2569_LABEL } else { "" };
+        s.push_str(&format!(
+            "{{\"edition\":{},\"definition\":{},\"is_draft\":{},\"draft_label\":{}}}",
+            json_str(&e.edition),
+            json_str(&e.definition),
+            e.is_draft,
+            json_str(label)
+        ));
+    }
+    s.push_str("]}");
+    s
 }
 
 /// Transliteration JSON: `{ "query", "source", "hits":[{ "english","thai","note" }] }`.
