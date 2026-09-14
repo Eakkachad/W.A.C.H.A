@@ -209,11 +209,11 @@ impl RelatedWord {
 
 impl RelationEngine {
     pub fn from_dictionary(dict: &Dictionary) -> Self {
-        Self::build(dict, None, None)
+        Self::build(dict, None, None, None)
     }
 
     pub fn from_dictionary_with_wordnet(dict: &Dictionary, wordnet: &crate::wordnet::WordNet) -> Self {
-        Self::build(dict, Some(wordnet), None)
+        Self::build(dict, Some(wordnet), None, None)
     }
 
     /// Like [`Self::from_dictionary_with_wordnet`], but caches the expensive
@@ -229,7 +229,34 @@ impl RelationEngine {
         wordnet: &crate::wordnet::WordNet,
         cache_dir: Option<&Path>,
     ) -> Self {
-        Self::build(dict, Some(wordnet), cache_dir)
+        Self::build(dict, Some(wordnet), cache_dir, None)
+    }
+
+    /// Like [`Self::from_dictionary_with_wordnet`], but injects a PREBUILT global
+    /// PageRank vector from `pr_bytes` (the same
+    /// `WACHA_PAGERANK_CACHE`-headered blob written by `save_pagerank_cache`),
+    /// skipping the ~1 s recompute. Used by the WASM build, which has no
+    /// filesystem: the vector is embedded in the artifact. If the blob's graph
+    /// hash / length does not match the freshly-built graph, the recompute path
+    /// is taken (safe fallback). (W3 — the real WASM init-time fix.)
+    pub fn from_dictionary_with_wordnet_pr_bytes(
+        dict: &Dictionary,
+        wordnet: &crate::wordnet::WordNet,
+        pr_bytes: &[u8],
+    ) -> Self {
+        Self::build(dict, Some(wordnet), None, Some(pr_bytes))
+    }
+
+    /// Serialize this engine's global PageRank vector into the
+    /// `WACHA_PAGERANK_CACHE` blob format (same as the disk cache), keyed on the
+    /// current graph content hash — for embedding in the WASM build (W3).
+    pub fn dump_pagerank_cache_bytes(&self) -> Vec<u8> {
+        let hash = graph_content_hash(&self.graph);
+        let payload = postcard::to_stdvec(&self.global_pr).expect("serialize global_pr");
+        let mut out = Vec::with_capacity(payload.len() + 64);
+        out.extend_from_slice(Self::pagerank_cache_header(hash).as_bytes());
+        out.extend_from_slice(&payload);
+        out
     }
 
     /// Current PageRank-cache format version. Bump when the layout changes.
@@ -272,6 +299,17 @@ impl RelationEngine {
         expected_hash: u64,
     ) -> std::io::Result<Vec<f32>> {
         let bytes = std::fs::read(path)?;
+        Self::parse_pagerank_cache_bytes(&bytes, expected_hash)
+    }
+
+    /// Parse + verify a PageRank cache blob (magic, format version, graph hash)
+    /// from in-memory `bytes` — the fs-free core of
+    /// [`Self::load_pagerank_cache_checked`], reused by the WASM preloaded-PR
+    /// path (`from_dictionary_with_wordnet_pr_bytes`).
+    pub fn parse_pagerank_cache_bytes(
+        bytes: &[u8],
+        expected_hash: u64,
+    ) -> std::io::Result<Vec<f32>> {
         let err = |m: String| std::io::Error::new(std::io::ErrorKind::InvalidData, m);
 
         // Parse the 3-line text header.
@@ -311,6 +349,7 @@ impl RelationEngine {
         dict: &Dictionary,
         wordnet: Option<&crate::wordnet::WordNet>,
         cache_dir: Option<&Path>,
+        preloaded_pr: Option<&[u8]>,
     ) -> Self {
         let mut eng = RelationEngine {
             words: Vec::new(),
@@ -417,11 +456,22 @@ impl RelationEngine {
 
             // Try the cache first.
             let mut loaded: Option<Vec<f32>> = None;
+            // W3: an embedded (WASM) prebuilt PageRank blob takes precedence over
+            // the disk cache — it's the whole point on a platform with no fs.
+            if let Some(bytes) = preloaded_pr {
+                match Self::parse_pagerank_cache_bytes(bytes, graph_hash) {
+                    Ok(pr) if pr.len() == n => loaded = Some(pr),
+                    Ok(_) | Err(_) => { /* graph changed / bad blob -> recompute */ }
+                }
+            }
+            if loaded.is_none() {
             if let Some(ref path) = cache_path {
                 if path.exists() {
+                    #[cfg(not(target_arch = "wasm32"))]
                     let t = std::time::Instant::now();
                     match Self::load_pagerank_cache_checked(path, graph_hash) {
                         Ok(pr) if pr.len() == n => {
+                            #[cfg(not(target_arch = "wasm32"))]
                             eprintln!("global PageRank: loaded from cache in {:?}", t.elapsed());
                             loaded = Some(pr);
                         }
@@ -435,13 +485,22 @@ impl RelationEngine {
                     }
                 }
             }
+            } // end: if loaded.is_none() (skip disk cache when preloaded blob won)
+
 
             match loaded {
                 Some(pr) => pr,
                 None => {
+                    // NOTE: `std::time::Instant::now()` panics on
+                    // `wasm32-unknown-unknown` ("time not implemented"), and the
+                    // WASM build takes this recompute path (no on-disk cache), so
+                    // the timer is guarded off there. (S1b/W3: this was the real
+                    // cause of the WASM init trap.)
+                    #[cfg(not(target_arch = "wasm32"))]
                     let t = std::time::Instant::now();
                     let all: Vec<usize> = (0..n).collect();
                     let pr = graph.personalized_pagerank(&all, 20);
+                    #[cfg(not(target_arch = "wasm32"))]
                     eprintln!("global PageRank: recomputed in {:?}", t.elapsed());
                     if let Some(ref path) = cache_path {
                         match Self::save_pagerank_cache(path, graph_hash, &pr) {

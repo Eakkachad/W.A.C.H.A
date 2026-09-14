@@ -146,6 +146,31 @@ impl Engine {
         Self { dict, segmenter, relations, learner: LearnerStore::embedded() }
     }
 
+    /// Same as [`Engine::build_from_segmenter`], but injects a PREBUILT global
+    /// PageRank blob (bytes, the `WACHA_PAGERANK_CACHE` format) instead of
+    /// recomputing it — the WASM build embeds this so `wacha_init` no longer
+    /// pays the ~8 s PageRank recompute (W3). If the blob doesn't match the
+    /// freshly-built graph it falls back to recomputing.
+    pub fn build_from_segmenter_pr_bytes<I, S>(
+        word_list: I,
+        entries: Vec<Entry>,
+        freq_text: Option<&str>,
+        segmenter: Segmenter,
+        pr_bytes: &[u8],
+    ) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        let (_all_words, dict) = Self::assemble_dict(word_list, entries, freq_text);
+        let relations = RelationEngine::from_dictionary_with_wordnet_pr_bytes(
+            &dict,
+            &wordnet::WordNet::embedded(),
+            pr_bytes,
+        );
+        Self { dict, segmenter, relations, learner: LearnerStore::embedded() }
+    }
+
     /// Shared helper: fold a word list + entries + optional freq table into the
     /// combined word vector (for the segmenter) and the populated `Dictionary`.
     fn assemble_dict<I, S>(
@@ -419,6 +444,12 @@ impl Engine {
     /// query and the index share one tokenizer).
     pub fn segment_words(&self, text: &str) -> Vec<String> {
         self.segmenter.segment_words(text)
+    }
+
+    /// Serialize this engine's global PageRank vector to the embeddable
+    /// `WACHA_PAGERANK_CACHE` blob (W3 — for the WASM prebuilt-PR asset).
+    pub fn dump_pagerank_cache_bytes(&self) -> Vec<u8> {
+        self.relations.dump_pagerank_cache_bytes()
     }
 
     /// Export (headword, primary_definition, source_label) for every entry with

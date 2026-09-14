@@ -1,6 +1,6 @@
 // วาจา (WACHA) offline PWA service worker.
 // Cache-first for the app shell + wasm, so a second visit is fully offline.
-const CACHE = 'wacha-v1';
+const CACHE = 'wacha-v2';
 const ASSETS = ['./', './index.html', './wacha_wasm.wasm', './manifest.webmanifest'];
 
 self.addEventListener('install', (e) => {

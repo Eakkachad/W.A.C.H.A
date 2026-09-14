@@ -33,3 +33,4 @@ wacha-wasm/web/wacha_wasm.wasm
 wacha-wasm/assets/words_th.seg
 wacha-wasm/assets/defs.blob
 wacha-wasm/assets/reverse.idx
+wacha-wasm/assets/pagerank.blob

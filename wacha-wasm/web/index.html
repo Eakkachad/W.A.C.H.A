@@ -110,16 +110,22 @@ function renderReverse(d){
   document.getElementById('result').innerHTML = h;
 }
 async function boot(){
+  const st = document.getElementById('status');
   const t0 = performance.now();
+  st.textContent = '① กำลังดาวน์โหลด + คอมไพล์ WebAssembly…';
   const resp = await fetch('wacha_wasm.wasm');
   const { instance } = await WebAssembly.instantiateStreaming(resp, {}).catch(async () => {
     const buf = await (await fetch('wacha_wasm.wasm')).arrayBuffer();
     return WebAssembly.instantiate(buf, {});
   });
   ex = instance.exports;
+  const tc = Math.round(performance.now() - t0);
+  st.textContent = `② สร้างเครื่องยนต์ (ตัดคำ + กราฟ + PageRank ที่สร้างไว้ล่วงหน้า)…`;
+  const ti = performance.now();
   const wc = ex.wacha_init();
+  const initMs = Math.round(performance.now() - ti);
   const dt = Math.round(performance.now() - t0);
-  document.getElementById('status').textContent = `พร้อมใช้ · ${wc.toLocaleString()} คำ · โหลด+สร้างเครื่องยนต์ ${dt} ms · ไม่มีการต่อเน็ตอีก`;
+  st.textContent = `พร้อมใช้ · ${wc.toLocaleString()} คำ · คอมไพล์ ${tc} ms + สร้างเครื่องยนต์ ${initMs} ms = ${dt} ms · ออฟไลน์ 100%`;
   const q = document.getElementById('q');
   q.disabled = false; q.focus();
   const revBtn = document.getElementById('rev');
