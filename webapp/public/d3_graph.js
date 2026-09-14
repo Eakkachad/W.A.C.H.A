@@ -266,6 +266,58 @@ function buildTreeHierarchy(entry, graphData) {
     children: westernSubBranches
   };
 
+  const relatedNodes = (entry.related || []).slice(0, 8).map((r, i) => ({
+    id: `rel_${i}_${r.word}`,
+    name: r.word,
+    type: "thai_leaf",
+    icon: "TH",
+    badge: `คะแนน ${typeof r.score === 'number' ? r.score.toFixed(1) : r.score}`,
+    detail: r.path && r.path[0] ? r.path[0] : `เกี่ยวข้องกับ ${thaiWord}`,
+    subDetail: r.confidence === 'confirmed' ? 'ตรวจยืนยันแล้ว' : (r.source || 'สัมพันธ์'),
+    era: "เครือข่ายความหมาย",
+    styleKey: "thai",
+    category: "คำที่เกี่ยวข้อง"
+  }));
+
+  const relatedBranch = {
+    id: "branch_related",
+    name: "เครือข่ายความหมาย (Semantic Network)",
+    type: "branch",
+    icon: "NET",
+    badge: `${relatedNodes.length} คำที่เกี่ยวโยง`,
+    detail: "ความสัมพันธ์จาก WordNet และพจนานุกรม",
+    era: "ภาษาปัจจุบัน",
+    styleKey: "indic",
+    children: relatedNodes
+  };
+
+  if (!entry.english_cognates || entry.english_cognates.length === 0) {
+    const branches = [];
+    if (entry.pali_sanskrit_form && entry.pali_sanskrit_form !== "ภาษาสันสกฤต/บาลี") {
+      branches.push(easternBranch);
+    }
+    if (relatedNodes.length > 0) {
+      branches.push(relatedBranch);
+    }
+    return {
+      id: "root_word",
+      name: thaiWord,
+      type: "pie_root",
+      icon: "TH",
+      badge: thaiPos ? `${thaiPos} คำศัพท์` : "คำศัพท์",
+      detail: thaiDef ? (thaiDef.length > 50 ? thaiDef.slice(0, 50) + "..." : thaiDef) : "ศูนย์กลางเครือข่ายคำ",
+      subDetail: entry.pali_sanskrit_form ? `ที่มา: ${entry.pali_sanskrit_form}` : "พจนานุกรมไทย",
+      era: "ภาษาไทย",
+      styleKey: "pie_root",
+      children: branches.length > 0 ? branches : [easternBranch]
+    };
+  }
+
+  const allChildren = [easternBranch, westernBranch];
+  if (relatedNodes.length > 0) {
+    allChildren.push(relatedBranch);
+  }
+
   // Root PIE Node
   return {
     id: "pie_root",
@@ -277,7 +329,7 @@ function buildTreeHierarchy(entry, graphData) {
     subDetail: "ทุ่งหญ้าสเตปป์ยูเรเซียโบราณ",
     era: "~4500-2500 BCE (~6,000 ปีก่อน)",
     styleKey: "pie_root",
-    children: [easternBranch, westernBranch]
+    children: allChildren
   };
 }
 
@@ -296,7 +348,7 @@ function renderD3Graph(graphData) {
   // Set titles and badges
   const titleEl = document.getElementById("graphTitle");
   if (titleEl) {
-    titleEl.innerText = `ผังต้นไม้รากศัพท์ของคำว่า "${rawTree.children[0]?.children[0]?.children[0]?.name || graphData.thai_word}" (ราก ${rawTree.name})`;
+    titleEl.innerText = `ผังต้นไม้รากศัพท์ของคำว่า "${rawTree.children[0]?.children[0]?.children[0]?.name || graphData?.thai_word || activeWordEntry?.word || activeWordEntry?.thai_word}" (ราก ${rawTree.name})`;
   }
 
   // Update Breadcrumb to Root

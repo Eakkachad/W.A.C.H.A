@@ -17,6 +17,9 @@
  */
 
 document.addEventListener('DOMContentLoaded', () => {
+  // Configurable backend API base URL
+  const API_BASE = window.API_BASE || 'http://100.76.70.14:8090';
+
   // DOM Elements
   const body = document.body;
   const searchInput = document.getElementById('thaiSearchInput');
@@ -674,7 +677,7 @@ document.addEventListener('DOMContentLoaded', () => {
     responseBody.innerHTML = `<p style="color:var(--text-secondary);">กำลังค้นหาข้อมูลจาก WACHA Engine...</p>`;
 
     try {
-      const res = await fetch('http://127.0.0.1:8080/api/lookup?q=' + encodeURIComponent(query));
+      const res = await fetch(`${API_BASE}/api/lookup?q=` + encodeURIComponent(query));
       if (!res.ok) throw new Error('Network response was not ok');
       const data = await res.json();
       
@@ -698,10 +701,17 @@ document.addEventListener('DOMContentLoaded', () => {
       if (data.entry) {
         html += `<div class="response-highlight-box">
           <p style="font-size: 1.25rem; font-weight: 700; color: var(--text-primary); margin-bottom: 0.4rem;">
-            ${escapeHtml(data.entry.word)} <span style="font-size: 0.95rem; color: var(--accent-blue); font-weight: 400;">${escapeHtml(data.entry.pos)}</span>
+            ${escapeHtml(data.entry.word)} 
+            <span style="font-size: 0.95rem; color: var(--accent-blue); font-weight: 400;">${escapeHtml(data.entry.pos || '')}</span>
+            ${data.entry.register ? `<span style="font-size: 0.85rem; color: var(--text-muted); font-weight: 400; margin-left: 4px;">(${escapeHtml(data.entry.register)})</span>` : ''}
+            ${data.entry.source ? `<span style="font-size: 0.8rem; color: var(--text-muted); opacity: 0.75; margin-left: 8px;">[${escapeHtml(data.entry.source)}]</span>` : ''}
           </p>
-          <p style="font-size: 1.05rem; line-height: 1.5; color: var(--text-secondary);">${escapeHtml(data.entry.definition)}</p>
-        </div>`;
+          <p style="font-size: 1.05rem; line-height: 1.5; color: var(--text-secondary);">${escapeHtml(data.entry.definition || '')}</p>`;
+        
+        if (data.entry.examples && data.entry.examples.length > 0) {
+          html += `<div style="margin-top: 8px; font-size: 0.95rem; color: var(--text-secondary);"><em>ตัวอย่าง: ${data.entry.examples.map(ex => escapeHtml(ex)).join(', ')}</em></div>`;
+        }
+        html += `</div>`;
       } else {
         html += `<div class="response-highlight-box"><p>ไม่พบนิยามของคำนี้ในพจนานุกรม</p></div>`;
       }
@@ -728,9 +738,9 @@ document.addEventListener('DOMContentLoaded', () => {
         data.related.forEach(r => {
           html += `<li style="padding: 14px 0; border-bottom: 1px dashed var(--glass-border);">
             <strong style="color: var(--accent-blue); font-size: 1.35rem; cursor: pointer; font-weight: 700;" class="rw" data-word="${escapeHtml(r.word)}">${escapeHtml(r.word)}</strong>
-            <span style="font-size: 1.05rem; color: var(--text-muted); margin-left: 10px; font-weight: 500;">ความสัมพันธ์: ${r.score.toFixed(2)}</span>
+            <span style="font-size: 1.05rem; color: var(--text-muted); margin-left: 10px; font-weight: 500;">ความสัมพันธ์: ${typeof r.score === 'number' ? r.score.toFixed(2) : r.score}</span>
             <div style="font-size: 1.16rem; line-height: 1.75; color: var(--text-primary); margin-top: 8px; padding-left: 14px; border-left: 3.5px solid var(--accent-blue);">`;
-          r.path.forEach(p => {
+          (r.path || []).forEach(p => {
              html += `<div style="padding: 2px 0;">↳ ${escapeHtml(p)}</div>`;
           });
           html += `</div></li>`;
@@ -758,52 +768,65 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // =========================================================================
-  // โหมด 2: การหารากศัพท์ (Etymological Bridge API)
+  // โหมด 2: การหารากศัพท์ (Etymology / Roots Mode - WACHA API)
   // =========================================================================
   async function executeEtymologySearch(query) {
     setState('active');
     responseStatusText.textContent = `สืบสายรากศัพท์: "${query}"`;
     responseDrawer.classList.add('show');
-    responseBody.innerHTML = `<p style="color:var(--text-secondary);">กำลังค้นหาข้อมูลรากศัพท์จาก Etymological Bridge...</p>`;
+    responseBody.innerHTML = `<p style="color:var(--text-secondary);">กำลังค้นหาข้อมูลรากศัพท์จาก WACHA Engine...</p>`;
 
     try {
-      const res = await fetch('http://127.0.0.1:8089/api/etymology/' + encodeURIComponent(query));
+      const res = await fetch(`${API_BASE}/api/lookup?q=` + encodeURIComponent(query));
       if (!res.ok) throw new Error('Network response was not ok');
       const data = await res.json();
       
-      let html = `<div class="response-query-tag" style="background: rgba(35, 101, 150, 0.1); color: var(--accent-blue);">โหมด: การหารากศัพท์ (Etymological Bridge)</div>`;
+      let html = `<div class="response-query-tag" style="background: rgba(35, 101, 150, 0.1); color: var(--accent-blue);">โหมด: การหารากศัพท์และวิวัฒนาการ (Etymology & Roots)</div>`;
       
-      if (data.found && data.entry) {
+      if (data.entry) {
         const entry = data.entry;
+        const cognates = entry.english_cognates || [];
+        const pieRoot = cognates.find(c => c.pie_root)?.pie_root || '';
+        
         html += `<div class="response-highlight-box" style="border-left-color: var(--accent-blue);">
-          <p style="font-size: 1.15rem; font-weight: 700; color: var(--text-primary); margin-bottom: 0.3rem;">
-            ภาษาไทย: <span style="color: var(--accent-blue);">${escapeHtml(entry.thai_word)}</span>
-          </p>`;
+          <p style="font-size: 1.25rem; font-weight: 700; color: var(--text-primary); margin-bottom: 0.3rem;">
+            ภาษาไทย: <span style="color: var(--accent-blue);">${escapeHtml(entry.word)}</span>
+            ${entry.pos ? `<span style="font-size: 0.95rem; color: var(--text-muted); font-weight: 400; margin-left: 6px;">${escapeHtml(entry.pos)}</span>` : ''}
+            ${entry.register ? `<span style="font-size: 0.85rem; color: var(--text-muted); font-weight: 400; margin-left: 4px;">(${escapeHtml(entry.register)})</span>` : ''}
+          </p>
+          <p style="font-size: 1.05rem; line-height: 1.5; color: var(--text-secondary); margin-bottom: 0.6rem;">${escapeHtml(entry.definition || '')}</p>`;
         
-        if (entry.sanskrit_word || entry.pali_word || entry.pali_sanskrit_form) {
-          html += `<p><strong>ภาษาบาลี-สันสกฤต:</strong> <em>${escapeHtml(entry.pali_sanskrit_form || entry.sanskrit_word || entry.pali_word)}</em></p>`;
+        // Etymology loans
+        if (entry.etymology && entry.etymology.length > 0) {
+          const etymList = entry.etymology.map(et => {
+            const langLabel = et.lang ? `[${escapeHtml(et.lang)}] ` : '';
+            return `<span style="color: var(--accent-blue); font-weight: 600;">${langLabel}${escapeHtml(et.form)}</span>`;
+          }).join('; ');
+          html += `<p style="margin-top: 6px;"><strong>รากศัพท์ / ภาษาที่มา:</strong> ${etymList}</p>`;
         }
         
-        if (entry.pie_root) {
-          html += `<p><strong>Proto-Indo-European (PIE) Root:</strong> <code>${escapeHtml(entry.pie_root)}</code> ${entry.pie_meaning ? `(ความหมายดั้งเดิม: ${escapeHtml(entry.pie_meaning)})` : ''}</p>`;
+        // PIE root
+        if (pieRoot) {
+          html += `<p style="margin-top: 6px;"><strong>Proto-Indo-European (PIE) Root:</strong> <code style="font-family: monospace; font-size: 1.05rem; background: rgba(35, 101, 150, 0.08); padding: 2px 6px; border-radius: 4px; color: var(--accent-blue); font-weight: 600;">${escapeHtml(pieRoot)}</code></p>`;
         }
         
-        // Handle cognates if they are objects
-        if (entry.english_cognates && entry.english_cognates.length > 0) {
-          const cogList = entry.english_cognates.map(c => typeof c === 'string' ? escapeHtml(c) : escapeHtml(c.word)).join(', ');
-          html += `<p><strong>English Cognates (คำร่วมเชื้อสาย):</strong> <span style="color: var(--accent-blue); font-weight: 600;">${cogList}</span></p>`;
+        // English cognates
+        if (cognates.length > 0) {
+          const cogList = cognates.map(c => `<span style="display: inline-block; margin: 2px 4px; padding: 2px 10px; border-radius: 12px; background: rgba(35, 101, 150, 0.1); color: var(--accent-blue); font-weight: 600;">${escapeHtml(c.word)}</span>`).join(' ');
+          html += `<p style="margin-top: 6px;"><strong>English Cognates (คำร่วมเชื้อสาย):</strong> ${cogList}</p>`;
+        } else {
+          html += `<p style="margin-top: 6px; color: var(--text-muted); font-size: 0.95rem;"><em>คำนี้เป็นคำในตระกูลภาษาขร้า-ไท (Kra-Dai) หรือไม่มีรากศัพท์ร่วมกับสายภาษาอินโด-ยูโรเปียน (PIE)</em></p>`;
+        }
+
+        // Sub entries
+        if (entry.sub_entries && entry.sub_entries.length > 0) {
+          html += `<p style="margin-top: 6px; font-size: 0.95rem; color: var(--text-secondary);"><strong>ลูกคำ:</strong> ${entry.sub_entries.map(s => escapeHtml(s)).join(', ')}</p>`;
         }
         
         html += `</div>`;
-        
-        if (entry.explanation) {
-          html += `<p style="margin-top: 1.1rem; font-size: 1.15rem; line-height: 1.75; color: var(--text-primary);"><strong>คำอธิบายทางภาษาศาสตร์:</strong> ${escapeHtml(entry.explanation)}</p>`;
-        } else if (data.classification && data.classification.entry && data.classification.entry.sound_change_law) {
-           html += `<p style="margin-top: 1.1rem; font-size: 1.15rem; line-height: 1.75; color: var(--text-primary);"><strong>การวิเคราะห์สัทศาสตร์เชิงประวัติศาสตร์:</strong> ${escapeHtml(data.classification.entry.sound_change_law)}</p>`;
-        }
 
-        // 1. แผนภาพรากศัพท์ (Etymology Tree) — ย้ายขึ้นมาก่อน Timeline ตามที่ผู้ใช้สั่ง
-        html += `<h4 style="margin-top: 28px; color: var(--text-secondary); text-align: center; font-size: 1.25rem;">แผนภาพรากศัพท์ (Etymology Tree)</h4>`;
+        // 1. แผนภาพรากศัพท์และเครือข่ายความสัมพันธ์ (Interactive D3 Tree)
+        html += `<h4 style="margin-top: 28px; color: var(--text-secondary); text-align: center; font-size: 1.25rem;">แผนภาพรากศัพท์และเครือข่ายความสัมพันธ์ (Interactive Tree)</h4>`;
         html += `<div class="d3-graph-wrapper">
                    <div class="d3-graph-toolbar">
                      <span class="d3-graph-tip">คลิกโหนดเพื่อขยาย/ย่อ หรือลากเพื่อเลื่อนมุมมอง</span>
@@ -828,63 +851,92 @@ document.addEventListener('DOMContentLoaded', () => {
                    </div>
                  </div>`;
 
-        // 2. วิวัฒนาการคำ (Timeline Tracing)
-        if (entry.timeline && entry.timeline.length > 0) {
-           html += `<h4 style="margin-top: 30px; color: var(--text-secondary); font-size: 1.25rem;">วิวัฒนาการคำ (Timeline)</h4>`;
-           html += `<div style="margin-top: 12px; padding-left: 18px; border-left: 2.5px solid var(--accent-blue);">`;
-           entry.timeline.forEach(t => {
-              html += `<div style="margin-bottom: 14px; position: relative;">`;
-              html += `<div style="position: absolute; left: -24px; top: 5px; width: 11px; height: 11px; border-radius: 50%; background: var(--accent-blue);"></div>`;
-              html += `<strong style="color: var(--text-primary); font-size: 1.15rem;">${escapeHtml(t.stage || '')} (${escapeHtml(t.era || '')})</strong><br>`;
-              html += `<span style="color: var(--accent-blue); font-family: monospace; font-size: 1.25rem; font-weight: 700;">${escapeHtml(t.form || '')}</span>`;
-              if (t.meaning) html += ` <span style="color: var(--text-secondary); font-size: 1.1rem;">— ${escapeHtml(t.meaning)}</span>`;
-              html += `</div>`;
-           });
-           html += `</div>`;
+        // 2. วิวัฒนาการคำในพจนานุกรม ๓ ยุค (Timeline Tracing)
+        let timeline = (data.evolution && data.evolution.length) ? data.evolution : [];
+        if (!timeline.length) {
+          try {
+            const evoRes = await fetch(`${API_BASE}/api/evolution?q=` + encodeURIComponent(query));
+            if (evoRes.ok) {
+              const evoData = await evoRes.json();
+              timeline = evoData.timeline || [];
+            }
+          } catch (_) {}
         }
 
-        // 3. เส้นทางคำร่วมเชื้อสาย (Cognate Derivation Paths)
-        if (entry.english_cognates && entry.english_cognates.length > 0 && typeof entry.english_cognates[0] === 'object') {
-           html += `<h4 style="margin-top: 30px; color: var(--text-secondary); font-size: 1.25rem;">เส้นทางคำร่วมเชื้อสาย (Derivation Paths)</h4>`;
-           html += `<ul style="list-style: none; padding: 0; margin-top: 12px;">`;
-           entry.english_cognates.forEach(c => {
-             html += `<li class="cognate-card-item">`;
-             html += `<strong class="cognate-word">${escapeHtml(c.word)}</strong> <span class="cognate-lang">(${escapeHtml(c.origin_language || '')})</span><br>`;
-             html += `<div class="derivation-path"><strong>เส้นทาง:</strong> ${escapeHtml(c.derivation_path || '')}</div>`;
-             if (c.usage_note) html += `<div class="note-badge"><strong>Note:</strong> ${escapeHtml(c.usage_note)}</div>`;
-             html += `</li>`;
-           });
-           html += `</ul>`;
+        if (timeline && timeline.length > 0) {
+          html += `<h4 style="margin-top: 30px; color: var(--text-secondary); font-size: 1.25rem;">วิวัฒนาการคำในพจนานุกรม ๓ ยุค (๒๕๔๒ → ๒๕๕๔ → ๒๕๖๙)</h4>`;
+          html += `<div style="margin-top: 12px; padding-left: 18px; border-left: 3px solid var(--accent-blue);">`;
+          timeline.forEach(t => {
+            html += `<div style="margin-bottom: 14px; position: relative;">`;
+            html += `<div style="position: absolute; left: -24px; top: 5px; width: 11px; height: 11px; border-radius: 50%; background: var(--accent-blue);"></div>`;
+            html += `<strong style="color: var(--text-primary); font-size: 1.15rem;">พจนานุกรม พ.ศ. ${escapeHtml(t.edition)}</strong><br>`;
+            html += `<div style="color: var(--text-secondary); margin-top: 4px; line-height: 1.6; font-size: 1.05rem;">${escapeHtml(t.definition)}</div>`;
+            if (t.is_draft) {
+              html += `<div style="margin-top: 6px; display: inline-block; padding: 2px 8px; border-radius: 4px; background: rgba(217, 119, 6, 0.12); border: 1px solid #F59E0B; color: #D97706; font-size: 0.9rem; font-weight: 600;">⚠ ${escapeHtml(t.draft_label || 'ร่าง อยู่ระหว่างดำเนินการ ยังไม่เป็นข้อมูลทางการ')}</div>`;
+            }
+            html += `</div>`;
+          });
+          html += `</div>`;
+          html += `<div style="margin-top: 8px; font-size: 0.85rem; color: var(--text-muted);">ราชบัณฑิตยสภาชำระพจนานุกรมต่อเนื่อง ๒๕๔๒ → ๒๕๕๔ → ๒๕๖๙</div>`;
+        }
+
+        // 3. เส้นทางคำร่วมเชื้อสาย (Derivation Paths)
+        if (cognates.length > 0) {
+          html += `<h4 style="margin-top: 30px; color: var(--text-secondary); font-size: 1.25rem;">เส้นทางคำร่วมเชื้อสาย (Derivation Paths)</h4>`;
+          html += `<ul style="list-style: none; padding: 0; margin-top: 12px;">`;
+          cognates.forEach(c => {
+            html += `<li class="cognate-card-item">`;
+            html += `<strong class="cognate-word">${escapeHtml(c.word)}</strong> <span class="cognate-lang">(PIE: ${escapeHtml(c.pie_root || pieRoot || '')})</span><br>`;
+            html += `<div class="derivation-path"><strong>เส้นทาง:</strong> ${escapeHtml(c.pie_root ? `${c.pie_root} ➔ ${c.word}` : c.word)}</div>`;
+            html += `</li>`;
+          });
+          html += `</ul>`;
         }
 
       } else {
         html += `<div class="response-highlight-box" style="border-left-color: var(--accent-blue);">
-          <p>ไม่พบข้อมูลรากศัพท์สำหรับ "${escapeHtml(query)}" ในฐานข้อมูล Etymological Bridge</p>
-          <p style="font-size: 0.9rem; color: #64748B;">คำนี้อาจเป็นคำไทยแท้ (Kra-Dai) หรือไม่อยู่ในคลังคำสาธิต</p>
+          <p>ไม่พบข้อมูลรากศัพท์สำหรับ "${escapeHtml(query)}" ในคลังข้อมูล WACHA</p>
+          <p style="font-size: 0.9rem; color: #64748B;">คำนี้อาจเป็นคำเฉพาะ หรือยังไม่อยู่ในคลังคำสาธิต</p>
         </div>`;
       }
       
       responseBody.innerHTML = html;
 
-      // Fetch and Render D3 Graph if entry found
-      if (data.found && data.entry) {
-         try {
-           const graphRes = await fetch(`http://127.0.0.1:8089/api/graph/${encodeURIComponent(query)}`);
-           if (graphRes.ok) {
-             const graphData = await graphRes.json();
-             if (window.initD3Graph && window.renderD3Graph) {
-                window.activeEntry = data.entry;
-                window.initD3Graph();
-                window.renderD3Graph(graphData);
-             }
-           }
-         } catch(e) {
-           console.error("D3 Graph fetch error:", e);
-         }
+      // Render D3 Graph if entry found
+      if (data.entry) {
+        try {
+          if (window.initD3Graph && window.renderD3Graph) {
+            const cognates = data.entry.english_cognates || [];
+            const pieRoot = cognates.find(c => c.pie_root)?.pie_root || '';
+            window.activeEntry = {
+              thai_word: data.entry.word,
+              word: data.entry.word,
+              orst_pos: data.entry.pos,
+              pos: data.entry.pos,
+              orst_definition: data.entry.definition,
+              definition: data.entry.definition,
+              pali_sanskrit_form: (data.entry.etymology && data.entry.etymology[0]?.form) || "",
+              pali_sanskrit_lang: (data.entry.etymology && data.entry.etymology[0]?.lang) || "บาลี/สันสกฤต",
+              pie_root: pieRoot || (data.entry.etymology?.length ? "*PIE" : ""),
+              english_cognates: cognates.map(c => ({
+                word: c.word,
+                origin_language: "Indo-European / English",
+                derivation_path: c.pie_root ? `${c.pie_root} ➔ ${c.word}` : c.word,
+                usage_note: "คำร่วมสายตระกูลภาษาอินโด-ยูโรเปียน",
+                difficulty: "General"
+              })),
+              related: data.related || []
+            };
+            window.initD3Graph();
+            window.renderD3Graph({ thai_word: data.entry.word, pie_root: window.activeEntry.pie_root, related: data.related });
+          }
+        } catch(e) {
+          console.error("D3 Graph render error:", e);
+        }
       }
 
     } catch (e) {
-      responseBody.innerHTML = `<p style="color: var(--accent-magenta);">เกิดข้อผิดพลาดในการดึงข้อมูลจาก Etymological Bridge: ${escapeHtml(e.message)}</p>`;
+      responseBody.innerHTML = `<p style="color: var(--accent-magenta);">เกิดข้อผิดพลาดในการดึงข้อมูลจาก WACHA: ${escapeHtml(e.message)}</p>`;
     }
   }
 
