@@ -202,6 +202,26 @@ honest, expected outcome for a dictionary-driven greedy segmenter with no learne
 **We also do NOT quote newmm's 0.73 TNHC figure as ours** — different algorithm, different corpus, different
 metric. Our word list is NECTEC LEXiTRON (credited in the pitch); the benchmark is PyThaiNLP's.
 
+### 4.3 Hot-path allocation counts (R8 E1, measured with a CountingAllocator)
+
+A global `CountingAllocator` (pattern from `katgpt-rs`'s test infra, copied — not imported — into
+`wacha/tests/alloc_hotpath.rs`; `katgpt-rs` untouched) counts allocations on the hot query paths of a
+seed-only engine. We claim only what the counter reads:
+
+| operation | allocations | note |
+|---|---|---|
+| `segment("แมว")` (1 in-vocab word) | **2** | output `Vec` + the token's owned `String` |
+| `segment(16-char, 10 tokens)` | **94** | ~9/token: each `Token` owns a `String` (from_utf8_lossy) + TCC fallback |
+| `segment("x")` (1-char OOV) | **5** | trie miss → single TCC cluster |
+| `related_ranked("แมว", 5)` | **31,084** | **alloc-heavy** — see below |
+
+**Honest finding:** the **segmenter path is cheap and linear** in tokens (≈2 allocs/word, no hidden
+blow-up), but the **relation path is allocation-heavy** — ~31k allocations per query — because `related()`
+runs a **per-query personalized PageRank over the whole graph** (the FolkRank π_q − π subtraction). We
+therefore make **no zero-alloc claim** for relation lookup; the counter says otherwise. This is a concrete
+optimization target (cache/prune the per-query PPR working set) rather than something to paper over. Run:
+`cargo test --release --test alloc_hotpath -- --nocapture`.
+
 ---
 
 ## 5. Analytical (computed, not measured)
