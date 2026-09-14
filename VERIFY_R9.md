@@ -12,13 +12,14 @@ that are actually *false*.
 | Task | State | Commit | Note |
 |---|---|---|---|
 | **G1** ranking-regression guard | ✅ done | `517ce0c` | `wacha rankguard` p@5 over KEEP gold set; verify_r5.sh §10, threshold 50%. Failure path demonstrated. |
-| **G2** deadline on `symbol_trie.rs` | ⏳ policy | — | Enforced at Q3: if Q3 fails its gates, delete `symbol_trie.rs` this round. |
-| **D1** WASM licence audit | ✅ done (STOP) | (this) | **ORST ศัพท์บัญญัติ content IS embedded** → no public deploy. See §D1 below. |
-| **D2** phone deploy + test | ⚠️ constrained | — | D1 forces **tailnet-only**; a real public-network phone test can't be driven unattended. See §D2. |
-| **Q1** maximal matching | — | — | pending |
-| **Q2** reverse dictionary v2 | — | — | pending |
-| **Q3** S1b final attempt | — | — | pending (droppable) |
-| **X1** Wikidata Lexemes | — | — | pending (droppable) |
+| **G2** deadline on `symbol_trie.rs` | ✅ enforced | `052a786` | Q3 failed its gate → `symbol_trie.rs` deleted this round; findings kept in BENCHMARKS §3.3. |
+| **D1** WASM licence audit | ✅ done (STOP) | `6394a37` | **ORST ศัพท์บัญญัติ content IS embedded** (113 defs) → no public deploy. See §D1. |
+| **D2** phone deploy + test | ⚠️ constrained | `9a870b3` | D1 forces **tailnet-only**; servable + PWA-ready measured; physical phone test needs a human (recorded). |
+| **Q1** maximal matching | ✅ done | `3d09cc8` | WL-F1 0.6809 (maximal) > 0.6611 (greedy) → shipped; still below newmm 0.74. verify_pitch + WASM re-verified. |
+| **Q2** reverse dictionary v2 | ✅ done | `d46ea4b` | enrich + coverage damping; 10 queries un-curated (3 clear hits, 2 structural failures persist). |
+| **Q3** S1b final attempt | ⏹️ STOPPED→DELETED | `052a786` | 7.02× build but differential fails (26); deleted per G2. |
+| **X1** Wikidata Lexemes | ✅ done (thin) | (this) | **29 Thai lexemes / 46 senses** — negligible; not integrated (stop rule). See §X1. |
+| Deliverables | ✅ done | (this) | `VERIFY_R9.md` + `BENCHMARKS.md` (per-task) + `PROGRESS.md`. |
 
 ---
 
@@ -151,3 +152,26 @@ The fix remains a base-allocation rework, out of scope. Per the **G2 deadline ru
 enough), `symbol_trie.rs` (439 lines) and its two `examples/s1b_*` harnesses were **deleted** this round;
 the full three-attempt record + numbers + root cause are preserved in `BENCHMARKS.md` §3.3. Production
 byte-keyed `datrie.rs` unchanged. Build has 0 warnings; 93 tests (the 2 spike unit tests went with it).
+
+## X1 — Wikidata Lexemes for Thai: MEASURED THIN → not integrated (stop rule)
+
+Wikidata Lexemes is CC0 and bulk-downloadable (no scraping), so it would be a legitimate independent
+source to raise the 84%-Wiktionary / 0.68%-multi-source figures. **But Thai coverage is negligible.**
+Measured live via the Wikidata Query Service (`query.wikidata.org/sparql`, language = wd:Q9217, Thai):
+
+| quantity | count |
+|---|---|
+| Thai lexemes (total) | **29** |
+| Thai lexemes with ≥1 sense | **27** |
+| Thai senses (total) | **46** |
+
+The lemmas are basic words we already have (หมา, หมู, แมว, กิน, น้ำ, ข้าว, มารดา, …). Against our
+**72,175-word** vocabulary and **158,045** relation pairs, 29 lexemes / 46 senses cannot materially move
+the multi-source set — it would add a rounding-error number of pairs, all for words already covered by
+Wiktionary + WordNet.
+
+**Decision: do NOT integrate** (per the X1 stop rule — a measured negative closes the question). Wikidata's
+Thai Lexeme project is simply too young. The 84%-Wiktionary / 0.68%-multi-source concentration remains a
+**data** limitation with no clean, licence-safe fix available today: RID and ศัพท์บัญญัติ are settled
+no-scrape (NEXT_STEPS_R8 §2), and Wikidata is empty. This is stated honestly in the pitch rather than
+papered over. Query service was reachable; the result is thin, not a fetch failure.

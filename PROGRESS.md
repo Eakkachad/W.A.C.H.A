@@ -1663,3 +1663,59 @@ terse glosses cannot reach it. L1, W3, A1, A2, A3, E1 all check out. 94 tests; `
 RID (~40k headwords) is *smaller* than the current 72,175-word vocabulary, so day-of ingestion stays
 viable (`COMPETITION_DAY` re-timed at 61 s cold) — but it means S1b's 6.96× is worth a third attempt, since
 it would take that 61 s to roughly 9 s and make live on-stage ingestion comfortable rather than tense.
+
+### 2026-09-14 (Round 9) — close known weaknesses before feature work
+
+Unattended run against `NEXT_STEPS_R9.md`. All eight tasks resolved (G1, G2, D1, D2, Q1, Q2, Q3, X1);
+S1b stopped a third time and was deleted per its deadline. 93 tests (2 spike unit tests removed with
+`symbol_trie.rs`) + 1 alloc + 4 poc; 0 build warnings; `katgpt-rs` untouched; `README.md` not touched;
+one commit per task, each demoable.
+
+**G1 (`517ce0c`) — closed the one hole in the safety net.** Ranking (band→PPR→freq) broke twice before
+and only a human caught it. New `wacha rankguard`: automated p@5 over the committed 47-pair KEEP gold set
+(is each KEEP co-member in its query's top-5?), wired into `verify_r5.sh` §10 with a 50% threshold. The
+shipped ordering scores 51.3%; the two known-worse orderings score below it (freq-primary 48.7%, raw-tier
+46.2%), so a regression toward either now fails CI. Failure path demonstrated (`WACHA_RANK=tier` → 46.2%
+→ exit 1), then restored. Distinct from the hand-audited precision@5 (documented).
+
+**D1 (`6394a37`) — a licence answer a ราชบัณฑิตยสภา judge could ask, and it says STOP.** Traced the
+embedded-blob generators: `defs.blob` and `reverse.idx` are built from the full `Engine::load_from_dir`,
+so they embed **113 ORST ศัพท์บัญญัติ definitions** (confirmed by counting `src_code=2` in the shipped
+blob). ศัพท์บัญญัติ's terms are "educational, non-commercial" — not a redistribution licence — so the
+current artifact **must not be deployed publicly.** A public ORST-excluded variant is a clean follow-up
+via the `Importer` seam; this round keeps the deploy tailnet-only. **D2 (`9a870b3`)** is therefore
+tailnet-only; an unattended agent can't drive a real phone, so no phone numbers were fabricated — servable
++ PWA-ready (standalone manifest, 192/512/maskable icons, SW cache-first) and 4.88 MB gzip transfer size
+were measured, and the physical cold/warm/airplane + Add-to-Home-Screen test is recorded as the one
+outstanding manual check.
+
+**Q1 (`3d09cc8`) — maximal matching shipped, honestly modest.** Added a newmm-style DP mode
+(`SegMode::MaximalMatching`, minimise tokens over the trie) beside greedy. Measured both on wisesight1000:
+maximal wins every metric (word-level F1 0.6809 vs 0.6611; boundary 0.8195 vs 0.8015) → shipped as the
+default. **But the win is ~0.02, not the gap-closer hypothesised — neither mode reaches newmm's 0.74**;
+the residual is our LEXiTRON word list + TCC OOV, not just the algorithm. `verify_pitch` passes,
+`reverse.idx` regenerated, WASM rebuilt + smoke-tested, rank guard still green.
+
+**Q2 (`d46ea4b`) — reverse dictionary v2, reported un-curated.** Enriched each indexed document with the
+entry's usage examples + related-word headwords (18,873 → 28,829 terms) and added a coverage/coordination
+damping factor so one rare high-IDF query word can't carry a hit. All ten hand-checked queries (4 reviewer
++ 6 new) are in `VERIFY_R9.md` §Q2: **3 clear hits** (ความรู้สึกเสียใจ→น้ำตาตกใน; น้ำที่ตกลงมาจากฟ้า→ฝน;
+เครื่องดนตรีที่มีสาย→พิณ/ไวโอลิน), several partials, and the **two known structural failures persist**
+(สัตว์เลี้ยงสี่ขาเห่าได้→สุนัข, เครื่องมือสำหรับเขียนหนังสือ→ปากกา) because the targets' terse glosses simply
+don't contain the query's descriptive words. Enrichment helped conceptual queries; damping compressed the
+single-term noise (R3's top score 11 → 2.7). Not a bug, and not curated away.
+
+**Q3 + G2 (`052a786`) — three stops is enough.** The dense-alphabet trie hit **7.02×** cold build again
+(59.1 s → 8.4 s) but its byte-identical differential still failed (26 mismatches, the same base-region
+invariant class). Per the G2 deadline, `symbol_trie.rs` (439 lines) and its two `s1b_*` harnesses were
+**deleted**, with the full three-attempt record (6.9× / 6.96× / 7.02×, all failing) and root cause kept in
+`BENCHMARKS.md` §3.3 as the starting point for a future base-allocation rework. Production `datrie.rs`
+unchanged.
+
+**X1 (measured negative) — Wikidata Lexemes for Thai is empty.** Queried WDQS live: **29 Thai lexemes,
+46 senses** total, all basic words we already cover. It cannot move the 84%-Wiktionary / 0.68%-multi-source
+figures, so it was not integrated (stop rule). The data concentration remains a stated limitation with no
+licence-safe fix available today (RID/ศัพท์บัญญัติ settled no-scrape; Wikidata too young).
+
+Full detail + raw numbers in `VERIFY_R9.md`; benchmark tables updated per task in `BENCHMARKS.md`
+(§3.3 S1b saga, §4.2 both seg modes, §4.4 reverse v2).
