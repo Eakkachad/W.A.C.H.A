@@ -119,9 +119,22 @@ hr "10. ranking-regression guard (G1) — the one hole in the safety net until R
 # dropping out of the top is exactly the R6/R7 failure), computed with no human
 # judgment, so it can gate CI. It is DISTINCT from the hand-audited precision@5
 # in BENCHMARKS §4.1 (that one judges whether the returned top-5 are *good*, and
-# needs a rater). Threshold 50%: the shipped band->PPR->freq scores 51.3%, while
-# the two known-worse orderings score below it (freq-primary 48.7%, raw-tier
-# 46.2%) — so a regression toward either trips this guard. Prints the number
-# every run so slow drift is visible, not just a threshold breach.
-"$CLI" --data "$DATA" rankguard 50 2>&1 | grep -vE "^loaded|^vocab_hash|^segmenter cache|^global PageRank" \
-  || echo "RANK GUARD FAILED — ranking regressed below threshold, DO NOT SHIP"
+# needs a rater).
+#
+# ⚠️ KNOWN RESOLUTION LIMIT — read before trusting a PASS.
+# The gold set is n=39, so one pair is worth 2.6 pp, and the entire spread
+# between the shipped ordering and the known-worse ones is TWO PAIRS:
+#     shipped band->PPR->freq  20/39 = 51.3%
+#     freq-primary             19/39 = 48.7%
+#     raw-tier                 18/39 = 46.2%
+# Any threshold tight enough to separate those (e.g. 50%) also fails on a single
+# pair of legitimate reshuffling — a false alarm generator. So this guard is
+# deliberately set as a SMOKE ALARM, not a precision instrument: the floor
+# catches a catastrophic collapse (4+ pairs lost), while the printed number is
+# what you actually watch for drift. Do NOT read a PASS as "ranking is fine";
+# read the number and compare it to the last round.
+# The real fix is to enlarge the gold set so the metric has resolution — logged
+# as an open task in BENCHMARKS.md.
+"$CLI" --data "$DATA" rankguard 40 2>&1 | grep -vE "^loaded|^vocab_hash|^segmenter cache|^global PageRank" \
+  || echo "RANK GUARD FAILED — ranking collapsed, DO NOT SHIP"
+echo "(reference: shipped 51.3% · freq-primary 48.7% · raw-tier 46.2% · floor 40% = smoke alarm only)"

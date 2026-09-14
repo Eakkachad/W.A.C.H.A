@@ -269,6 +269,26 @@ query's descriptive words, so BM25 over glosses cannot reach them. v2's enrichme
 conceptual queries and its damping compressed single-rare-term noise (R3's top score fell 11 → 2.7), but it
 is not a fix for the structural cases. Reported as-is, not curated.
 
+**⚠️ v2 also caused a regression, found on review (2026-09-14).** `ที่เก็บเงินของรัฐ` returned **`คลัง`
+at rank 1 in v1**; in v2 `คลัง` **falls out of the top 5 entirely** (now: หัวเบี้ย, ค่าธรรมเนียม, ส่วนลด,
+เงินตรา, ภาษี). The coverage damping that fixed the single-rare-term noise penalises entries with **terse**
+glosses — and `คลัง`'s gloss ("ที่เก็บ…") is exactly that shape, so it loses to longer definitions that
+cover more query terms. This is a real trade-off of v2, not a tuning accident: the same mechanism that
+improved the conceptual queries demoted the short-gloss ones. **Both directions must be stated whenever
+v2 is described.** Two further review queries also fail (`คนที่รักษาคนป่วย` → แวดล้อม/รักษา/คุ้มครอง, not
+แพทย์; `ยานพาหนะที่บินได้` → การบิน/บิน/ผู้โดยสาร, not เครื่องบิน), consistent with the same structural
+cause: the system finds entries whose glosses *mention* the query words, not entries the query *describes*.
+
+**Open task:** decide whether the damping exponent should be lowered so short-gloss entries are not
+punished this hard, and re-measure both the conceptual queries and the short-gloss ones before changing it.
+A length-normalisation term (BM25's `b`) is the conventional lever here and is currently at the default.
+
+**Open task (ranking guard resolution):** `verify_r5.sh` §10's rank guard runs on a gold set of **n=39**,
+so one pair is 2.6 pp and the whole spread between the shipped ordering and the two known-worse ones is
+**two pairs** (20 / 19 / 18 of 39). No threshold can both separate those and avoid false alarms on a single
+legitimate reshuffle, so the floor is set at 40% as a smoke alarm and the printed number is what should be
+watched. Enlarging the audited gold set is the real fix.
+
 ---
 
 ## 5. Analytical (computed, not measured)

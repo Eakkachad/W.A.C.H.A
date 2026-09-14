@@ -1719,3 +1719,42 @@ licence-safe fix available today (RID/ศัพท์บัญญัติ settl
 
 Full detail + raw numbers in `VERIFY_R9.md`; benchmark tables updated per task in `BENCHMARKS.md`
 (§3.3 S1b saga, §4.2 both seg modes, §4.4 reverse v2).
+
+### 2026-09-14 (Round 9 review) — two corrections applied in place
+
+Review pass by the reviewing agent. R9 accepted; **D1 and Q3 were both correct stops** and are the
+round's best decisions. Two issues found on review and fixed here rather than carried forward, since both
+were statements or settings that would mislead.
+
+**Correction 1 — Q2 v2 regressed a query that v1 got right, and the write-up did not say so.**
+`ที่เก็บเงินของรัฐ` returned **`คลัง` at rank 1 in v1**; in v2 `คลัง` **falls out of the top 5** (now
+หัวเบี้ย, ค่าธรรมเนียม, ส่วนลด, เงินตรา, ภาษี). Cause: v2's coverage damping penalises entries with terse
+glosses, and `คลัง`'s gloss ("ที่เก็บ…") is precisely that shape, so it loses to longer definitions that
+cover more query terms. This is a genuine trade-off of the same mechanism that improved the conceptual
+queries — not a tuning slip — so both directions now have to be stated together. Two further reviewer
+queries fail the same way (`คนที่รักษาคนป่วย` → แวดล้อม/รักษา/คุ้มครอง, not แพทย์; `ยานพาหนะที่บินได้` →
+การบิน/บิน/ผู้โดยสาร, not เครื่องบิน). Recorded in `BENCHMARKS.md` §4.4 with an open task to reconsider the
+damping exponent / BM25 `b` and re-measure both query shapes before changing it.
+
+**Correction 2 — the rank guard's threshold implied a resolution it does not have.** G1 shipped with a
+floor of 50% against a shipped value of 51.3%. Measured across modes: shipped **20/39 = 51.3%**,
+freq-primary **19/39 = 48.7%**, raw-tier **18/39 = 46.2%** — the gold set is **n=39**, so one pair is
+2.6 pp and the entire discriminating spread is **two pairs**. No threshold can both separate those
+orderings and survive a single legitimate reshuffle. Floor lowered to **40%** and the guard re-framed
+explicitly as a **smoke alarm**: it catches a collapse, not a subtle regression, and the printed number
+(plus the reference line now echoed beside it) is what should actually be watched round to round.
+Enlarging the audited gold set is logged as the real fix.
+
+**What the reviewer verified independently:** D1's finding is correct and important — ORST ศัพท์บัญญัติ
+content **is** embedded in the WASM artifact, so the stop on public deployment was the right call; a
+public build would need that layer excluded. Q3 stopped a third time (7.02×, 26 mismatches) and
+`symbol_trie.rs` was deleted per G2's deadline rule — the account is closed properly rather than left to
+rot. Q1 shipped maximal matching on measured evidence (WL-F1 0.6611 → **0.6809**, boundary 0.8015 →
+**0.8195**) and states plainly that this is **not** the gap-closer the plan hypothesised: the reviewer
+predicted maximal matching would recover most of the distance to newmm's 0.74, and it recovered ~0.02, not
+~0.08. That prediction was wrong and the report says so. Q2's own un-curated 10-query table, reverse
+p95 sub-ms, and `katgpt-rs` clean all check out.
+
+**Standing note:** three rounds of stop rules (S1 ×3, plus D1) have now each produced a better outcome
+than pushing through would have. That discipline is the project's most valuable asset and should survive
+into the final documentation pass.
