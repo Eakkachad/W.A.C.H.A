@@ -74,6 +74,10 @@ pub struct EntryView {
     pub source: String,
     /// Licence label of the primary sense.
     pub license: String,
+    /// Usage example sentences for the primary sense (Kaikki `examples[].text`;
+    /// may be empty). Surfaced with the same provenance/licence as the definition
+    /// (L1 — the ORST "learn to use Thai" objective).
+    pub examples: Vec<String>,
 }
 
 impl Engine {
@@ -400,7 +404,8 @@ impl Engine {
     /// Export (headword, primary_definition, source_label) for every entry with
     /// a non-empty definition — the source for the WASM definitions blob (W2).
     /// Sorted by headword (front-coding friendly), deterministic.
-    pub fn export_definitions(&self) -> Vec<(String, String, String)> {        let mut out: Vec<(String, String, String)> = self
+    pub fn export_definitions(&self) -> Vec<(String, String, String)> {
+        let mut out: Vec<(String, String, String)> = self
             .dict
             .all_entries()
             .filter_map(|e| {
@@ -414,6 +419,42 @@ impl Engine {
             .collect();
         out.sort_by(|a, b| a.0.cmp(&b.0));
         out.dedup_by(|a, b| a.0 == b.0); // one def per headword
+        out
+    }
+
+    /// Like [`Engine::export_definitions`] but also returns up to `max_ex` usage
+    /// examples per headword (L1 — for the WASM blob). Examples are taken from
+    /// the defining sense, or the first sense that carries any. Deterministic,
+    /// sorted by headword.
+    pub fn export_definitions_with_examples(
+        &self,
+        max_ex: usize,
+    ) -> Vec<(String, String, String, Vec<String>)> {
+        let mut out: Vec<(String, String, String, Vec<String>)> = self
+            .dict
+            .all_entries()
+            .filter_map(|e| {
+                let sense = e.senses.iter().find(|s| !s.definition.trim().is_empty())?;
+                let examples = if !sense.examples.is_empty() {
+                    sense.examples.clone()
+                } else {
+                    e.senses
+                        .iter()
+                        .find(|s| !s.examples.is_empty())
+                        .map(|s| s.examples.clone())
+                        .unwrap_or_default()
+                };
+                let examples = examples.into_iter().take(max_ex).collect();
+                Some((
+                    e.headword.clone(),
+                    sense.definition.clone(),
+                    sense.provenance.source.label().to_string(),
+                    examples,
+                ))
+            })
+            .collect();
+        out.sort_by(|a, b| a.0.cmp(&b.0));
+        out.dedup_by(|a, b| a.0 == b.0);
         out
     }
 
@@ -450,6 +491,14 @@ impl Engine {
         let segmentation = self.segmenter.segment(query);
         let entry = self.dict.get(query).map(|e| {
             let primary = e.senses.first();
+            // Prefer the primary sense's examples; if it has none, fall back to
+            // the first sense that carries any, so a word whose sense[0] lacks
+            // examples still shows real usage when a later sense has them.
+            let examples = primary
+                .filter(|s| !s.examples.is_empty())
+                .or_else(|| e.senses.iter().find(|s| !s.examples.is_empty()))
+                .map(|s| s.examples.clone())
+                .unwrap_or_default();
             EntryView {
                 word: e.headword.clone(),
                 pos: e.primary_pos_marker().unwrap_or("").to_string(),
@@ -459,6 +508,7 @@ impl Engine {
                 subject: primary.and_then(|s| s.subject.as_ref()).map(|s| s.tag().to_string()),
                 source: primary.map(|s| s.provenance.source.label().to_string()).unwrap_or_default(),
                 license: primary.map(|s| s.provenance.license.label().to_string()).unwrap_or_default(),
+                examples,
             }
         });
         let related = self.relations.related(query, top_k);

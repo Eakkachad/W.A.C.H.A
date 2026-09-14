@@ -298,7 +298,16 @@ fn lookup_json(engine: &Engine, query: &str) -> String {
             }
             // source + licence badge
             s.push_str(&format!("\"source\":{},", json_str(&e.source)));
-            s.push_str(&format!("\"license\":{}", json_str(&e.license)));
+            s.push_str(&format!("\"license\":{},", json_str(&e.license)));
+            // usage examples (L1) — same provenance/licence as the definition
+            s.push_str("\"examples\":[");
+            for (i, ex) in e.examples.iter().enumerate() {
+                if i > 0 {
+                    s.push(',');
+                }
+                s.push_str(&json_str(ex));
+            }
+            s.push_str("]");
             s.push_str("},");
         }
         None => s.push_str("\"entry\":null,"),

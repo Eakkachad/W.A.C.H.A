@@ -458,6 +458,13 @@ fn print_lookup(_engine: &Engine, r: &Lookup, query: &str) {
             if !e.source.is_empty() {
                 println!("  (ที่มานิยาม: {} · {})", e.source, e.license);
             }
+            if !e.examples.is_empty() {
+                println!("\nตัวอย่างการใช้ (usage examples):");
+                for ex in e.examples.iter().take(3) {
+                    println!("  • {ex}");
+                }
+                println!("  (ที่มาตัวอย่าง: {} · {})", e.source, e.license);
+            }
         }
         None => {
             println!("\n(ไม่พบนิยามของคำนี้ในพจนานุกรม — no dictionary entry)");

@@ -84,6 +84,10 @@
   .badge.src { background: rgba(160,170,190,.14); color: #a7b0c0; border: 1px solid #6b7488; }
   .badge.lic { background: rgba(160,170,190,.10); color: #8b93a5; border: 1px solid #565d6e; }
   .def .meta { color: #9aa3b5; font-size: .82rem; margin-top: 6px; }
+  .examples { margin-top: 12px; padding-top: 10px; border-top: 1px dashed #2a3550; }
+  .examples .ex-h { color: var(--accent2); font-size: .9rem; margin-bottom: 4px; }
+  .examples ul { margin: 4px 0 6px 0; padding-left: 20px; }
+  .examples li { font-size: 1.05rem; margin: 2px 0; }
   .legend { margin-top: 12px; color: var(--muted); font-size: .82rem; text-align: center; line-height: 1.9; }
   .g-node.src-wn circle { stroke: var(--oov); stroke-dasharray: 4 3; }
   .g-edge.src-wn { stroke: var(--oov); stroke-dasharray: 4 3; opacity: .7; }
@@ -186,6 +190,14 @@ function render(d) {
     if (d.entry.source) {
       html += `<div class="prov"><span class="badge src">${esc(d.entry.source)}</span>`
         + ` <span class="badge lic">${esc(d.entry.license || "")}</span></div>`;
+    }
+    // Usage examples (L1) — the "learn to use Thai" objective, real Kaikki
+    // example sentences with the same provenance/licence as the definition.
+    if (d.entry.examples && d.entry.examples.length) {
+      html += `<div class="examples"><div class="ex-h">ตัวอย่างการใช้ (usage examples)</div>`;
+      html += `<ul>` + d.entry.examples.slice(0, 5).map(x => `<li>${esc(x)}</li>`).join("") + `</ul>`;
+      html += `<div class="prov"><span class="badge src">${esc(d.entry.source)}</span>`
+        + ` <span class="badge lic">${esc(d.entry.license || "")}</span></div></div>`;
     }
   } else {
     html += `<span class="empty">ไม่พบนิยามของคำนี้ในพจนานุกรม (no dictionary entry)</span>`;

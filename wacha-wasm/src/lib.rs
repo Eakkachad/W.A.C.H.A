@@ -42,11 +42,15 @@ const DEFS_BLOB: &[u8] = include_bytes!("../assets/defs.blob");
 
 thread_local! {
     static ENGINE: RefCell<Option<Engine>> = const { RefCell::new(None) };
-    static DEFS: RefCell<Option<Vec<(String, String, u8)>>> = const { RefCell::new(None) };
+    // (headword, definition, src_code, examples)
+    static DEFS: RefCell<Option<Vec<(String, String, u8, Vec<String>)>>> = const { RefCell::new(None) };
 }
 
-/// Parse the embedded defs blob into a sorted (headword, def, src) table.
-fn parse_defs() -> Vec<(String, String, u8)> {
+/// Parse the embedded defs blob into a sorted (headword, def, src, examples)
+/// table. Format v2 (W2 + L1):
+///   [u32 count] then count × [u16 hw_len][hw][u16 def_len][def][u8 src]
+///                            [u16 ex_len][ex]  -- examples joined by \x1f
+fn parse_defs() -> Vec<(String, String, u8, Vec<String>)> {
     let b = DEFS_BLOB;
     let mut out = Vec::new();
     if b.len() < 4 {
@@ -65,7 +69,16 @@ fn parse_defs() -> Vec<(String, String, u8)> {
         let def = String::from_utf8_lossy(&b[p..p + dl]).into_owned(); p += dl;
         if p >= b.len() { break; }
         let src = b[p]; p += 1;
-        out.push((hw, def, src));
+        if p + 2 > b.len() { break; }
+        let el = u16::from_le_bytes([b[p], b[p + 1]]) as usize; p += 2;
+        if p + el > b.len() { break; }
+        let ex_joined = String::from_utf8_lossy(&b[p..p + el]).into_owned(); p += el;
+        let examples: Vec<String> = if ex_joined.is_empty() {
+            Vec::new()
+        } else {
+            ex_joined.split('\u{1f}').map(|s| s.to_string()).collect()
+        };
+        out.push((hw, def, src, examples));
     }
     out
 }
@@ -80,18 +93,21 @@ fn src_label(code: u8) -> &'static str {
     }
 }
 
-/// Look up a definition (headword, source) from the embedded blob by binary
-/// search. Returns None if not defined.
-fn lookup_def(word: &str) -> Option<(String, String)> {
+/// Look up a definition (definition, source, examples) from the embedded blob
+/// by binary search. Returns None if not defined.
+fn lookup_def(word: &str) -> Option<(String, String, Vec<String>)> {
     DEFS.with(|cell| {
         let mut opt = cell.borrow_mut();
         if opt.is_none() {
             *opt = Some(parse_defs());
         }
         let defs = opt.as_ref().unwrap();
-        defs.binary_search_by(|(hw, _, _)| hw.as_str().cmp(word))
+        defs.binary_search_by(|(hw, _, _, _)| hw.as_str().cmp(word))
             .ok()
-            .map(|i| (defs[i].1.clone(), src_label(defs[i].2).to_string()))
+            .map(|i| {
+                let d = &defs[i];
+                (d.1.clone(), src_label(d.2).to_string(), d.3.clone())
+            })
     })
 }
 
@@ -206,18 +222,19 @@ fn lookup_json(engine: &Engine, query: &str) -> String {
     s.push_str("],");
     match &r.entry {
         Some(e) => s.push_str(&format!(
-            "\"entry\":{{\"word\":{},\"pos\":{},\"definition\":{},\"source\":{},\"license\":{}}},",
+            "\"entry\":{{\"word\":{},\"pos\":{},\"definition\":{},\"source\":{},\"license\":{},\"examples\":{}}},",
             json_str(&e.word), json_str(&e.pos), json_str(&e.definition),
-            json_str(&e.source), json_str(&e.license)
+            json_str(&e.source), json_str(&e.license), json_arr(&e.examples)
         )),
         None => {
             // W2: the segmenter engine only carries the 20 seed entries in the
             // WASM build, but the embedded defs blob has all 29,601. If the
-            // query is a single defined headword, serve the blob definition.
+            // query is a single defined headword, serve the blob definition
+            // (+ L1 usage examples).
             match lookup_def(query.trim()) {
-                Some((def, src)) => s.push_str(&format!(
-                    "\"entry\":{{\"word\":{},\"pos\":{},\"definition\":{},\"source\":{},\"license\":{}}},",
-                    json_str(query.trim()), json_str(""), json_str(&def), json_str(&src), json_str("")
+                Some((def, src, examples)) => s.push_str(&format!(
+                    "\"entry\":{{\"word\":{},\"pos\":{},\"definition\":{},\"source\":{},\"license\":{},\"examples\":{}}},",
+                    json_str(query.trim()), json_str(""), json_str(&def), json_str(&src), json_str(""), json_arr(&examples)
                 )),
                 None => s.push_str("\"entry\":null,"),
             }
@@ -240,10 +257,19 @@ fn lookup_json(engine: &Engine, query: &str) -> String {
     s
 }
 
+fn json_arr(items: &[String]) -> String {
+    let mut out = String::from("[");
+    for (i, it) in items.iter().enumerate() {
+        if i > 0 { out.push(','); }
+        out.push_str(&json_str(it));
+    }
+    out.push(']');
+    out
+}
+
 fn json_str(s: &str) -> String {
     let mut out = String::with_capacity(s.len() + 2);
-    out.push('"');
-    for c in s.chars() {
+    out.push('"');    for c in s.chars() {
         match c {
             '"' => out.push_str("\\\""),
             '\\' => out.push_str("\\\\"),

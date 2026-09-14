@@ -80,7 +80,14 @@ function render(d){
   let h = '<div class="card"><h2>การตัดคำ</h2><div class="seg">';
   h += d.segmentation.map(t=>`<span class="${t.in_vocab?'':'oov'}">${esc(t.text)}</span>`).join('');
   h += '</div></div><div class="card"><h2>นิยาม</h2>';
-  if(d.entry){ h += `<div><span class="word">${esc(d.entry.word)}</span><span class="pos">${esc(d.entry.pos)}</span></div><div>${esc(d.entry.definition)}</div>`; }
+  if(d.entry){ h += `<div><span class="word">${esc(d.entry.word)}</span><span class="pos">${esc(d.entry.pos)}</span></div><div>${esc(d.entry.definition)}</div>`;
+    if(d.entry.source){ h += `<div class="prov">${esc(d.entry.source)}</div>`; }
+    if(d.entry.examples && d.entry.examples.length){
+      h += `<div class="examples"><div class="ex-h">ตัวอย่างการใช้</div><ul>`
+        + d.entry.examples.slice(0,5).map(x=>`<li>${esc(x)}</li>`).join('')
+        + `</ul><div class="prov">${esc(d.entry.source||'')}</div></div>`;
+    }
+  }
   else { h += '<span class="empty">ไม่พบนิยามของคำนี้ (คำนี้ไม่มีในพจนานุกรม 29,601 คำ)</span>'; }
   h += '</div><div class="card"><h2>คำที่เกี่ยวข้อง (อธิบายได้)</h2>';
   if(!d.related.length){ h += '<span class="empty">ไม่มีข้อมูลความสัมพันธ์</span>'; }
