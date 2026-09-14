@@ -1,25 +1,60 @@
-//! S1 spike (Round 6) — dense-alphabet double-array trie. **NOT INTEGRATED.**
+//! S1 spike (Round 6, re-investigated Round 8) — dense-alphabet double-array
+//! trie. **NOT INTEGRATED.**
 //!
-//! ## Status: STOPPED per the S1 stop rule — kept as a documented spike.
+//! ## Status: STOPPED per the S1/S1b stop rule — kept as a documented spike.
 //!
-//! The build speedup target (≥3×) was **exceeded** but the non-negotiable
-//! correctness gate **failed**, so this is deliberately NOT wired into the
-//! segmenter (the byte-keyed `datrie.rs` remains the production path). Measured
-//! on the real 72,135-word merged vocab:
-//!   - **cold build: byte 58.3 s → symbol 8.5 s = 6.9×**
-//!   - trie arrays: 16.7 MB → 8.4 MB; alphabet = 136 symbols
-//!   - **differential test: FAILED** — 23 of 62,107 vocab words segment to a
-//!     shorter end offset than the byte trie (pattern: เปล/เปร clusters). This
-//!     is a scale-triggered collision-relocation correctness bug in the port
-//!     (appears from n≈5000; the byte trie with the same algorithm is correct,
-//!     and this module's small-scale unit tests pass — so the bug only shows
-//!     under heavy relocation). A faster segmenter that segments *differently*
-//!     is a regression, not an optimization, so it is not shipped.
+//! The build speedup target (≥3×) is **exceeded** but the non-negotiable
+//! byte-identical correctness gate **still fails**, so this is deliberately NOT
+//! wired into the segmenter (the byte-keyed `datrie.rs` remains the production
+//! path). Measured Round 8 on the full 72,175-word merged vocab
+//! (`examples/s1b_time.rs`, `examples/s1b_diff.rs`):
+//!   - **cold build: byte 57.1 s → symbol 8.2 s = 6.96×** (speed gate PASSES)
+//!   - trie arrays: 16.78 MB → 8.39 MB; alphabet = 136 symbols
+//!   - **differential test: FAILS** — the byte and symbol tries disagree on the
+//!     `longest_prefix` end offset for many vocab words.
 //!
-//! The 6.9× is real and the approach is sound; finishing it means fixing the
-//! relocation bug (out of scope for one unattended night — see VERIFY_R6.md /
-//! BENCHMARKS.md). This module is compiled and unit-tested (small-scale, green)
-//! but referenced by nothing in the engine, so it cannot affect the demo.
+//! ## Round 8 re-investigation (what was fixed, what remains)
+//!
+//! Two real defects were found and fixed here, and the true root cause was
+//! isolated — but the invariant fix needed to pass the gate is a non-trivial
+//! rework, so the spike stays stopped (same discipline as R6):
+//!
+//! 1. **Non-determinism (fixed).** `Alphabet::build` assigned symbol ids in
+//!    `HashMap` iteration order, so the trie shape — and the number of
+//!    mismatches — changed run to run (observed 31 / 33 / 80 on identical
+//!    input). Now ids are assigned in sorted codepoint order, so the build is
+//!    reproducible. Revealingly, the *sorted* (contiguous-id) layout is far
+//!    MORE pathological (~8,990 mismatches) than the accidental sparse layouts —
+//!    a direct pointer at the root cause below.
+//!
+//! 2. **In-place relocation overlap (fixed).** `resolve_collision` moved a
+//!    node's children in place; with a dense alphabet `find_new_base` routinely
+//!    returns a `new_base` whose destination region OVERLAPS the `old_base`
+//!    region, so an early child's write could clobber a later sibling's
+//!    not-yet-read old slot. The move now snapshots all moving children first,
+//!    clears old slots, then writes — decoupling reads from writes. (The byte
+//!    trie shares this loop but its sparse 256-wide layout almost never overlaps,
+//!    which is why it never tripped.) This is strictly more correct but did NOT
+//!    change the mismatch count, so it was not the dominant cause.
+//!
+//! 3. **Root cause (NOT yet fixed) — a base-region invariant violation.**
+//!    Tracing a failing word (`กะพรูดกะพราด`) shows two DISTINCT parent nodes
+//!    whose `base` values differ by 1 both mapping a child into the SAME slot
+//!    (e.g. parent A base 10112 + sym 90 and parent B base 10113 + sym 89 both
+//!    target slot 10202). That violates the fundamental double-array invariant
+//!    (one slot ↔ one parent). With sparse byte ids this near-adjacency is
+//!    astronomically unlikely; with 136 contiguous symbol ids it is common, so
+//!    `find_new_base`'s occupancy check is not sufficient to keep sibling
+//!    subtrees' base windows disjoint under heavy relocation. Fixing it means
+//!    reworking base allocation (e.g. a free-slot linked list / disjoint-window
+//!    guarantee, à la Aoe/darts-clone) — more than a one-line patch, and out of
+//!    scope for one unattended night.
+//!
+//! The 6.96× is real and the approach is sound; the remaining work is the
+//! base-allocation rework. This module is compiled and unit-tested (small-scale,
+//! green) and exposes `differential()` + the `s1b_*` examples so the gate can be
+//! re-checked, but it is referenced by nothing in the engine, so it cannot
+//! affect the demo. See `VERIFY_R8.md` / `BENCHMARKS.md`.
 //!
 //! ---
 //!
@@ -29,13 +64,10 @@
 //! nodes → collision cascades). This spike remaps each distinct `char` to a
 //! dense `u16` symbol before insertion, so:
 //!   - Thai text is 1 symbol/char instead of 3 bytes/char (depth ÷3),
-//!   - collision scans are `0..alphabet_len` (~90) not `0..256`.
+//!   - collision scans are `0..alphabet_len` (~136) not `0..256`.
 //!
-//! **Spike status:** built behind its own type (not wired into the segmenter)
-//! purely to MEASURE cold-build time vs the byte trie on the real word list.
-//! Per the S1 stop rule, it is only promoted if it is ≥3× faster AND passes a
-//! byte-identical differential test. `char 0` / symbol id 0 is reserved as
-//! "unseen" and never matches, so an OOV char cannot alias into a real symbol.
+//! `char 0` / symbol id 0 is reserved as "unseen" and never matches, so an OOV
+//! char cannot alias into a real symbol.
 
 use std::collections::HashMap;
 
@@ -49,18 +81,22 @@ pub struct Alphabet {
 }
 
 impl Alphabet {
-    /// Build from all chars appearing in the vocabulary.
+    /// Build from all chars appearing in the vocabulary. Deterministic: chars
+    /// are assigned ids in sorted (codepoint) order so the trie shape does not
+    /// depend on `HashMap` iteration order (S1b — the layout-dependence that
+    /// masked the relocation behaviour).
     pub fn build<'a, I: IntoIterator<Item = &'a str>>(words: I) -> Self {
-        let mut to_id = HashMap::new();
-        let mut next: u16 = 1; // 0 reserved
+        let mut chars: std::collections::BTreeSet<char> = std::collections::BTreeSet::new();
         for w in words {
             for c in w.chars() {
-                to_id.entry(c).or_insert_with(|| {
-                    let id = next;
-                    next += 1;
-                    id
-                });
+                chars.insert(c);
             }
+        }
+        let mut to_id = HashMap::new();
+        let mut next: u16 = 1; // 0 reserved
+        for c in chars {
+            to_id.insert(c, next);
+            next += 1;
         }
         Self { to_id, len: next as usize }
     }
@@ -150,16 +186,49 @@ impl SymbolDatrie {
         };
         let new_base = self.find_new_base(loser_children, if loser == parent { Some(sym) } else { None });
         let old_base = self.base[loser] as usize;
-        for &c in loser_children {
-            let old_idx = old_base + c;
-            let new_idx = new_base + c;
-            self.grow_to(new_idx + 1);
-            self.check[new_idx] = self.check[old_idx];
-            self.base[new_idx] = self.base[old_idx];
-            self.value[new_idx] = self.value[old_idx].take();
-            self.reparent_children(new_idx, old_idx);
-            self.check[old_idx] = UNDEF;
-            self.base[old_idx] = 0;
+        // Snapshot every moving child's slot BEFORE mutating anything. With the
+        // dense symbol alphabet, `find_new_base` frequently returns a `new_base`
+        // whose destination region OVERLAPS the `old_base` region; moving in
+        // place would let an early child's write clobber a later child's
+        // not-yet-read old slot (the scale-triggered "collision-relocation" bug).
+        // Snapshotting decouples reads from writes. (The byte trie shares this
+        // loop but its sparse 256-wide layout almost never overlaps, so it never
+        // tripped — S1b.)
+        struct Moved {
+            new_idx: usize,
+            old_idx: usize,
+            check: u32,
+            base: i32,
+            value: Option<u32>,
+        }
+        let moved: Vec<Moved> = loser_children
+            .iter()
+            .map(|&c| {
+                let old_idx = old_base + c;
+                Moved {
+                    new_idx: new_base + c,
+                    old_idx,
+                    check: self.check[old_idx],
+                    base: self.base[old_idx],
+                    value: self.value[old_idx],
+                }
+            })
+            .collect();
+        // Clear all old slots first (from the snapshot), so overlapping writes
+        // below cannot resurrect a stale occupant.
+        for m in &moved {
+            self.check[m.old_idx] = UNDEF;
+            self.base[m.old_idx] = 0;
+            self.value[m.old_idx] = None;
+        }
+        // Now place each child at its new slot from the snapshot, and reparent
+        // its grandchildren (whose `check` still points at the OLD index).
+        for m in &moved {
+            self.grow_to(m.new_idx + 1);
+            self.check[m.new_idx] = m.check;
+            self.base[m.new_idx] = m.base;
+            self.value[m.new_idx] = m.value;
+            self.reparent_children(m.new_idx, m.old_idx);
         }
         self.base[loser] = new_base as i32;
     }
@@ -284,6 +353,56 @@ impl SymbolVocab {
         let n = self.trie.base.len();
         n * 4 + n * 4 + n * std::mem::size_of::<Option<u32>>()
     }
+}
+
+/// One differential mismatch between the byte trie and the symbol trie.
+#[derive(Debug, Clone)]
+pub struct SegDiff {
+    pub word: String,
+    /// `longest_prefix` end byte offset from the byte trie (the ground truth).
+    pub byte_end: Option<usize>,
+    /// `longest_prefix` end byte offset from the symbol trie.
+    pub sym_end: Option<usize>,
+}
+
+/// S1b differential: build BOTH the byte `DatrieVocab` and the symbol
+/// `SymbolVocab` from the *identical* deduplicated vocab (same construction as
+/// `Segmenter::from_words`), then for every distinct word compare
+/// `longest_prefix` starting at offset 0. Returns every word where the two
+/// tries disagree on the matched end offset. An empty result == byte-identical.
+pub fn differential<I, S>(words: I) -> Vec<SegDiff>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    use crate::datrie::DatrieVocab;
+    // Same dedup + id assignment as Segmenter::from_words.
+    let mut vocab_map: HashMap<Vec<u8>, usize> = HashMap::new();
+    let mut idx = 0usize;
+    let mut distinct: Vec<String> = Vec::new();
+    for w in words {
+        let w = w.as_ref().trim();
+        if w.is_empty() {
+            continue;
+        }
+        vocab_map.entry(w.as_bytes().to_vec()).or_insert_with(|| {
+            let i = idx;
+            idx += 1;
+            distinct.push(w.to_string());
+            i
+        });
+    }
+    let byte = DatrieVocab::build(&vocab_map);
+    let sym = SymbolVocab::build(&vocab_map);
+    let mut diffs = Vec::new();
+    for w in &distinct {
+        let b = byte.longest_prefix(w.as_bytes(), 0).map(|(_, end)| end);
+        let s = sym.longest_prefix_bytes(w, 0).map(|(_, end)| end);
+        if b != s {
+            diffs.push(SegDiff { word: w.clone(), byte_end: b, sym_end: s });
+        }
+    }
+    diffs
 }
 
 #[cfg(test)]

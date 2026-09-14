@@ -391,11 +391,16 @@ impl Engine {
         self.relations.words_with_min_related(min)
     }
 
+    /// Every dictionary headword (deduplicated, insertion order) — used by the
+    /// S1b trie differential to reconstruct the exact segmenter vocab union.
+    pub fn dict_headwords(&self) -> Vec<String> {
+        self.dict.words().map(|s| s.to_string()).collect()
+    }
+
     /// Export (headword, primary_definition, source_label) for every entry with
     /// a non-empty definition — the source for the WASM definitions blob (W2).
     /// Sorted by headword (front-coding friendly), deterministic.
-    pub fn export_definitions(&self) -> Vec<(String, String, String)> {
-        let mut out: Vec<(String, String, String)> = self
+    pub fn export_definitions(&self) -> Vec<(String, String, String)> {        let mut out: Vec<(String, String, String)> = self
             .dict
             .all_entries()
             .filter_map(|e| {
