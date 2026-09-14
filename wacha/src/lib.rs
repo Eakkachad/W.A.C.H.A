@@ -24,6 +24,11 @@ pub mod evolution;
 pub mod graph;
 pub mod import;
 pub mod intent;
+
+/// R12 INTENT-2 — cosine bar the thai2fit centroid fallback must clear before it
+/// overrides the General default. Chosen empirically (see VERIFY_R12 §INTENT-2 /
+/// BENCHMARKS): a sweep on held-out no-keyword queries.
+pub const INTENT_VEC_THRESHOLD: f32 = 0.20;
 pub mod learner;
 pub mod relations;
 pub mod reverse;
@@ -545,6 +550,50 @@ impl Engine {
         self.vectors.len()
     }
 
+    /// R12 INTENT — full intent classification: layer-1 keyword rules first
+    /// (`intent::classify_intent`), and ONLY if no rule fires (Confidence::Default),
+    /// the thai2fit_wv centroid fallback. The fallback averages the query's in-vocab
+    /// word vectors and picks the nearest of the 5 precomputed intent-seed centroids
+    /// if its cosine clears `INTENT_VEC_THRESHOLD`; otherwise stays General.
+    pub fn classify_intent_full(&self, query: &str) -> crate::intent::IntentGuess {
+        self.classify_intent_full_at(query, INTENT_VEC_THRESHOLD)
+    }
+
+    /// Like [`Engine::classify_intent_full`] but with an explicit fallback
+    /// threshold — used to sweep/pick the threshold empirically.
+    pub fn classify_intent_full_at(&self, query: &str, threshold: f32) -> crate::intent::IntentGuess {
+        use crate::intent::{classify_intent, Confidence, IntentGuess};
+        let rule_guess = classify_intent(query);
+        if rule_guess.confidence != Confidence::Default {
+            return rule_guess; // a keyword rule fired — certain, keep it
+        }
+        if self.vectors.is_empty() {
+            return rule_guess;
+        }
+        let q_words: Vec<String> = self.segment_words(query);
+        let Some(q_vec) = self.vectors.centroid(&q_words) else {
+            return rule_guess;
+        };
+        let mut best: Option<(crate::intent::Intent, f32)> = None;
+        for (intent, seeds) in crate::intent::intent_seed_words() {
+            let seed_words: Vec<String> = seeds.iter().map(|s| s.to_string()).collect();
+            if let Some(c) = self.vectors.centroid(&seed_words) {
+                let sim = crate::vectors::Vectors::cosine(&q_vec, &c);
+                if best.map(|(_, b)| sim > b).unwrap_or(true) {
+                    best = Some((intent, sim));
+                }
+            }
+        }
+        match best {
+            Some((intent, sim)) if sim >= threshold => IntentGuess {
+                intent,
+                reason: format!("คล้ายกลุ่มความหมาย (cosine {sim:.2})"),
+                confidence: Confidence::Vector,
+            },
+            _ => rule_guess,
+        }
+    }
+
     pub fn word_count(&self) -> usize {
         self.segmenter.word_count()
     }
@@ -865,6 +914,19 @@ mod tests {
             assert_ne!(t.text, "เ");
         }
     }
+    #[test]
+    fn intent_fallback_inert_without_vectors() {
+        // A seed-only engine has no thai2fit vectors, so classify_intent_full must
+        // equal the layer-1 rule/default result (no vector override, no panic).
+        let engine = Engine::seed_only();
+        let g = engine.classify_intent_full("อยากตั้งชื่อลูก");
+        assert_eq!(g.intent, crate::intent::Intent::Naming);
+        assert_eq!(g.confidence, crate::intent::Confidence::Rule);
+        let g2 = engine.classify_intent_full("คำเรียกลูกแบบเพราะๆ");
+        assert_eq!(g2.intent, crate::intent::Intent::General);
+        assert_eq!(g2.confidence, crate::intent::Confidence::Default);
+    }
+
     #[test]
     fn unified_lookup_exposes_translit_and_evolution_fields() {
         // R10 Phase U2: one lookup call carries the extra dimensions. A seed

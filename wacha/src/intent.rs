@@ -126,6 +126,20 @@ fn rule(intent: Intent, reason: String) -> IntentGuess {
     IntentGuess { intent, reason, confidence: Confidence::Rule }
 }
 
+/// Seed WORDS per intent for the R12 INTENT-2 thai2fit_wv centroid fallback.
+/// Single words (thai2fit is a word2vec model) chosen to be in-vocabulary and
+/// representative of each job. The fallback averages these into a centroid per
+/// intent and compares the query's own averaged vector against them.
+pub fn intent_seed_words() -> Vec<(Intent, Vec<&'static str>)> {
+    vec![
+        (Intent::Naming, vec!["ชื่อ", "ตั้งชื่อ", "นาม", "มงคล"]),
+        (Intent::Writing, vec!["ทางการ", "สุภาพ", "กลอน", "สัมผัส", "ราชาศัพท์"]),
+        (Intent::Specialized, vec!["แพทย์", "จิตวิทยา", "ปรัชญา", "วิชาการ", "ศัพท์"]),
+        (Intent::Roots, vec!["รากศัพท์", "ที่มา", "ประวัติ", "วิวัฒนาการ", "ภาษาบาลี"]),
+        (Intent::Translit, vec!["ทับศัพท์", "สะกด", "อังกฤษ", "ภาษาต่างประเทศ"]),
+    ]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

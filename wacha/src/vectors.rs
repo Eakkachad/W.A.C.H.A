@@ -94,6 +94,46 @@ impl Vectors {
         &self.data[i * self.dim..(i + 1) * self.dim]
     }
 
+    /// The (L2-normalized) vector for a word, if present.
+    pub fn vector_of(&self, word: &str) -> Option<&[f32]> {
+        self.index.get(word).map(|&i| self.row(i))
+    }
+
+    /// A centroid (mean of the in-vocab words' normalized rows, then re-normalized).
+    /// Returns None if none of the words are in vocab. Used by the R12 intent
+    /// fallback to precompute a seed-phrase centroid per intent.
+    pub fn centroid(&self, words: &[String]) -> Option<Vec<f32>> {
+        if self.dim == 0 {
+            return None;
+        }
+        let mut acc = vec![0f32; self.dim];
+        let mut n = 0usize;
+        for w in words {
+            if let Some(v) = self.vector_of(w) {
+                for (a, x) in acc.iter_mut().zip(v) {
+                    *a += *x;
+                }
+                n += 1;
+            }
+        }
+        if n == 0 {
+            return None;
+        }
+        let norm = acc.iter().map(|x| x * x).sum::<f32>().sqrt();
+        if norm > 0.0 {
+            for x in &mut acc {
+                *x /= norm;
+            }
+        }
+        Some(acc)
+    }
+
+    /// Cosine similarity between an already-normalized vector and a centroid
+    /// (also treated as normalized). Both must be `dim`-length.
+    pub fn cosine(a: &[f32], b: &[f32]) -> f32 {
+        a.iter().zip(b).map(|(x, y)| x * y).sum()
+    }
+
     /// Cosine similarity between two words (both must be present), or None.
     pub fn similarity(&self, a: &str, b: &str) -> Option<f32> {
         let (&ia, &ib) = (self.index.get(a)?, self.index.get(b)?);
