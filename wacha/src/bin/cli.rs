@@ -599,6 +599,19 @@ fn print_lookup(_engine: &Engine, r: &Lookup, query: &str) {
             if !e.source.is_empty() {
                 println!("  (ที่มานิยาม: {} · {})", e.source, e.license);
             }
+            if !e.etymology.is_empty() {
+                println!(
+                    "รากคำ: {}",
+                    e.etymology
+                        .iter()
+                        .map(|(l, f)| format!("{l} {f}"))
+                        .collect::<Vec<_>>()
+                        .join("; ")
+                );
+            }
+            if !e.sub_entries.is_empty() {
+                println!("ลูกคำ: {}", e.sub_entries.join(", "));
+            }
             if !e.examples.is_empty() {
                 println!("\nตัวอย่างการใช้ (usage examples):");
                 for ex in e.examples.iter().take(3) {

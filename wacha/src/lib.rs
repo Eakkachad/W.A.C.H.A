@@ -78,6 +78,12 @@ pub struct EntryView {
     /// may be empty). Surfaced with the same provenance/licence as the definition
     /// (L1 — the ORST "learn to use Thai" objective).
     pub examples: Vec<String>,
+    /// รากคำ (etymology): (lang-marker, cited-form) pairs, e.g. ("ป.", "ปิตุ").
+    /// Lives on `Entry`, not `Sense` — pulled from the matched entry. May be empty.
+    pub etymology: Vec<(String, String)>,
+    /// ลูกคำ (sub-entries): real compound headwords derived from this entry.
+    /// Each is itself a lookupable headword (free cross-navigation). May be empty.
+    pub sub_entries: Vec<String>,
 }
 
 impl Engine {
@@ -585,6 +591,14 @@ impl Engine {
                 source: primary.map(|s| s.provenance.source.label().to_string()).unwrap_or_default(),
                 license: primary.map(|s| s.provenance.license.label().to_string()).unwrap_or_default(),
                 examples,
+                // etymology + sub_entries live on the Entry (one level up from
+                // Sense) — pull them from the matched entry, not the sense.
+                etymology: e
+                    .etymology
+                    .iter()
+                    .map(|et| (et.lang.clone(), et.form.clone()))
+                    .collect(),
+                sub_entries: e.sub_entries.clone(),
             }
         });
         let related = self.relations.related(query, top_k);
@@ -643,5 +657,32 @@ mod tests {
             assert_ne!(t.text, "้");
             assert_ne!(t.text, "เ");
         }
+    }
+
+    #[test]
+    fn etymology_and_sub_entries_reach_entry_view() {
+        // R10-U1 regression guard: `Entry` carries etymology (รากคำ) + sub_entries
+        // (ลูกคำ), but before this round `EntryView` dropped both, so no user-facing
+        // surface ever showed them. This asserts they survive to the display layer.
+        use crate::dictionary::{Entry, Etymology, Pos, Sense};
+        let entry = Entry {
+            headword: "ปิตุ".to_string(),
+            homograph: None,
+            pronunciation: None,
+            romanization: None,
+            senses: vec![Sense::simple(Pos::Nam, "พ่อ")],
+            etymology: vec![
+                Etymology { lang: "ป.".to_string(), form: "ปิตา".to_string() },
+                Etymology { lang: "ส.".to_string(), form: "ปิตฤ".to_string() },
+            ],
+            sub_entries: vec!["ปิตุภูมิ".to_string(), "ปิตุลา".to_string()],
+            see_also: vec![],
+            relations: vec![],
+        };
+        let engine = Engine::build(["ปิตุ"], vec![entry], None);
+        let view = engine.lookup("ปิตุ", 5).entry.expect("entry present");
+        assert_eq!(view.etymology.len(), 2, "etymology must reach EntryView");
+        assert_eq!(view.etymology[0], ("ป.".to_string(), "ปิตา".to_string()));
+        assert_eq!(view.sub_entries, vec!["ปิตุภูมิ".to_string(), "ปิตุลา".to_string()]);
     }
 }

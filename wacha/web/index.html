@@ -88,6 +88,11 @@
   .examples .ex-h { color: var(--accent2); font-size: .9rem; margin-bottom: 4px; }
   .examples ul { margin: 4px 0 6px 0; padding-left: 20px; }
   .examples li { font-size: 1.05rem; margin: 2px 0; }
+  .etym, .subentries { margin-top: 10px; font-size: 1rem; }
+  .etym .ex-h, .subentries .ex-h { color: var(--accent2); font-size: .9rem; }
+  .chip.subword { display: inline-block; padding: 2px 10px; margin: 2px 2px; border-radius: 12px;
+    background: #1c2740; border: 1px solid #2a3550; cursor: pointer; font-size: .98rem; }
+  .chip.subword:hover { background: #26334f; border-color: var(--accent2); }
   .legend { margin-top: 12px; color: var(--muted); font-size: .82rem; text-align: center; line-height: 1.9; }
   .g-node.src-wn circle { stroke: var(--oov); stroke-dasharray: 4 3; }
   .g-edge.src-wn { stroke: var(--oov); stroke-dasharray: 4 3; opacity: .7; }
@@ -232,6 +237,18 @@ function render(d) {
       html += `<div class="prov"><span class="badge src">${esc(d.entry.source)}</span>`
         + ` <span class="badge lic">${esc(d.entry.license || "")}</span></div></div>`;
     }
+    // รากคำ (etymology) — the "word roots" dimension the mentor asked for.
+    if (d.entry.etymology && d.entry.etymology.length) {
+      html += `<div class="etym"><span class="ex-h">รากคำ (etymology): </span>`
+        + d.entry.etymology.map(e => `${esc(e.lang)} ${esc(e.form)}`).join("; ") + `</div>`;
+    }
+    // ลูกคำ (sub-entries) — real headwords; clickable chips for free cross-navigation.
+    if (d.entry.sub_entries && d.entry.sub_entries.length) {
+      html += `<div class="subentries"><span class="ex-h">ลูกคำ (sub-entries): </span>`
+        + d.entry.sub_entries.map(w =>
+            `<span class="chip subword" data-w="${esc(w)}">${esc(w)}</span>`).join(" ")
+        + `</div>`;
+    }
   } else {
     html += `<span class="empty">ไม่พบนิยามของคำนี้ในพจนานุกรม (no dictionary entry)</span>`;
   }
@@ -313,6 +330,15 @@ function render(d) {
       if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); }
     });
   });
+
+  // ลูกคำ chips — each is a real headword, so clicking re-runs the search.
+  resultEl.querySelectorAll(".subword").forEach(el =>
+    el.addEventListener("click", () => {
+      qEl.value = el.dataset.w;
+      lookup(el.dataset.w);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    })
+  );
 }
 
 // Extract the relation label connecting the query word to a related word,

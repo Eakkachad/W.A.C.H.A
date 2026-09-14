@@ -348,6 +348,24 @@ fn lookup_json(engine: &Engine, query: &str) -> String {
                 s.push_str(&json_str(ex));
             }
             s.push_str("]");
+            // รากคำ (etymology): array of {lang, form}
+            s.push_str(",\"etymology\":[");
+            for (i, (lang, form)) in e.etymology.iter().enumerate() {
+                if i > 0 {
+                    s.push(',');
+                }
+                s.push_str(&format!("{{\"lang\":{},\"form\":{}}}", json_str(lang), json_str(form)));
+            }
+            s.push_str("]");
+            // ลูกคำ (sub_entries): array of headword strings
+            s.push_str(",\"sub_entries\":[");
+            for (i, sub) in e.sub_entries.iter().enumerate() {
+                if i > 0 {
+                    s.push(',');
+                }
+                s.push_str(&json_str(sub));
+            }
+            s.push_str("]");
             s.push_str("},");
         }
         None => s.push_str("\"entry\":null,"),
