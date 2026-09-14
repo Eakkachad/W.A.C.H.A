@@ -65,6 +65,7 @@ files too and note it here — this log is the record of *that it changed*, thos
 | **Round 7 D1** — measured segmentation boundary-F1 | **done** — `7845867`; wisesight1000 0.8015±0.1660 (our own number) | 2026-09-14 |
 | **Round 7 C/S1b/E1** — reverse dict / dense trie / allocator | not started (optional, droppable; spine finished cleanly) | — |
 | **Round 7** — deliverables | **done** — `VERIFY_R7.md` + `BENCHMARKS.md` | 2026-09-14 |
+| **Round 10** — ingest real ORST event data (RID ๒๕๕๔ + คำทับศัพท์ + ศัพท์เฉพาะทาง + วิวัฒนาการ ๓ ยุค) | **done** — 8 phases (U1/R/R3/T/E/W/U2/P), X cut; 40,681 entries; public WASM licence-gated; `VERIFY_R10.md` | 2026-09-15 |
 | Day 2 — demo/submit | not started | — |
 
 **A real product crate now exists** (`wacha/`) in addition to the `poc/` feasibility harness. The
@@ -1758,3 +1759,70 @@ p95 sub-ms, and `katgpt-rs` clean all check out.
 **Standing note:** three rounds of stop rules (S1 ×3, plus D1) have now each produced a better outcome
 than pushing through would have. That discipline is the project's most valuable asset and should survive
 into the final documentation pass.
+
+### 2026-09-15 (Round 10) — the real ORST data arrived; ingest it before the deadline
+
+Triggered by a real external event, not a review: the organizer's data bundle (`nextect.zip`) landed and
+was staged git-ignored at `data/official/`. This is the moment `COMPETITION_DAY.md` and `AGENT_HANDOFF.md`
+§6 anticipated since Round 5 — the practice/CC0 data was the correct call *until tonight*, and stops being
+correct the moment real assigned data exists. Ran `NEXT_STEPS_R10.md` order 0→U1→R1→R2→R3→T→E→W→U2→P→X.
+Eight phases landed (one commit each), X cut per plan. 103 lib + 4 poc + 1 alloc tests green after every
+phase; `verify_pitch` + `verify_r5` §8/§9/§10 all pass; `katgpt-rs` untouched; `README.md`/`.gitignore`
+not touched; `data/official/` raw never committed (only derived .txt/.tsv projections).
+
+**U1 (`9696058`) — the cheapest real win.** `Entry` already carried etymology (รากคำ) + sub_entries (ลูกคำ)
+but `EntryView` dropped both, so nothing user-facing showed them. Wired both through CLI/JSON/UI (ลูกคำ as
+clickable cross-nav chips). Real Kaikki data now prints a รากคำ line for กรรม/บิดา/แมว.
+
+**R (`a6797bd`) — closes the single biggest scoring exposure ("uses zero assigned data").** Reshaped
+`DICT_2554 (ก_ซ).xlsx` (13,395 rows) to the block grammar `RidImporter` already parses → 11,266 entries.
+Dictionary grew 29,772 → 36,305; RID contributes 11,265 entries / 13,394 senses; all 5 spot-check words
+return `RID ๒๕๕๔ (ORST)`. Real data exposed three importer bugs, all fixed (not tuned around): (1) 644
+common words listed only as homographs (กรรม, กรม, กรด) were shadowed by plain Kaikki entries — `get` now
+prefers the highest-priority source across homographs; (2) one malformed block aborted the whole load — now
+skips bad blocks (explicit error count) and hard-fails only above 5%; (3) greedy `ดู` cross-references
+grabbed prose tails (`ยาม).`) and parenthetical `(ดู X)` pointers as first-class relations, dropping the
+rank guard to **48.7%** — now takes only the first clean Thai token and keeps parenthetical refs display-
+only, restoring **51.3%**. The guard did its job: it caught a silent ranking regression from new data,
+root-caused before commit.
+
+**R3 (`481ccf8`) — a licence answer a ราชบัณฑิตยสภา judge could ask, stricter than R9's.** The WASM blobs
+are built from the full engine, so a rebuilt public WASM would embed the unpublished RID draft excerpt (and
+ศัพท์บัญญัติ). Added `Engine::load_from_dir_opts(include_orst_licensed)`; the WASM generators now build
+public-only. Measured proof: regenerated public `defs.blob` = 29,540 records, **0 RID / 0 ศัพท์บัญญัติ**.
+RID powers the local/judge demo; the public build rests only on CC0/WordNet/Kaikki.
+
+**T (`50f382f`) — official transliteration, both directions.** 2,256 ORST คำทับศัพท์ pairs; new bidirectional
+`translit.rs`; CLI + `/api/translit` + UI toggle. 5 round-trips verified. Loaded in both full and public
+builds (it's an open published reference).
+
+**E (`f1acb35`) — cross-discipline term equivalence.** 3 specialized dictionaries via a thin
+`SpecializedImporter` (CoinedWord shape, ORST-gated). Honest numbers: 6,252 rows → 4,986 Thai terms (NOT the
+aspirational 7,241 — ปรัชญา has only 348 non-empty coinage cells). The dedicated cross-discipline column is
+empty in all three files, so the link is derived from the data: 96 English headwords coined in >1 discipline
+get a cross-discipline edge (อปรกติ↔ผิดปรกติ, etc.). Dictionary → 40,681 entries.
+
+**W (`62c447d`) — Word Evolution Timeline, the Innovation beat.** The feature an LLM-wrapper can't fake —
+it needs the real text of three editions to diff. ก only (all DICT_2569 covers). Measured: 3,204 ก-headwords,
+693 in all three editions, 686 differing between 2542 and 2569. Every 2569 row carries the ORST draft caveat
+verbatim ("ร่าง อยู่ระหว่างดำเนินการ ยังไม่เป็นข้อมูลทางการ"), test-pinned — presenting draft as final would
+be the honesty lapse this project has avoided since R5.
+
+**U2 (`1018ac0`) — one search, many dimensions (mentor #1).** No new data/algorithms; `Lookup` now carries
+translit + evolution, populated from the same single call, rendered as extra cards under one search box. One
+`/api/lookup?q=กระดาษ` returns definition (RID) + etymology + 12 ลูกคำ + 3-edition evolution in one call.
+
+**P (`cb677f8`) — pitch pass, guard honored.** Added the checkable data-usage line, promoted the evolution
+timeline to the Innovation headline, led slide 2 with the one-search-many-dimensions framing, and fixed
+now-false statements (RID was a future "ถ้า ORST เปิด" placeholder; coverage was 62,107/29,000 → now 76,649
+words / 40,681 entries; public deploy is licence-gated, not unavailable). Grounded the multi-audience claim
+in the product's own data dimensions per mentor #2 — WITHOUT deleting BIBLE §2.2's honesty note. Re-ran
+`verify_pitch` + `verify_r5` AFTER the edits (the R6/R7 silent-break trap): all pass.
+
+**X — cut.** Regional dialect navigator is "cut first if short on time" per the plan. With a hard deadline
+tonight and every must-do + should-do phase already clean, X (legacy .doc parsing, serves only 15%-weight
+criteria) is the lowest leverage. Deliberately not attempted; recorded rather than silently skipped.
+
+Data now: 76,649 words / 40,681 entries / 59,542 graph entities / 73,020 triples. Full detail + raw numbers
+in `VERIFY_R10.md`. The product now demonstrably uses three of the four official assigned data groups plus
+the cross-edition timeline — Problem Fit (25%) + Innovation (20%) = the 45% that matters most.
