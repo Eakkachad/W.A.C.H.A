@@ -232,7 +232,31 @@ fn route(path: &str, engine: &Engine, rindex: &wacha::reverse::ReverseIndex, rhy
         let json = register_json(engine, rindex, &reg, &query);
         return ("200 OK", "application/json; charset=utf-8", json.into_bytes());
     }
+    if let Some(qs) = path.strip_prefix("/api/intent") {
+        let query = extract_query_param(qs, "q").unwrap_or_default();
+        let json = intent_json(engine, &query);
+        return ("200 OK", "application/json; charset=utf-8", json.into_bytes());
+    }
     ("404 Not Found", "text/plain; charset=utf-8", b"not found".to_vec())
+}
+
+/// Intent JSON: `{ "query", "intent" (mode key), "label", "reason", "confidence" }`.
+/// Deterministic router (R12) — layer-1 rules, then thai2fit centroid fallback.
+fn intent_json(engine: &Engine, query: &str) -> String {
+    let g = engine.classify_intent_full(query);
+    let conf = match g.confidence {
+        wacha::intent::Confidence::Rule => "rule",
+        wacha::intent::Confidence::Vector => "vector",
+        wacha::intent::Confidence::Default => "default",
+    };
+    let mut s = String::from("{");
+    s.push_str(&format!("\"query\":{},", json_str(query)));
+    s.push_str(&format!("\"intent\":{},", json_str(g.intent.mode_key())));
+    s.push_str(&format!("\"label\":{},", json_str(g.intent.thai_label())));
+    s.push_str(&format!("\"reason\":{},", json_str(&g.reason)));
+    s.push_str(&format!("\"confidence\":{}", json_str(conf)));
+    s.push('}');
+    s
 }
 
 /// Rhyme JSON: `{ "query", "rhymes":[word,...] }` (loose rhyme, ranked by freq).

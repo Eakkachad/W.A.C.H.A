@@ -35,6 +35,17 @@
     background: var(--panel2); padding: 1px 6px; border-radius: 5px; cursor: pointer;
   }
   .menu-lead { text-align: center; font-size: 1.35rem; font-weight: 700; margin: 22px 0 16px; }
+  .intentbox { display: flex; gap: 8px; margin: 0 0 12px; }
+  .intentbox input { flex: 1; padding: 14px 16px; font-size: 1.1rem; border-radius: 12px;
+    border: 1px solid var(--accent); background: var(--panel); color: var(--ink); }
+  .intentbox input:focus { outline: 2px solid var(--accent); }
+  .intentbox button { padding: 0 22px; font-size: 1.05rem; border: 0; border-radius: 12px;
+    background: var(--accent); color: #10142b; font-weight: 700; cursor: pointer; }
+  .intent-or { text-align: center; color: var(--muted); font-size: .85rem; margin: 6px 0 14px; }
+  .intent-confirm { background: #1c2740; border: 1px solid var(--accent2); border-radius: 12px;
+    padding: 10px 14px; margin: 0 0 14px; font-size: .95rem; }
+  .intent-confirm .why { color: var(--muted); font-size: .82rem; margin-top: 4px; }
+  .intent-confirm .alt { color: var(--accent); cursor: pointer; margin: 0 4px; text-decoration: underline; }
   .menu-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   @media (max-width: 560px) { .menu-grid { grid-template-columns: 1fr; } }
   .job { text-align: left; padding: 16px 18px; border-radius: 14px; cursor: pointer;
@@ -140,6 +151,11 @@
 <main>
   <div id="jobmenu">
     <div class="menu-lead">วันนี้อยากให้ภาษาไทยทำอะไรให้คุณดี?</div>
+    <div class="intentbox">
+      <input id="iq" type="text" placeholder="พิมพ์อะไรก็ได้ — คำ, สิ่งที่อยากได้, หรือคำถาม (เช่น “อยากตั้งชื่อลูกให้แปลว่าดวงอาทิตย์”)" autofocus>
+      <button id="igo">ค้นหา</button>
+    </div>
+    <div class="intent-or">— หรือเลือกงานที่ต้องการเอง —</div>
     <div class="menu-grid">
       <button class="job" data-mode="naming"><b>ตั้งชื่อ</b><span>ตั้งชื่อลูก คนรัก สัตว์เลี้ยง บริษัท ผ่านรากศัพท์จริง ไม่ใช่เลขศาสตร์</span></button>
       <button class="job" data-mode="writing"><b>หาคำให้ใช่กับสิ่งที่กำลังเขียน</b><span>กรองระดับภาษา (ทางการ/ราชาศัพท์/ปาก) + หาคำคล้องจอง</span></button>
@@ -737,6 +753,64 @@ document.querySelectorAll(".job").forEach(btn =>
 );
 $("#menuback").addEventListener("click", showMenu);
 $("#general").addEventListener("click", () => setMode("general"));
+
+// ── R12 INTENT-3: free-text front door ───────────────────────────────────────
+// One box, no card required: detect intent, route to that mode's render path, and
+// show a dismissable "we think you want X — right?" line with one-tap alternatives.
+// The 5 job cards remain as an explicit override (unchanged above).
+const ALL_MODES = ["naming", "writing", "specialized", "roots", "translit", "general"];
+
+// Run a mode's default action on the query (reusing existing render paths).
+function runModeAction(mode, query) {
+  qEl.value = query;
+  if (mode === "translit") { return translitSearch(query); }
+  return lookup(query);   // naming/writing/specialized/roots/general all render the
+                          // reordered unified profile via lookup() (mode set already)
+}
+
+// Prepend the confirmation line to whatever the action rendered.
+function showIntentConfirm(guess, query) {
+  const label = guess.label || "ค้นหาทั่วไป";
+  const others = ALL_MODES.filter(m => m !== guess.intent && m !== "general");
+  const alts = others.map(m =>
+    `<span class="alt" data-mode="${m}" data-q="${esc(query)}">${esc(MODES[m].label.split(" ")[0])}</span>`
+  ).join("");
+  const bar = document.createElement("div");
+  bar.className = "intent-confirm";
+  bar.innerHTML = `เราคิดว่าคุณอยาก <b>${esc(label)}</b> — ใช่ไหม? `
+    + `<span class="why">(${esc(guess.reason || "")}${guess.confidence === "vector" ? " · เดาจากความหมาย" : ""})</span>`
+    + `<div>ไม่ใช่? ลอง: ${alts} <span class="alt" data-mode="general" data-q="${esc(query)}">ค้นหาทั่วไป</span></div>`;
+  resultEl.prepend(bar);
+  bar.querySelectorAll(".alt").forEach(el =>
+    el.addEventListener("click", async () => {
+      setMode(el.dataset.mode);
+      await runModeAction(el.dataset.mode, el.dataset.q);
+      // re-show a (now user-chosen) confirm-style line so alternatives stay reachable
+      showIntentConfirm({ intent: el.dataset.mode, label: MODES[el.dataset.mode].label, reason: "คุณเลือกเอง", confidence: "rule" }, el.dataset.q);
+    })
+  );
+}
+
+async function detectIntent(query) {
+  query = (query || "").trim();
+  if (!query) return;
+  try {
+    const res = await fetch(`/api/intent?q=${encodeURIComponent(query)}`);
+    const g = await res.json();
+    const mode = MODES[g.intent] ? g.intent : "general";
+    setMode(mode);           // reveals the mode UI + reorders sections
+    await runModeAction(mode, query);
+    showIntentConfirm(g, query);
+  } catch (e) {
+    // graceful fallback: behave like general search, never a blank/error page
+    setMode("general");
+    runModeAction("general", query);
+  }
+}
+
+$("#igo").addEventListener("click", () => detectIntent($("#iq").value));
+$("#iq").addEventListener("keydown", (e) => { if (e.key === "Enter") detectIntent($("#iq").value); });
+
 // Boot into the job menu (the front door). ?mode=… deep-links a specific door.
 (function boot() {
   const m = new URLSearchParams(location.search).get("mode");
