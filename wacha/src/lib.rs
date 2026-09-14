@@ -24,6 +24,7 @@ pub mod graph;
 pub mod import;
 pub mod learner;
 pub mod relations;
+pub mod reverse;
 pub mod segmenter;
 pub mod symbol_trie;
 pub mod tcc;
@@ -399,6 +400,25 @@ impl Engine {
     /// S1b trie differential to reconstruct the exact segmenter vocab union.
     pub fn dict_headwords(&self) -> Vec<String> {
         self.dict.words().map(|s| s.to_string()).collect()
+    }
+
+    /// Build the reverse-dictionary index (Phase C): segment every entry's
+    /// primary definition with THIS engine's own segmenter and index it with
+    /// BM25. Deterministic. See [`crate::reverse::ReverseIndex`].
+    pub fn build_reverse_index(&self) -> crate::reverse::ReverseIndex {
+        let defs = self.export_definitions(); // (hw, def, src), sorted
+        let pairs: Vec<(String, String)> = defs.into_iter().map(|(h, d, _)| (h, d)).collect();
+        let seg = &self.segmenter;
+        crate::reverse::ReverseIndex::build(
+            pairs.iter().map(|(h, d)| (h.as_str(), d.as_str())),
+            |s| seg.segment_words(s),
+        )
+    }
+
+    /// Segment a query with this engine's segmenter (for reverse search, so the
+    /// query and the index share one tokenizer).
+    pub fn segment_words(&self, text: &str) -> Vec<String> {
+        self.segmenter.segment_words(text)
     }
 
     /// Export (headword, primary_definition, source_label) for every entry with

@@ -90,6 +90,17 @@ fn main() {
     );
 
     let engine = Arc::new(engine);
+    // Reverse-dictionary index (Phase C) — built once at startup, shared.
+    let t_rev = std::time::Instant::now();
+    let rindex = engine.build_reverse_index();
+    println!(
+        "reverse index: {} docs / {} terms / ~{:.2} MB in {} ms",
+        rindex.doc_count(),
+        rindex.term_count(),
+        rindex.approx_bytes() as f64 / 1e6,
+        t_rev.elapsed().as_millis()
+    );
+    let rindex = Arc::new(rindex);
     let addr = format!("{host}:{port}");
     let listener = match TcpListener::bind(&addr) {
         Ok(l) => l,
@@ -110,8 +121,9 @@ fn main() {
         match stream {
             Ok(stream) => {
                 let engine = Arc::clone(&engine);
+                let rindex = Arc::clone(&rindex);
                 thread::spawn(move || {
-                    if let Err(e) = handle(stream, &engine) {
+                    if let Err(e) = handle(stream, &engine, &rindex) {
                         eprintln!("connection error: {e}");
                     }
                 });
@@ -121,7 +133,7 @@ fn main() {
     }
 }
 
-fn handle(mut stream: TcpStream, engine: &Engine) -> std::io::Result<()> {
+fn handle(mut stream: TcpStream, engine: &Engine, rindex: &wacha::reverse::ReverseIndex) -> std::io::Result<()> {
     let mut reader = BufReader::new(stream.try_clone()?);
 
     // Parse the request line: METHOD PATH HTTP/1.1
@@ -155,7 +167,7 @@ fn handle(mut stream: TcpStream, engine: &Engine) -> std::io::Result<()> {
     }
 
     // Route.
-    let (status, content_type, body) = route(path, engine);
+    let (status, content_type, body) = route(path, engine, rindex);
     let response = format!(
         "HTTP/1.1 {status}\r\n\
          Content-Type: {content_type}\r\n\
@@ -171,7 +183,7 @@ fn handle(mut stream: TcpStream, engine: &Engine) -> std::io::Result<()> {
     Ok(())
 }
 
-fn route(path: &str, engine: &Engine) -> (&'static str, &'static str, Vec<u8>) {
+fn route(path: &str, engine: &Engine, rindex: &wacha::reverse::ReverseIndex) -> (&'static str, &'static str, Vec<u8>) {
     if path == "/" || path.starts_with("/?") {
         return ("200 OK", "text/html; charset=utf-8", INDEX_HTML.as_bytes().to_vec());
     }
@@ -183,7 +195,35 @@ fn route(path: &str, engine: &Engine) -> (&'static str, &'static str, Vec<u8>) {
         let json = lookup_json(engine, &query);
         return ("200 OK", "application/json; charset=utf-8", json.into_bytes());
     }
+    if let Some(qs) = path.strip_prefix("/api/reverse") {
+        let query = extract_query_param(qs, "q").unwrap_or_default();
+        let json = reverse_json(engine, rindex, &query);
+        return ("200 OK", "application/json; charset=utf-8", json.into_bytes());
+    }
     ("404 Not Found", "text/plain; charset=utf-8", b"not found".to_vec())
+}
+
+/// Reverse-dictionary JSON: `{ "query", "hits":[{ "word", "score", "matched":[] }] }`.
+fn reverse_json(engine: &Engine, rindex: &wacha::reverse::ReverseIndex, query: &str) -> String {
+    let hits = rindex.search(query, 8, |s| engine.segment_words(s));
+    let mut s = String::from("{");
+    s.push_str(&format!("\"query\":{},", json_str(query)));
+    s.push_str("\"hits\":[");
+    for (i, h) in hits.iter().enumerate() {
+        if i > 0 {
+            s.push(',');
+        }
+        s.push_str(&format!("{{\"word\":{},\"score\":{:.4},\"matched\":[", json_str(&h.word), h.score));
+        for (j, m) in h.matched.iter().enumerate() {
+            if j > 0 {
+                s.push(',');
+            }
+            s.push_str(&json_str(m));
+        }
+        s.push_str("]}");
+    }
+    s.push_str("]}");
+    s
 }
 
 /// Extract and URL-decode a `key=value` query parameter from a `?a=b&c=d` string.

@@ -111,9 +111,11 @@
   <div class="search">
     <input id="q" type="text" placeholder="พิมพ์คำภาษาไทย เช่น แมว, ครู, อ่าน…" autofocus>
     <button id="go">ค้นหา</button>
+    <button id="rev" title="ค้นคำจากคำอธิบายความหมาย (reverse dictionary)">ค้นจากความหมาย</button>
   </div>
   <div class="hint">
     ลอง: <code>แมว</code> <code>ครู</code> <code>อ่าน</code> <code>สุนัข</code> <code>พจนานุกรม</code>
+    · ค้นจากความหมาย: <code>สัตว์เลี้ยงเฝ้าบ้าน</code> <code>ยานพาหนะที่มีสี่ล้อ</code>
   </div>
   <div id="result"></div>
 </main>
@@ -157,9 +159,40 @@ async function lookup(word) {
   }
 }
 
+async function reverseSearch(desc) {
+  desc = (desc || "").trim();
+  if (!desc) { resultEl.innerHTML = ""; return; }
+  resultEl.innerHTML = `<div class="card"><span class="empty">กำลังค้นจากความหมาย “${esc(desc)}”…</span></div>`;
+  try {
+    const res = await fetch(`/api/reverse?q=${encodeURIComponent(desc)}`);
+    const data = await res.json();
+    let html = `<div class="card"><h2>ค้นจากความหมาย (reverse dictionary): “${esc(desc)}”</h2>`;
+    if (!data.hits || !data.hits.length) {
+      html += `<span class="empty">ไม่พบคำที่ตรงกับความหมายนี้</span></div>`;
+      resultEl.innerHTML = html;
+      return;
+    }
+    html += `<ul>`;
+    for (let i = 0; i < data.hits.length; i++) {
+      const h = data.hits[i];
+      const m = (h.matched || []).map(x => `<span class="badge src">${esc(x)}</span>`).join(" ");
+      html += `<li>${i+1}. <b class="word-link" data-w="${esc(h.word)}">${esc(h.word)}</b>`
+        + ` <span class="meta">คะแนน ${h.score.toFixed(2)}</span>`
+        + `<div class="edge">↳ ตรงคำ: ${m}</div></li>`;
+    }
+    html += `</ul><div class="legend">อันดับด้วย BM25 (โค้ดของเราเอง) เหนือดัชนีผกผันของนิยามที่ตัดคำด้วยเครื่องตัดคำของเรา · คลิกคำเพื่อเปิดความหมาย</div></div>`;
+    resultEl.innerHTML = html;
+    // Clicking a hit opens its forward entry.
+    resultEl.querySelectorAll(".word-link").forEach(el =>
+      el.addEventListener("click", () => { qEl.value = el.dataset.w; lookup(el.dataset.w); })
+    );
+  } catch (e) {
+    resultEl.innerHTML = `<div class="card"><span class="empty">เกิดข้อผิดพลาด: ${esc(e)}</span></div>`;
+  }
+}
+
 function render(d) {
   let html = "";
-
   // Segmentation
   html += `<div class="card"><h2>การตัดคำ (segmentation)</h2><div class="seg">`;
   if (d.segmentation.length === 0) {
@@ -353,6 +386,7 @@ function buildGraphSvg(d) {
 }
 
 $("#go").addEventListener("click", () => lookup(qEl.value));
+$("#rev").addEventListener("click", () => reverseSearch(qEl.value));
 qEl.addEventListener("keydown", (e) => { if (e.key === "Enter") lookup(qEl.value); });
 document.querySelectorAll(".hint code").forEach(c => {
   c.addEventListener("click", () => { qEl.value = c.textContent; lookup(c.textContent); });

@@ -72,6 +72,14 @@ fn main() {
                 }
                 print_pair_debug(&engine, &rest[0], &rest[1]);
             }
+            "reverse" => {
+                let q = rest.join(" ");
+                if q.is_empty() {
+                    eprintln!("usage: wacha reverse <คำอธิบายความหมาย>  (reverse dictionary)");
+                    std::process::exit(2);
+                }
+                print_reverse(&engine, &q);
+            }
             "field" => {
                 let english = rest.join(" ");
                 if english.is_empty() {
@@ -304,8 +312,35 @@ fn print_field(data_dir: Option<&str>, english: &str) {
     }
 }
 
-/// V1 diagnostic (`wacha probe <q> <cand>`): print the exact quantities the
-/// ⚠ flag is derived from for a single pair — the union source set, max shared
+/// Reverse dictionary (`wacha reverse <meaning>`): build the BM25 index over
+/// segmented definitions (timed), then print the top-5 headwords with the query
+/// tokens that matched. Reports index build time + size.
+fn print_reverse(engine: &Engine, query: &str) {
+    use std::time::Instant;
+    let t = Instant::now();
+    let idx = engine.build_reverse_index();
+    let build_ms = t.elapsed().as_secs_f64() * 1000.0;
+    eprintln!(
+        "[reverse index] {} docs, {} terms, ~{:.2} MB, built in {:.0} ms",
+        idx.doc_count(), idx.term_count(), idx.approx_bytes() as f64 / 1e6, build_ms
+    );
+    let t = Instant::now();
+    let hits = idx.search(query, 5, |s| engine.segment_words(s));
+    let q_ms = t.elapsed().as_secs_f64() * 1000.0;
+    println!("\n🔎 ค้นจากความหมาย: “{query}”  (query {q_ms:.2} ms)");
+    if hits.is_empty() {
+        println!("  (ไม่พบคำที่ตรงกับความหมายนี้ — no match)");
+        return;
+    }
+    for (i, h) in hits.iter().enumerate() {
+        println!(
+            "  {}. {}  (score {:.3})  ↳ ตรงคำ: {}",
+            i + 1, h.word, h.score, h.matched.join(", ")
+        );
+    }
+}
+
+/// V1 diagnostic (`wacha probe <q> <cand>`): print the exact quantities the/// ⚠ flag is derived from for a single pair — the union source set, max shared
 /// group size, resulting tier, measured-precision band, and whether the flag
 /// warns — plus a per-shared-group breakdown. Lets the flag be audited directly.
 fn print_pair_debug(engine: &Engine, query: &str, cand: &str) {

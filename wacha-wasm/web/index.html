@@ -46,6 +46,7 @@
 <main>
   <div class="status" id="status">กำลังโหลดเครื่องยนต์ WebAssembly…</div>
   <input id="q" placeholder="พิมพ์คำหรือข้อความไทย เช่น ครู, บ้าน, เด็กน้อยรักสุนัข" disabled autocomplete="off">
+  <button id="rev" disabled title="ค้นคำจากคำอธิบายความหมาย (offline reverse dictionary)">ค้นจากความหมาย</button>
   <div class="note">
     เดโมนี้ทำงาน<b>ออฟไลน์ทั้งหมดในเบราว์เซอร์</b> (WASM): ตัดคำจากรายการคำ 62,106 คำ (CC0) +
     <b>นิยาม 29,601 คำ</b> (Kaikki/Wiktionary CC BY-SA + seed) + ความสัมพันธ์จาก seed ที่ตรวจมือ
@@ -99,6 +100,15 @@ function render(d){
   h += '</div>';
   document.getElementById('result').innerHTML = h;
 }
+function renderReverse(d){
+  let h = `<div class="card"><h2>ค้นจากความหมาย (offline reverse dictionary): “${esc(d.query)}”</h2>`;
+  if(!d.hits || !d.hits.length){ h += '<span class="empty">ไม่พบคำที่ตรงกับความหมายนี้</span></div>'; document.getElementById('result').innerHTML=h; return; }
+  h += '<ul>' + d.hits.map((r,i)=>{
+    const m = (r.matched||[]).map(x=>`<span class="badge seed">${esc(x)}</span>`).join(' ');
+    return `<li>${i+1}. <b>${esc(r.word)}</b> <span class="prov">คะแนน ${r.score.toFixed(2)}</span><div class="edge">↳ ตรงคำ: ${m}</div></li>`;
+  }).join('') + '</ul><div class="note">อันดับด้วย BM25 (โค้ดของเราเอง) เหนือดัชนีผกผันของนิยามที่ตัดคำด้วยเครื่องตัดคำของเรา — ทำงานออฟไลน์ในเบราว์เซอร์</div></div>';
+  document.getElementById('result').innerHTML = h;
+}
 async function boot(){
   const t0 = performance.now();
   const resp = await fetch('wacha_wasm.wasm');
@@ -112,6 +122,12 @@ async function boot(){
   document.getElementById('status').textContent = `พร้อมใช้ · ${wc.toLocaleString()} คำ · โหลด+สร้างเครื่องยนต์ ${dt} ms · ไม่มีการต่อเน็ตอีก`;
   const q = document.getElementById('q');
   q.disabled = false; q.focus();
+  const revBtn = document.getElementById('rev');
+  revBtn.disabled = false;
+  revBtn.addEventListener('click', () => {
+    const v = q.value.trim(); if(!v){ document.getElementById('result').innerHTML=''; return; }
+    renderReverse(JSON.parse(call(ex.wacha_reverse, v)));
+  });
   let timer;
   q.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(() => {
     const v = q.value.trim(); if(!v){ document.getElementById('result').innerHTML=''; return; }

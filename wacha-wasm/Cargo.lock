@@ -248,6 +248,7 @@ dependencies = [
 name = "wacha-wasm"
 version = "0.1.0"
 dependencies = [
+ "postcard",
  "wacha",
 ]
 
