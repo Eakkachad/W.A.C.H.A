@@ -46,6 +46,11 @@ data/thai2fit_overlap.vec.blob
 # committed raw.
 data/thaidict_script_ref/
 
+# WACHA-specific frontend redesign staged from the same external repo's
+# UIdesign/ folder (R13) — the real port lives in webapp/ (Astro project),
+# this is just the reference copy of the raw design assets.
+data/uidesign_ref/
+
 # WASM build artifacts (regenerate via wacha-wasm/web/build.sh)
 wacha-wasm/target/
 wacha-wasm/web/wacha_wasm.wasm
