@@ -455,6 +455,13 @@ impl Entry {
     pub fn primary_pos_marker(&self) -> Option<&'static str> {
         self.senses.first().and_then(|s| s.pos).map(|p| p.marker())
     }
+
+    /// Highest merge-priority among this entry's senses' sources (RID=5 … LEXiTRON=1).
+    /// A headword-only entry (no senses) has priority 0 so it never shadows a
+    /// real definition. Used by `Dictionary::get` to pick which homograph wins.
+    pub fn best_source_priority(&self) -> u8 {
+        self.senses.iter().map(|s| s.provenance.source.priority()).max().unwrap_or(0)
+    }
 }
 
 // ── Dictionary store ─────────────────────────────────────────────────────────
@@ -483,10 +490,29 @@ impl Dictionary {
 
     /// Look up by headword (returns the first homograph if several).
     pub fn get(&self, word: &str) -> Option<&Entry> {
-        // Prefer the no-homograph key, else the first matching headword.
-        self.entries
-            .get(&(word.to_string(), None))
-            .or_else(|| self.order.iter().find(|(h, _)| h == word).and_then(|k| self.entries.get(k)))
+        // Prefer the highest-priority source among all entries that share this
+        // headword (RID > HumanSeed > CoinedWord > Kaikki > LEXiTRON). This
+        // matters because RID lists many common words ONLY as homographs
+        // (กก ๑/๒/๓, กรรม ๑/๒, …) while Kaikki has a plain no-homograph entry
+        // for the same word — a naive "no-homograph key first" lookup shadowed
+        // ~644 real RID headwords behind Kaikki (measured, R10 Phase R2). Ties
+        // (same priority) keep the exact no-homograph key, else insertion order.
+        let mut best: Option<&Entry> = None;
+        let mut best_pri = 0u8;
+        for (h, homo) in self.order.iter().filter(|(h, _)| h == word) {
+            if let Some(e) = self.entries.get(&(h.clone(), *homo)) {
+                let pri = e.best_source_priority();
+                if best.is_none()
+                    || pri > best_pri
+                    // on a tie, prefer the plain no-homograph entry for stability
+                    || (pri == best_pri && homo.is_none())
+                {
+                    best = Some(e);
+                    best_pri = pri;
+                }
+            }
+        }
+        best
     }
 
     /// All headwords (deduplicated), in insertion order.
@@ -700,5 +726,50 @@ mod tests {
             .relations.iter().find(|(_, t)| t == "ครู")
             .expect("นักเรียน should still relate to ครู");
         assert_eq!(*rel, Relation::RelatedTo);
+    }
+
+    #[test]
+    fn get_prefers_highest_priority_source_across_homographs() {
+        // R10 Phase R2 regression: RID lists many common words ONLY as homographs
+        // (กก ๑/๒/๓) while Kaikki has a plain no-homograph entry. `get` must return
+        // the RID homograph (priority 5), not the shadowing Kaikki entry (priority 2).
+        let mut dict = Dictionary::new();
+        // Kaikki plain entry (inserted first; lower priority).
+        let mut kaikki = Entry::headword_only("กก");
+        kaikki.senses.push(Sense {
+            pos: Some(Pos::Nam),
+            subject: None,
+            register: None,
+            definition: "kaikki gloss".to_string(),
+            examples: vec![],
+            classifiers: vec![],
+            provenance: Provenance {
+                source: Source::Kaikki,
+                license: License::CcBySa,
+                confidence: RelationConfidence::Unverified,
+            },
+        });
+        dict.insert(kaikki);
+        // RID homograph entry (higher priority, but non-None key).
+        let mut rid = Entry::headword_only("กก");
+        rid.homograph = Some(1);
+        rid.senses.push(Sense {
+            pos: Some(Pos::Nam),
+            subject: None,
+            register: None,
+            definition: "rid definition".to_string(),
+            examples: vec![],
+            classifiers: vec![],
+            provenance: Provenance {
+                source: Source::Rid,
+                license: License::OrstEducational,
+                confidence: RelationConfidence::Confirmed,
+            },
+        });
+        dict.insert(rid);
+
+        let got = dict.get("กก").expect("กก present");
+        assert_eq!(got.primary_definition(), Some("rid definition"));
+        assert_eq!(got.senses[0].provenance.source, Source::Rid);
     }
 }

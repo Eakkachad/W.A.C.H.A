@@ -49,14 +49,35 @@ impl Importer for RidImporter {
         }
 
         let mut entries = Vec::new();
+        let mut total_blocks = 0usize;
+        let mut n_errors = 0usize;
+        let mut skipped: Vec<String> = Vec::new();
         for text in &texts {
             for block in split_blocks(text) {
+                total_blocks += 1;
                 match Self::parse_entry(&block) {
                     Ok(Some(e)) => entries.push(e),
                     Ok(None) => {}
-                    Err(e) => return Err(format!("RID parse error in block:\n{block}\n-> {e}").into()),
+                    Err(e) => {
+                        n_errors += 1;
+                        if skipped.len() < 5 {
+                            skipped.push(format!("{}\n-> {e}", block.lines().next().unwrap_or("")));
+                        }
+                    }
                 }
             }
+        }
+        if total_blocks > 0 && n_errors * 20 > total_blocks {
+            // >5% of blocks unparseable — treat as a real format mismatch.
+            return Err(format!(
+                "RID load: {n_errors}/{total_blocks} blocks failed to parse (>5%) — \
+                 likely a grammar mismatch. First failures:\n{}",
+                skipped.join("\n")
+            )
+            .into());
+        }
+        if n_errors > 0 {
+            eprintln!("RID: skipped {n_errors}/{total_blocks} malformed blocks (kept {} entries)", entries.len());
         }
         Ok(entries)
     }
@@ -100,14 +121,20 @@ impl RidImporter {
                     }
                 }
             } else if let Some(rest) = line.strip_prefix("SENSE:") {
-                let (sense, xref) = parse_sense(rest.trim())?;
+                let (sense, xref, parenthetical) = parse_sense(rest.trim())?;
                 if let Some(x) = xref {
                     if !see_also.contains(&x) {
                         see_also.push(x.clone());
                     }
-                    let rel = (Relation::SeeAlso, x);
-                    if !relations.contains(&rel) {
-                        relations.push(rel);
+                    // Only a PRIMARY (non-parenthetical) reference becomes a graph
+                    // SeeAlso relation. Parenthetical "(ดู X)" is a supplementary
+                    // pointer — kept in see_also for display, but not a ranked
+                    // relation competing with audited synonyms (R10 Phase R2).
+                    if !parenthetical {
+                        let rel = (Relation::SeeAlso, x);
+                        if !relations.contains(&rel) {
+                            relations.push(rel);
+                        }
                     }
                 }
                 senses.push(sense);
@@ -191,7 +218,7 @@ fn parse_etymology(s: &str) -> Vec<Etymology> {
 
 /// Parse a SENSE line: `[POS] (สาขาวิชา) {register} (๑) <def> [ดู <xref>]`.
 /// Returns the Sense and an optional `ดู` cross-reference target.
-fn parse_sense(s: &str) -> Result<(Sense, Option<String>), ImportError> {
+fn parse_sense(s: &str) -> Result<(Sense, Option<String>, bool), ImportError> {
     let mut rest = s.trim();
     let mut pos: Option<Pos> = None;
     let mut subject: Option<Subject> = None;
@@ -227,16 +254,57 @@ fn parse_sense(s: &str) -> Result<(Sense, Option<String>), ImportError> {
         }
     }
 
-    // Trailing `ดู <xref>` cross-reference.
+    // `ดู <xref>` cross-reference. Two legitimate shapes in the real data:
+    //   (a) pure redirect  — the sense IS "ดู X" (no standalone definition), and
+    //   (b) trailing ref   — "def... ดู X" at the END of the sense.
+    // We DON'T treat every mid-prose "ดู" as a reference (it is also the ordinary
+    // verb "to look"); we only accept "ดู" whose following FIRST token is a clean
+    // Thai headword and take just that token (dropping the multi-target / stray-
+    // punctuation tail that used to inject garbage like "ยาม)." — measured, R10).
     let mut xref = None;
+    // Whether the reference was PARENTHETICAL "(ดู X)" — a supplementary "compare"
+    // pointer — vs a primary redirect. Parenthetical refs are shown in the entry
+    // (see_also) but do NOT become first-class graph relations that compete with
+    // audited synonyms in the ranked related-words list (R10 Phase R2: RID
+    // homographs like ครู๒ "(ดู ยาม)" otherwise displaced ครู→ผู้สอน from top-5).
+    let mut xref_parenthetical = false;
     if let Some(idx) = rest.find("ดู ") {
-        let x = rest[idx + "ดู ".len()..].trim();
-        // strip a trailing sense-number paren like "(๑)"
-        let x = x.split('(').next().unwrap_or(x).trim().to_string();
-        if !x.is_empty() {
-            xref = Some(x);
+        // Parenthetical if the char just before "ดู" is '(' (ignoring a space).
+        let before = rest[..idx].trim_end();
+        xref_parenthetical = before.ends_with('(');
+        let tail = rest[idx + "ดู ".len()..].trim();
+        // First token = up to the first separator (space, comma, paren, ., ;).
+        // A trailing hyphen is part of the ref (RID prefix-forms: กฤด-, กฐิน-).
+        let first: String = tail
+            .chars()
+            .take_while(|c| {
+                !c.is_whitespace()
+                    && *c != ','
+                    && *c != '('
+                    && *c != ')'
+                    && *c != '.'
+                    && *c != ';'
+            })
+            .collect();
+        let first = first.trim();
+        let core = first.trim_end_matches('-');
+        // Accept only a real Thai headword (Thai letters + optional trailing
+        // hyphen, no numerals/markup, ≥2 chars).
+        let is_thai_word = !core.is_empty()
+            && core.chars().count() >= 2
+            && core.chars().all(|c| {
+                ('\u{0E00}'..='\u{0E7F}').contains(&c) && !('๐'..='๙').contains(&c)
+            });
+        if is_thai_word {
+            xref = Some(first.to_string());
+            // Drop the "ดู …" clause from the definition; a pure redirect (idx==0)
+            // then leaves an empty definition, which is the intended redirect sense.
+            rest = rest[..idx].trim();
+            // For a parenthetical "(ดู X)", also drop the now-dangling "(".
+            if xref_parenthetical {
+                rest = rest.trim_end_matches('(').trim();
+            }
         }
-        rest = rest[..idx].trim();
     }
 
     let definition = rest.trim().to_string();
@@ -259,6 +327,7 @@ fn parse_sense(s: &str) -> Result<(Sense, Option<String>), ImportError> {
             },
         },
         xref,
+        xref_parenthetical,
     ))
 }
 
