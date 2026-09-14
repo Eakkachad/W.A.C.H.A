@@ -543,6 +543,15 @@ fn lookup_json(engine: &Engine, query: &str) -> String {
                 s.push_str(&json_str(sub));
             }
             s.push_str("]");
+            // R12 BRIDGE — English cognates via PIE (corroborated only; may be empty)
+            s.push_str(",\"english_cognates\":[");
+            for (i, (word, pie)) in e.english_cognates.iter().enumerate() {
+                if i > 0 {
+                    s.push(',');
+                }
+                s.push_str(&format!("{{\"word\":{},\"pie_root\":{}}}", json_str(word), json_str(pie)));
+            }
+            s.push_str("]");
             s.push_str("},");
         }
         None => s.push_str("\"entry\":null,"),

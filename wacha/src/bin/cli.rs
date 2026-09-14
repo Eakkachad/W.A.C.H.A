@@ -703,6 +703,15 @@ fn print_lookup(_engine: &Engine, r: &Lookup, query: &str) {
             if !e.sub_entries.is_empty() {
                 println!("ลูกคำ: {}", e.sub_entries.join(", "));
             }
+            if !e.english_cognates.is_empty() {
+                let words: Vec<String> = e.english_cognates.iter().map(|(w, _)| w.clone()).collect();
+                let pie = e.english_cognates.first().map(|(_, p)| p.clone()).unwrap_or_default();
+                println!(
+                    "คำอังกฤษที่เป็นรากเดียวกัน (English cognates via PIE {pie}): {}",
+                    words.join(", ")
+                );
+                println!("  (ตรวจสอบรากศัพท์กับ Kaikki/Wiktionary แล้ว · เฉพาะคำที่มีรากอินโด-ยูโรเปียน)");
+            }
             if !e.examples.is_empty() {
                 println!("\nตัวอย่างการใช้ (usage examples):");
                 for ex in e.examples.iter().take(3) {

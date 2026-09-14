@@ -120,6 +120,10 @@ pub struct EntryView {
     /// Pronunciation respelling (e.g. "[กอ]"), if the entry carries one — the
     /// input to the R11 sound-symbolism scorer. May be empty.
     pub pronunciation: Option<String>,
+    /// R12 BRIDGE — corroborated English cognates (word, pie_root display) for
+    /// the minority of words with Sanskrit/Pali→PIE ancestry. Empty for the
+    /// majority (native Kra-Dai). Each entry survived Kaikki cross-verification.
+    pub english_cognates: Vec<(String, String)>,
 }
 
 impl Engine {
@@ -374,6 +378,43 @@ impl Engine {
             }
         }
         let entries = crate::import::merge(source_lists);
+        // R12 BRIDGE-2 — attach corroborated English cognates (data/english_cognates.tsv,
+        // the BRIDGE-1 honesty-gate output: only Kaikki-corroborated seed entries) to
+        // their matching headwords. TSV: thai \t pie_root \t lang \t c1|c2|.. \t kaikki_etym.
+        let mut entries = entries;
+        if let Ok(txt) = std::fs::read_to_string(dir.join("english_cognates.tsv")) {
+            use std::collections::HashMap;
+            let mut by_word: HashMap<String, Vec<crate::dictionary::EnglishCognate>> = HashMap::new();
+            for line in txt.lines() {
+                let cols: Vec<&str> = line.split('\t').collect();
+                if cols.len() < 5 {
+                    continue;
+                }
+                let (thai, pie, cognates, kaikki) = (cols[0].trim(), cols[1].trim(), cols[3].trim(), cols[4].trim());
+                let v: Vec<crate::dictionary::EnglishCognate> = cognates
+                    .split('|')
+                    .filter(|c| !c.is_empty())
+                    .map(|c| crate::dictionary::EnglishCognate {
+                        word: c.to_string(),
+                        pie_root: pie.to_string(),
+                        corroboration: kaikki.to_string(),
+                    })
+                    .collect();
+                if !v.is_empty() {
+                    by_word.insert(thai.to_string(), v);
+                }
+            }
+            let mut attached = 0usize;
+            for e in &mut entries {
+                if let Some(cogs) = by_word.get(&e.headword) {
+                    e.english_cognates = cogs.clone();
+                    attached += 1;
+                }
+            }
+            if attached > 0 {
+                log(&format!("attached English cognates to {attached} headwords (BRIDGE, Kaikki-corroborated)"));
+            }
+        }
         // Extend the segmenter vocab with any entry headwords not already present.
         for e in &entries {
             word_list.push(e.headword.clone());
@@ -842,6 +883,11 @@ impl Engine {
                     .collect(),
                 sub_entries: e.sub_entries.clone(),
                 pronunciation: e.pronunciation.clone(),
+                english_cognates: e
+                    .english_cognates
+                    .iter()
+                    .map(|c| (c.word.clone(), c.pie_root.clone()))
+                    .collect(),
             }
         });
         let related = self.relations.related(query, top_k);
@@ -961,11 +1007,34 @@ mod tests {
             sub_entries: vec!["ปิตุภูมิ".to_string(), "ปิตุลา".to_string()],
             see_also: vec![],
             relations: vec![],
+            english_cognates: vec![],
         };
         let engine = Engine::build(["ปิตุ"], vec![entry], None);
         let view = engine.lookup("ปิตุ", 5).entry.expect("entry present");
         assert_eq!(view.etymology.len(), 2, "etymology must reach EntryView");
         assert_eq!(view.etymology[0], ("ป.".to_string(), "ปิตา".to_string()));
         assert_eq!(view.sub_entries, vec!["ปิตุภูมิ".to_string(), "ปิตุลา".to_string()]);
+    }
+
+    #[test]
+    fn english_cognates_reach_entry_view_and_native_has_none() {
+        // R12 BRIDGE: a word with corroborated cognates surfaces them in EntryView;
+        // a native word (no cognates) surfaces an empty list (no phantom gap).
+        use crate::dictionary::{EnglishCognate, Entry, Pos, Sense};
+        let mut cognate_entry = Entry::headword_only("มารดา");
+        cognate_entry.senses.push(Sense::simple(Pos::Nam, "แม่"));
+        cognate_entry.english_cognates = vec![EnglishCognate {
+            word: "mother".into(),
+            pie_root: "*méh₂tēr".into(),
+            corroboration: "ยืมมาจากบาลี มาตา".into(),
+        }];
+        let mut native = Entry::headword_only("หมา");
+        native.senses.push(Sense::simple(Pos::Nam, "สุนัข"));
+        let engine = Engine::build(["มารดา", "หมา"], vec![cognate_entry, native], None);
+        let v = engine.lookup("มารดา", 5).entry.expect("มารดา");
+        assert_eq!(v.english_cognates.len(), 1);
+        assert_eq!(v.english_cognates[0].0, "mother");
+        let n = engine.lookup("หมา", 5).entry.expect("หมา");
+        assert!(n.english_cognates.is_empty(), "native word must have no cognates");
     }
 }

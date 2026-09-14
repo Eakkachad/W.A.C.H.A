@@ -156,6 +156,7 @@ impl RidImporter {
             sub_entries,
             see_also,
             relations,
+            english_cognates: Vec::new(),
         }))
     }
 }

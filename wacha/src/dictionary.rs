@@ -427,6 +427,24 @@ pub struct Entry {
     /// Entry-level lexical relations (synonym/antonym/…), carried forward from
     /// the audited seed set. Task 4 will route these through Sense graph nodes.
     pub relations: Vec<(Relation, String)>,
+    /// R12 BRIDGE — English cognates via the shared Indo-European root, for the
+    /// minority of Thai words with Sanskrit/Pali → PIE ancestry. Only present for
+    /// entries that survived BRIDGE-1's Kaikki cross-verification. Empty (the
+    /// majority case — native Kra-Dai words have no PIE ancestry).
+    pub english_cognates: Vec<EnglishCognate>,
+}
+
+/// One English cognate sharing an Indo-European root with a Thai loanword.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EnglishCognate {
+    /// The English word (e.g. "mother").
+    pub word: String,
+    /// The reconstructed PIE root, DISPLAY-ONLY (e.g. "*méh₂tēr") — shown as
+    /// context, not asserted as definitive beyond what BRIDGE-1 corroborated.
+    pub pie_root: String,
+    /// Provenance: the Kaikki etymology text that corroborated this entry's
+    /// source-language claim (so the cognate line is traceable, not bare).
+    pub corroboration: String,
 }
 
 impl Entry {
@@ -442,6 +460,7 @@ impl Entry {
             sub_entries: Vec::new(),
             see_also: Vec::new(),
             relations: Vec::new(),
+            english_cognates: Vec::new(),
         }
     }
 
@@ -576,6 +595,7 @@ pub fn seed_entries() -> Vec<Entry> {
         sub_entries: Vec::new(),
         see_also: Vec::new(),
         relations: rels.iter().map(|(r, w)| (*r, w.to_string())).collect(),
+        english_cognates: Vec::new(),
     };
     vec![
         mk("แมว", Pos::Nam, "สัตว์เลี้ยงลูกด้วยนมชนิดหนึ่ง เลี้ยงไว้ในบ้าน จับหนูเป็นอาหาร",
@@ -638,9 +658,9 @@ mod tests {
             sub_entries: vec![],
             see_also: vec![],
             relations: vec![],
+            english_cognates: vec![],
         });
-        assert_eq!(d.len(), 1);
-        assert_eq!(d.get("แมว").unwrap().primary_pos_marker(), Some("น."));
+        assert_eq!(d.len(), 1);        assert_eq!(d.get("แมว").unwrap().primary_pos_marker(), Some("น."));
         assert!(d.get("หมา").is_none());
     }
 

@@ -119,6 +119,9 @@
   .examples li { font-size: 1.05rem; margin: 2px 0; }
   .etym, .subentries { margin-top: 10px; font-size: 1rem; }
   .etym .ex-h, .subentries .ex-h { color: var(--accent2); font-size: .9rem; }
+  .cognates { margin-top: 10px; font-size: 1rem; padding-top: 8px; border-top: 1px dashed #2a3550; }
+  .cognates .ex-h { color: #be96ff; font-size: .9rem; }
+  .cognate-note { margin-top: 4px; color: var(--muted); font-size: .8rem; font-style: italic; }
   .chip.subword { display: inline-block; padding: 2px 10px; margin: 2px 2px; border-radius: 12px;
     background: #1c2740; border: 1px solid #2a3550; cursor: pointer; font-size: .98rem; }
   .chip.subword:hover { background: #26334f; border-color: var(--accent2); }
@@ -540,6 +543,17 @@ function render(d) {
         + d.entry.sub_entries.map(w =>
             `<span class="chip subword" data-w="${esc(w)}">${esc(w)}</span>`).join(" ")
         + `</div>`;
+    }
+    // R12 BRIDGE — English cognates via shared PIE root (corroborated words only;
+    // shown for the minority of words with Indo-European ancestry, never implied
+    // for the native-Thai majority).
+    if (d.entry.english_cognates && d.entry.english_cognates.length) {
+      const words = d.entry.english_cognates.map(c => esc(c.word));
+      const pie = esc(d.entry.english_cognates[0].pie_root || "");
+      html += `<div class="cognates"><span class="ex-h">คำอังกฤษที่เป็นรากเดียวกัน (English cognates): </span>`
+        + words.join(", ")
+        + (pie ? ` <span class="meta">· ราก PIE ${pie}</span>` : "")
+        + `<div class="cognate-note">ตรวจสอบรากศัพท์กับ Kaikki/Wiktionary แล้ว · เฉพาะคำที่มีรากอินโด-ยูโรเปียน (ส่วนใหญ่ของคำไทยแท้ไม่มี)</div></div>`;
     }
     // R11 SOUND — hard↔soft character badge, shown in naming mode only, ALWAYS
     // with the mandatory research hedge (never present it as settled Thai fact).
