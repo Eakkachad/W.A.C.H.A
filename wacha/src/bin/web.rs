@@ -456,6 +456,36 @@ fn lookup_json(engine: &Engine, query: &str) -> String {
         }
         s.push_str("]}");
     }
+    s.push_str("],");
+    // U2 — transliteration dimension of the same query (may be empty)
+    s.push_str("\"translit\":[");
+    for (i, h) in r.translit.iter().enumerate() {
+        if i > 0 {
+            s.push(',');
+        }
+        s.push_str(&format!(
+            "{{\"english\":{},\"thai\":{},\"note\":{}}}",
+            json_str(&h.english),
+            json_str(&h.thai),
+            json_str(&h.note)
+        ));
+    }
+    s.push_str("],");
+    // U2 — evolution timeline of the same query (may be empty)
+    s.push_str("\"evolution\":[");
+    for (i, e) in r.evolution.iter().enumerate() {
+        if i > 0 {
+            s.push(',');
+        }
+        let label = if e.is_draft { wacha::evolution::DRAFT_2569_LABEL } else { "" };
+        s.push_str(&format!(
+            "{{\"edition\":{},\"definition\":{},\"is_draft\":{},\"draft_label\":{}}}",
+            json_str(&e.edition),
+            json_str(&e.definition),
+            e.is_draft,
+            json_str(label)
+        ));
+    }
     s.push_str("]}");
     s
 }

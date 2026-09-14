@@ -64,6 +64,15 @@ pub struct Lookup {
     /// A clearly-labeled enrichment — never overrides `entry`'s formal
     /// definition, and carries its own honest provenance label.
     pub learner: Option<LearnerContent>,
+    /// R10 Phase U2 — the "one search, many dimensions" additions. Both are
+    /// empty for the overwhelming majority of words, so they cost nothing to
+    /// render when absent.
+    /// Official transliteration pairs, if the query is an English loanword or its
+    /// Thai transliteration (Phase T).
+    pub translit: Vec<crate::translit::TranslitHit>,
+    /// Word-evolution timeline (2542→2554→2569), non-empty only for ก-headwords
+    /// present in ≥1 edition (Phase W). The 2569 row carries its draft flag.
+    pub evolution: Vec<crate::evolution::EvolutionEntry>,
 }
 
 /// A display-friendly view of a dictionary entry.
@@ -699,7 +708,11 @@ impl Engine {
         });
         let related = self.relations.related(query, top_k);
         let learner = self.learner.get(query).cloned();
-        Lookup { segmentation, entry, related, learner }
+        // U2: the same single query also surfaces its transliteration + evolution
+        // dimensions when they exist (empty otherwise — no extra cost).
+        let translit = self.translit.lookup(query);
+        let evolution = self.evolution.timeline(query);
+        Lookup { segmentation, entry, related, learner, translit, evolution }
     }
 
     /// Number of words with offline-precomputed learner content loaded.
@@ -754,6 +767,20 @@ mod tests {
             assert_ne!(t.text, "เ");
         }
     }
+    #[test]
+    fn unified_lookup_exposes_translit_and_evolution_fields() {
+        // R10 Phase U2: one lookup call carries the extra dimensions. A seed
+        // engine has no translit/evolution data loaded, so both are empty — but
+        // the fields must exist on Lookup (the "one search, many dimensions" shape),
+        // and the primary dimensions still populate from the same single call.
+        let engine = Engine::seed_only();
+        let r = engine.lookup("แมว", 5);
+        assert!(r.translit.is_empty());
+        assert!(r.evolution.is_empty());
+        assert!(r.entry.is_some());
+        assert!(!r.related.is_empty());
+    }
+
 
     #[test]
     fn etymology_and_sub_entries_reach_entry_view() {

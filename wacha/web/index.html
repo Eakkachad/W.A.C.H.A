@@ -318,6 +318,26 @@ function render(d) {
     html += `</div>`;
   }
 
+  // U2 — the same one query surfaces its transliteration + evolution dimensions.
+  if (d.translit && d.translit.length) {
+    html += `<div class="card def"><h2>คำทับศัพท์ที่เกี่ยวข้อง (transliteration)</h2><ul>`;
+    for (const h of d.translit) {
+      const note = h.note ? ` <span class="meta">· ${esc(h.note)}</span>` : "";
+      html += `<li><b>${esc(h.english)}</b> &nbsp;⇄&nbsp; <b>${esc(h.thai)}</b>${note}</li>`;
+    }
+    html += `</ul><div class="prov"><span class="badge lic">ประมวลคำทับศัพท์ภาษาอังกฤษ พ.ศ. 2563 (ราชบัณฑิตยสภา)</span></div></div>`;
+  }
+  if (d.evolution && d.evolution.length) {
+    html += `<div class="card def"><h2>พจนานุกรม ๓ ยุค (word evolution 2542→2554→2569)</h2>`;
+    for (const e of d.evolution) {
+      html += `<div class="evo-ed"><div class="ex-h">พจนานุกรม พ.ศ. ${esc(e.edition)}</div>`;
+      html += `<div class="body">${esc(e.definition)}</div>`;
+      if (e.is_draft) html += `<div class="draft">⚠ ${esc(e.draft_label)}</div>`;
+      html += `</div>`;
+    }
+    html += `</div>`;
+  }
+
   // Related words: interactive graph (centerpiece) + text list (fallback/detail)
   html += `<div class="card"><h2>แผนภาพความสัมพันธ์ — คลิกคำเพื่อสำรวจต่อ (explainable graph)</h2>`;
   if (d.related.length === 0) {

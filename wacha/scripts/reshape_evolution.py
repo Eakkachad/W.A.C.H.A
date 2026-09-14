@@ -11,7 +11,7 @@ Output: data/evolution_ko.tsv   ->   headword \t edition \t definition
 Editions labelled "๒๕๔๒" / "๒๕๕๔" / "๒๕๖๙". The 2569 rows are a DRAFT — the CLI/UI
 carry the mandatory ORST integrity caveat verbatim; the reshaper just tags edition.
 """
-import sys, glob, os, math, re
+import sys, glob, os, math, re, html as _html
 import pandas as pd
 
 OUT = "data/evolution_ko.tsv"
@@ -27,6 +27,9 @@ def clean(v):
     if s.lower() == "nan":
         return ""
     s = re.sub(r"</?[a-zA-Z][^>]*>", "", s)  # strip HTML italics
+    s = _html.unescape(s)                    # decode &#160; &#x0e4d; &amp; etc.
+    # drop private-use / control glyphs that some entities decode to
+    s = "".join(c if (c.isprintable() and c != "\ufeff") else " " for c in s)
     return re.sub(r"\s+", " ", s.replace("\t", " ").replace("\n", " ")).strip()
 
 

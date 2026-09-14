@@ -725,5 +725,24 @@ fn print_lookup(_engine: &Engine, r: &Lookup, query: &str) {
             );
         }
     }
+
+    // U2 — the same one query also shows these dimensions when present.
+    if !r.translit.is_empty() {
+        println!("\nคำทับศัพท์ที่เกี่ยวข้อง (transliteration):");
+        for h in &r.translit {
+            let note = if h.note.is_empty() { String::new() } else { format!("  · {}", h.note) };
+            println!("  {}  ⇄  {}{}", h.english, h.thai, note);
+        }
+        println!("  (ที่มา: {})", wacha::translit::TRANSLIT_SOURCE);
+    }
+    if !r.evolution.is_empty() {
+        println!("\nพจนานุกรม ๓ ยุค (word evolution timeline):");
+        for e in &r.evolution {
+            println!("  พ.ศ. {}: {}", e.edition, e.definition);
+            if e.is_draft {
+                println!("      ⚠ {}", wacha::evolution::DRAFT_2569_LABEL);
+            }
+        }
+    }
     println!();
 }
