@@ -32,6 +32,12 @@ data/coined_word_cache/
 # kaikki_th.jsonl / wordnet_th.db above.
 data/official/
 
+# Pretrained thai2fit_wv vectors, overlap-filtered against our vocab (~35MB,
+# R11 VEC) — regenerable via scripts/gen_thai2fit_overlap.py, never committed
+# raw (BENCHMARKS.md §4.7 already documents this as gitignored; this entry
+# makes that true).
+data/thai2fit_overlap.vec.blob
+
 # WASM build artifacts (regenerate via wacha-wasm/web/build.sh)
 wacha-wasm/target/
 wacha-wasm/web/wacha_wasm.wasm
