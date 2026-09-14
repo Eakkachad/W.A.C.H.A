@@ -510,9 +510,43 @@ document.addEventListener('DOMContentLoaded', () => {
   const modeSelectionContainer = document.getElementById('modeSelectionContainer');
   const typedWordLabel = document.getElementById('typedWordLabel');
   const echoWordSpans = document.querySelectorAll('.echo-word');
-  const modeCardGeneral = document.getElementById('modeCardGeneral');
-  const modeCardEtymology = document.getElementById('modeCardEtymology');
   const responseStatusText = document.getElementById('responseStatusText');
+
+  const ALL_MODES = [
+    { id: 'general', label: 'ค้นหาทั่วไป', desc: 'นิยามและความสัมพันธ์' },
+    { id: 'roots', label: 'สืบสายรากศัพท์', desc: 'PIE และไทม์ไลน์ ๓ ยุค' },
+    { id: 'naming', label: 'ตั้งชื่อมงคล', desc: 'มงคลและความหมาย' },
+    { id: 'writing', label: 'ช่วยเขียน/กวี', desc: 'คำคล้องจองและระดับภาษา' },
+    { id: 'translit', label: 'คำทับศัพท์', desc: 'ทับศัพท์ทางการราชบัณฑิต' },
+    { id: 'specialized', label: 'ศัพท์เฉพาะทาง', desc: 'ศัพท์บัญญัติวิชาชีพ' }
+  ];
+
+  const modeCards = {
+    general: document.getElementById('modeCardGeneral'),
+    roots: document.getElementById('modeCardEtymology'),
+    etymology: document.getElementById('modeCardEtymology'),
+    naming: document.getElementById('modeCardNaming'),
+    writing: document.getElementById('modeCardWriting'),
+    translit: document.getElementById('modeCardTranslit'),
+    specialized: document.getElementById('modeCardSpecialized')
+  };
+
+  function selectModeCard(modeKey) {
+    Object.entries(modeCards).forEach(([k, card]) => {
+      if (!card) return;
+      if (k === modeKey || (modeKey === 'roots' && k === 'etymology') || (modeKey === 'etymology' && k === 'roots')) {
+        card.classList.add('is-selected');
+      } else {
+        card.classList.remove('is-selected');
+      }
+    });
+  }
+
+  function deselectAllModeCards() {
+    Object.values(modeCards).forEach(card => {
+      if (card) card.classList.remove('is-selected');
+    });
+  }
 
   // Focus & Click Events on Textbox
   searchInput.addEventListener('focus', () => {
@@ -525,7 +559,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // ขณะพิมพ์: โหลดโหมดให้เลือก 2 ก้อนใต้ช่องพิมพ์
+  // ขณะพิมพ์: โหลดโหมดให้เลือกใต้ช่องพิมพ์
   searchInput.addEventListener('input', (e) => {
     const value = e.target.value.trim();
     if (value.length > 0) {
@@ -533,7 +567,7 @@ document.addEventListener('DOMContentLoaded', () => {
       actionSubmitBtn.classList.add('is-active');
       actionSubmitBtn.disabled = false;
 
-      // โหลด 2 ก้อนตัวเลือกใต้ช่องพิมพ์ พร้อมใส่คำที่กำลังพิมพ์ลงไปในพรีวิว
+      // โหลดตัวเลือกใต้ช่องพิมพ์ พร้อมใส่คำที่กำลังพิมพ์ลงไปในพรีวิว
       showModeSelection(value);
     } else {
       setState('aligned');
@@ -545,7 +579,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // แสดง 2 ก้อนโหมดใต้ช่องพิมพ์
+  // แสดงตัวเลือกโหมดใต้ช่องพิมพ์
   function showModeSelection(word) {
     typedWordLabel.textContent = word;
     echoWordSpans.forEach(span => {
@@ -556,33 +590,24 @@ document.addEventListener('DOMContentLoaded', () => {
     if (suggestionTray) suggestionTray.style.display = 'none';
   }
 
-  // ซ่อน 2 ก้อนโหมด
+  // ซ่อนตัวเลือกโหมด
   function hideModeSelection() {
     modeSelectionContainer.style.display = 'none';
     if (suggestionTray) suggestionTray.style.display = 'flex';
     responseDrawer.classList.remove('show');
-    modeCardGeneral.classList.remove('is-selected');
-    modeCardEtymology.classList.remove('is-selected');
+    deselectAllModeCards();
   }
 
-  // คลิกเลือกก้อนที่ 1: ค้นหาทั่วไป (General Search - WACHA)
-  modeCardGeneral.addEventListener('click', () => {
-    const query = searchInput.value.trim();
-    if (!query) return;
-
-    modeCardGeneral.classList.add('is-selected');
-    modeCardEtymology.classList.remove('is-selected');
-    executeGeneralSearch(query);
-  });
-
-  // คลิกเลือกก้อนที่ 2: การหารากศัพท์ (Etymological Bridge)
-  modeCardEtymology.addEventListener('click', () => {
-    const query = searchInput.value.trim();
-    if (!query) return;
-
-    modeCardEtymology.classList.add('is-selected');
-    modeCardGeneral.classList.remove('is-selected');
-    executeEtymologySearch(query);
+  // ผูก Event Listener เมื่อคลิกการ์ดโหมดแต่ละใบ
+  ['general', 'roots', 'naming', 'writing', 'translit', 'specialized'].forEach(modeKey => {
+    const card = modeCards[modeKey];
+    if (!card) return;
+    card.addEventListener('click', () => {
+      const query = searchInput.value.trim();
+      if (!query) return;
+      selectModeCard(modeKey);
+      executeMode(modeKey, query, null);
+    });
   });
 
   // Clicking anywhere on the liquid textbox triggers focus
@@ -607,9 +632,7 @@ document.addEventListener('DOMContentLoaded', () => {
   searchInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && searchInput.value.trim().length > 0) {
       e.preventDefault();
-      // Default to General search on Enter
-      modeCardGeneral.classList.add('is-selected');
-      executeGeneralSearch(searchInput.value.trim());
+      routeIntentAndExecute(searchInput.value.trim());
     } else if (e.key === 'Escape') {
       searchInput.value = '';
       actionSubmitBtn.classList.remove('is-active');
@@ -623,8 +646,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Action Button Click
   actionSubmitBtn.addEventListener('click', () => {
     if (searchInput.value.trim().length > 0) {
-      modeCardGeneral.classList.add('is-selected');
-      executeGeneralSearch(searchInput.value.trim());
+      routeIntentAndExecute(searchInput.value.trim());
     }
   });
 
@@ -663,14 +685,147 @@ document.addEventListener('DOMContentLoaded', () => {
   // Close Response Drawer
   closeResponseBtn.addEventListener('click', () => {
     responseDrawer.classList.remove('show');
-    modeCardGeneral.classList.remove('is-selected');
-    modeCardEtymology.classList.remove('is-selected');
+    deselectAllModeCards();
   });
+
+  // =========================================================================
+  // Intent Router & Confirmation UI System (Phase 3)
+  // =========================================================================
+  function renderIntentConfirmation(guess, query) {
+    if (!guess) return '';
+    const currentIntent = guess.intent || 'general';
+    const currentLabel = guess.label || (ALL_MODES.find(m => m.id === currentIntent)?.label || 'ค้นหาทั่วไป');
+    const others = ALL_MODES.filter(m => m.id !== currentIntent && m.id !== 'general');
+    
+    const altButtons = others.map(m => `
+      <button type="button" class="intent-alt-chip" data-mode="${m.id}" data-query="${escapeHtml(query)}" style="
+        background: var(--glass-bg);
+        border: 1px solid var(--glass-border);
+        border-radius: 999px;
+        padding: 3px 12px;
+        font-size: 0.85rem;
+        color: var(--accent-blue);
+        cursor: pointer;
+        margin: 2px 4px;
+        transition: all 0.2s;
+        font-weight: 500;
+      ">
+        ${escapeHtml(m.label.split('/')[0])}
+      </button>
+    `).join('');
+
+    return `
+      <div class="intent-confirm-banner" style="
+        margin-bottom: 20px;
+        padding: 12px 18px;
+        border-radius: 12px;
+        background: rgba(35, 101, 150, 0.08);
+        border: 1.5px solid rgba(35, 101, 150, 0.22);
+        box-shadow: 0 2px 10px rgba(15, 41, 66, 0.04);
+      ">
+        <div style="font-size: 1.02rem; color: var(--text-primary); font-weight: 500;">
+          เราคิดว่าคุณอยาก <strong>${escapeHtml(currentLabel)}</strong> — ใช่ไหม?
+          <span style="font-size: 0.88rem; color: var(--text-muted); font-weight: 400; margin-left: 6px;">
+            (${escapeHtml(guess.reason || '')}${guess.confidence === 'vector' ? ' · เดาจากความหมาย' : ''})
+          </span>
+        </div>
+        <div style="margin-top: 8px; font-size: 0.88rem; color: var(--text-secondary); display: flex; align-items: center; flex-wrap: wrap; gap: 4px;">
+          <span>ไม่ใช่? ลอง:</span>
+          ${altButtons}
+          <button type="button" class="intent-alt-chip" data-mode="general" data-query="${escapeHtml(query)}" style="
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            border-radius: 999px;
+            padding: 3px 12px;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            cursor: pointer;
+            margin: 2px 4px;
+            font-weight: 500;
+          ">
+            ค้นหาทั่วไป
+          </button>
+        </div>
+      </div>
+    `;
+  }
+
+  function attachIntentChipListeners() {
+    responseBody.querySelectorAll('.intent-alt-chip').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const targetMode = btn.getAttribute('data-mode');
+        const targetQuery = btn.getAttribute('data-query');
+        if (targetMode && targetQuery) {
+          const altGuess = {
+            query: targetQuery,
+            intent: targetMode,
+            label: ALL_MODES.find(m => m.id === targetMode)?.label || targetMode,
+            reason: 'คุณเลือกเอง',
+            confidence: 'rule'
+          };
+          executeMode(targetMode, targetQuery, altGuess);
+        }
+      });
+    });
+  }
+
+  async function routeIntentAndExecute(query) {
+    query = (query || "").trim();
+    if (!query) return;
+
+    setState('active');
+    responseStatusText.textContent = `วิเคราะห์เจตนา: "${query}"`;
+    responseDrawer.classList.add('show');
+    responseBody.innerHTML = `<p style="color:var(--text-secondary);">กำลังวิเคราะห์เจตนาและค้นหาข้อมูลจาก WACHA Engine...</p>`;
+
+    let guess = null;
+    try {
+      const res = await fetch(`${API_BASE}/api/intent?q=` + encodeURIComponent(query));
+      if (res.ok) {
+        guess = await res.json();
+      }
+    } catch (err) {
+      console.warn("Intent router network error, falling back to general search:", err);
+    }
+
+    if (!guess || !guess.intent) {
+      guess = { query, intent: 'general', label: 'ค้นหาทั่วไป', reason: 'ค้นหาทั่วไป', confidence: 'default' };
+    }
+
+    const mode = guess.intent;
+    await executeMode(mode, query, guess);
+  }
+
+  async function executeMode(modeKey, query, guess) {
+    selectModeCard(modeKey);
+    switch (modeKey) {
+      case 'naming':
+        await executeNamingSearch(query, guess);
+        break;
+      case 'roots':
+      case 'etymology':
+        await executeEtymologySearch(query, guess);
+        break;
+      case 'writing':
+        await executeWritingSearch(query, guess);
+        break;
+      case 'translit':
+        await executeTranslitSearch(query, guess);
+        break;
+      case 'specialized':
+        await executeSpecializedSearch(query, guess);
+        break;
+      case 'general':
+      default:
+        await executeGeneralSearch(query, guess);
+        break;
+    }
+  }
 
   // =========================================================================
   // โหมด 1: ค้นหาทั่วไป (General Search - WACHA API)
   // =========================================================================
-  async function executeGeneralSearch(query) {
+  async function executeGeneralSearch(query, guess = null) {
     setState('active');
     responseStatusText.textContent = `ค้นหาทั่วไป: "${query}"`;
     responseDrawer.classList.add('show');
@@ -682,6 +837,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const data = await res.json();
       
       let html = '';
+      if (guess) html += renderIntentConfirmation(guess, query);
       
       // การตัดคำ
       html += `<div class="response-query-tag" style="background: rgba(35, 101, 150, 0.1); color: var(--accent-blue);">โหมด: ค้นหาทั่วไป (WACHA)</div>`;
@@ -749,6 +905,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       responseBody.innerHTML = html;
+      attachIntentChipListeners();
       
       // Add event listeners to SVG nodes and list items to allow re-searching
       responseBody.querySelectorAll('.rw').forEach(el => {
@@ -770,7 +927,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // =========================================================================
   // โหมด 2: การหารากศัพท์ (Etymology / Roots Mode - WACHA API)
   // =========================================================================
-  async function executeEtymologySearch(query) {
+  async function executeEtymologySearch(query, guess = null) {
     setState('active');
     responseStatusText.textContent = `สืบสายรากศัพท์: "${query}"`;
     responseDrawer.classList.add('show');
@@ -781,7 +938,9 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!res.ok) throw new Error('Network response was not ok');
       const data = await res.json();
       
-      let html = `<div class="response-query-tag" style="background: rgba(35, 101, 150, 0.1); color: var(--accent-blue);">โหมด: การหารากศัพท์และวิวัฒนาการ (Etymology & Roots)</div>`;
+      let html = '';
+      if (guess) html += renderIntentConfirmation(guess, query);
+      html += `<div class="response-query-tag" style="background: rgba(35, 101, 150, 0.1); color: var(--accent-blue);">โหมด: การหารากศัพท์และวิวัฒนาการ (Etymology & Roots)</div>`;
       
       if (data.entry) {
         const entry = data.entry;
@@ -901,6 +1060,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       
       responseBody.innerHTML = html;
+      attachIntentChipListeners();
 
       // Render D3 Graph if entry found
       if (data.entry) {
@@ -937,6 +1097,362 @@ document.addEventListener('DOMContentLoaded', () => {
 
     } catch (e) {
       responseBody.innerHTML = `<p style="color: var(--accent-magenta);">เกิดข้อผิดพลาดในการดึงข้อมูลจาก WACHA: ${escapeHtml(e.message)}</p>`;
+    }
+  }
+
+  // =========================================================================
+  // โหมด 3: คลังคำเพื่อตั้งชื่อ (Naming Mode - Reverse + Lookup API)
+  // =========================================================================
+  async function executeNamingSearch(query, guess = null) {
+    setState('active');
+    responseStatusText.textContent = `ตั้งชื่อมงคล: "${query}"`;
+    responseDrawer.classList.add('show');
+    responseBody.innerHTML = `<p style="color:var(--text-secondary);">กำลังค้นหาชื่อและความหมายมงคลจาก WACHA Engine...</p>`;
+
+    try {
+      let lookupData = null;
+      let reverseData = null;
+
+      const [revRes, lkpRes] = await Promise.all([
+        fetch(`${API_BASE}/api/reverse?q=` + encodeURIComponent(query)).catch(() => null),
+        fetch(`${API_BASE}/api/lookup?q=` + encodeURIComponent(query)).catch(() => null)
+      ]);
+
+      if (revRes && revRes.ok) reverseData = await revRes.json();
+      if (lkpRes && lkpRes.ok) lookupData = await lkpRes.json();
+
+      let html = '';
+      if (guess) html += renderIntentConfirmation(guess, query);
+      html += `<div class="response-query-tag" style="background: rgba(217, 119, 6, 0.1); color: #D97706;">โหมด: คลังคำเพื่อตั้งชื่อ (Naming Engine)</div>`;
+
+      // 1. Direct Entry Profile if available
+      if (lookupData && lookupData.entry) {
+        const entry = lookupData.entry;
+        html += `<div class="response-highlight-box" style="border-left-color: #D97706;">
+          <p style="font-size: 1.25rem; font-weight: 700; color: var(--text-primary); margin-bottom: 0.3rem;">
+            ${escapeHtml(entry.word)} 
+            <span style="font-size: 0.95rem; color: #D97706; font-weight: 500;">${escapeHtml(entry.pos || '')}</span>
+            ${entry.register ? `<span style="font-size: 0.85rem; color: var(--text-muted); font-weight: 400; margin-left: 4px;">(${escapeHtml(entry.register)})</span>` : ''}
+          </p>
+          <p style="font-size: 1.05rem; line-height: 1.5; color: var(--text-secondary); margin-bottom: 0.6rem;">${escapeHtml(entry.definition || '')}</p>`;
+        
+        if (entry.etymology && entry.etymology.length > 0) {
+          const etymList = entry.etymology.map(et => {
+            const l = et.lang ? `[${escapeHtml(et.lang)}] ` : '';
+            return `<span style="color: #D97706; font-weight: 600;">${l}${escapeHtml(et.form)}</span>`;
+          }).join('; ');
+          html += `<p style="margin-top: 6px;"><strong>รากศัพท์มงคล (บาลี-สันสกฤต):</strong> ${etymList}</p>`;
+        }
+        
+        if (entry.english_cognates && entry.english_cognates.length > 0) {
+          const cogs = entry.english_cognates.map(c => `<span style="color: var(--accent-blue); font-weight: 600;">${escapeHtml(c.word)}</span>`).join(', ');
+          html += `<p style="margin-top: 6px;"><strong>คำร่วมสาย PIE:</strong> ${cogs}</p>`;
+        }
+        html += `</div>`;
+      }
+
+      // 2. Reverse Dictionary Naming Candidates (BM25 Hits)
+      if (reverseData && reverseData.hits && reverseData.hits.length > 0) {
+        html += `<h4 style="margin-top: 24px; color: var(--text-secondary); font-size: 1.2rem;">รายชื่อและคำศัพท์ที่มีความหมายสอดคล้อง (BM25 Reverse Index)</h4>`;
+        html += `<ul style="list-style: none; padding: 0; margin-top: 10px;">`;
+        reverseData.hits.forEach((h, i) => {
+          const matchedBadges = (h.matched || []).map(m => `<span style="display: inline-block; padding: 2px 8px; border-radius: 4px; background: rgba(217, 119, 6, 0.1); color: #D97706; font-size: 0.85rem; margin-right: 4px;">ตรงคำ: ${escapeHtml(m)}</span>`).join('');
+          html += `<li style="padding: 12px 0; border-bottom: 1px dashed var(--glass-border); display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;">
+            <div>
+              <span style="font-size: 1.2rem; font-weight: 700; color: #D97706; cursor: pointer;" class="name-link rw" data-word="${escapeHtml(h.word)}">${i + 1}. ${escapeHtml(h.word)}</span>
+              <span style="font-size: 0.9rem; color: var(--text-muted); margin-left: 8px;">คะแนน: ${h.score.toFixed(2)}</span>
+              <div style="margin-top: 4px;">${matchedBadges}</div>
+            </div>
+            <button type="button" class="d3-btn rw" data-word="${escapeHtml(h.word)}" style="white-space: nowrap; font-size: 0.82rem; padding: 4px 10px;">ดูความหมาย →</button>
+          </li>`;
+        });
+        html += `</ul>`;
+        html += `<div style="margin-top: 8px; font-size: 0.85rem; color: var(--text-muted);">ดัชนีผกผัน BM25 ค้นหาจากนิยามพจนานุกรมเพื่อถอดความหมายเป็นชื่อมงคล · คลิกคำเพื่อเปิดความหมาย</div>`;
+      } else if (!lookupData || !lookupData.entry) {
+        html += `<div class="response-highlight-box" style="border-left-color: #D97706;">
+          <p>ไม่พบรายชื่อหรือคำที่มีความหมายตรงกับ "${escapeHtml(query)}" ในคลังคำตั้งชื่อ</p>
+          <p style="font-size: 0.9rem; color: #64748B;">ลองค้นหาด้วยคำคุณลักษณะ เช่น "ทอง", "แสงสว่าง", "ความสุข", "ปัญญา"</p>
+        </div>`;
+      }
+
+      // 3. Related words if lookup had them
+      if (lookupData && lookupData.related && lookupData.related.length > 0) {
+        html += `<h4 style="margin-top: 24px; color: var(--text-secondary);">คำพ้องและความหมายข้างเคียง</h4>`;
+        html += `<div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px;">`;
+        lookupData.related.slice(0, 10).forEach(r => {
+          html += `<span class="rw" data-word="${escapeHtml(r.word)}" style="padding: 4px 12px; border-radius: 999px; background: #FFFBEB; border: 1px solid #FDE68A; color: #D97706; font-size: 0.95rem; font-weight: 500; cursor: pointer;">${escapeHtml(r.word)}</span>`;
+        });
+        html += `</div>`;
+      }
+
+      responseBody.innerHTML = html;
+      attachIntentChipListeners();
+
+      // Click on any word to search that word
+      responseBody.querySelectorAll('.rw').forEach(el => {
+        el.addEventListener('click', () => {
+          const w = el.getAttribute('data-word');
+          if (w) {
+            searchInput.value = w;
+            executeNamingSearch(w, null);
+            window.scrollTo({ top: 0, behavior: "smooth" });
+          }
+        });
+      });
+
+    } catch (e) {
+      responseBody.innerHTML = `<p style="color: var(--accent-magenta);">เกิดข้อผิดพลาดในการดึงข้อมูลตั้งชื่อ: ${escapeHtml(e.message)}</p>`;
+    }
+  }
+
+  // =========================================================================
+  // โหมด 4: ช่วยเขียนและงานกวี (Writing & Rhymes Mode)
+  // =========================================================================
+  async function executeWritingSearch(query, guess = null) {
+    setState('active');
+    responseStatusText.textContent = `ช่วยเขียน/คำคล้องจอง: "${query}"`;
+    responseDrawer.classList.add('show');
+    responseBody.innerHTML = `<p style="color:var(--text-secondary);">กำลังค้นหาคำคล้องจองและระดับภาษาจาก WACHA Engine...</p>`;
+
+    try {
+      const [rhymeRes, regRes] = await Promise.all([
+        fetch(`${API_BASE}/api/rhyme?q=` + encodeURIComponent(query)).catch(() => null),
+        fetch(`${API_BASE}/api/register?reg=แบบ&q=` + encodeURIComponent(query)).catch(() => null)
+      ]);
+
+      const rhymeData = rhymeRes && rhymeRes.ok ? await rhymeRes.json() : null;
+      const regData = regRes && regRes.ok ? await regRes.json() : null;
+
+      let html = '';
+      if (guess) html += renderIntentConfirmation(guess, query);
+      html += `<div class="response-query-tag" style="background: rgba(79, 70, 229, 0.1); color: #4F46E5;">โหมด: ช่วยเขียนและงานกวี (Writing & Rhymes)</div>`;
+
+      // 1. Loose Rhymes Panel
+      html += `<div style="margin-bottom: 24px;">
+        <h4 style="color: var(--text-secondary); font-size: 1.2rem; display: flex; align-items: center; gap: 8px;">
+          <span>คำคล้องจอง (Loose Rhyme): “<strong style="color: #4F46E5;">${escapeHtml(query)}</strong>”</span>
+        </h4>`;
+
+      if (rhymeData && rhymeData.rhymes && rhymeData.rhymes.length > 0) {
+        html += `<div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px;">`;
+        rhymeData.rhymes.forEach(w => {
+          html += `<span class="rw" data-word="${escapeHtml(w)}" style="padding: 6px 14px; border-radius: 999px; background: #EEF2FF; border: 1px solid #C7D2FE; color: #4F46E5; font-size: 1rem; font-weight: 500; cursor: pointer; transition: all 0.2s;">${escapeHtml(w)}</span>`;
+        });
+        html += `</div>`;
+        html += `<div style="margin-top: 8px; font-size: 0.85rem; color: var(--text-muted);">คล้องจองแบบหลวม (สระ + มาตราตัวสะกดเดียวกัน) · คลิกคำเพื่อดูนิยาม</div>`;
+      } else {
+        html += `<p style="margin-top: 8px; color: var(--text-muted); font-size: 0.95rem;">ไม่พบคำคล้องจองโดยตรงสำหรับคำนี้</p>`;
+      }
+      html += `</div>`;
+
+      // 2. Register Filter Panel
+      html += `<div style="margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--glass-border);">
+        <h4 style="color: var(--text-secondary); font-size: 1.2rem;">กรองระดับภาษา (Register Filter)</h4>
+        <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px;" id="registerBtnGroup">
+          <button type="button" class="reg-btn is-active" data-reg="แบบ" style="padding: 4px 14px; border-radius: 8px; border: 1px solid #4F46E5; background: #4F46E5; color: white; cursor: pointer; font-size: 0.9rem;">ภาษาแบบแผน (แบบ)</button>
+          <button type="button" class="reg-btn" data-reg="ราชา" style="padding: 4px 14px; border-radius: 8px; border: 1px solid var(--glass-border); background: var(--glass-bg); color: var(--text-primary); cursor: pointer; font-size: 0.9rem;">ราชาศัพท์ (ราชา)</button>
+          <button type="button" class="reg-btn" data-reg="โบ" style="padding: 4px 14px; border-radius: 8px; border: 1px solid var(--glass-border); background: var(--glass-bg); color: var(--text-primary); cursor: pointer; font-size: 0.9rem;">คำโบราณ (โบ)</button>
+          <button type="button" class="reg-btn" data-reg="ปาก" style="padding: 4px 14px; border-radius: 8px; border: 1px solid var(--glass-border); background: var(--glass-bg); color: var(--text-primary); cursor: pointer; font-size: 0.9rem;">ภาษาปาก (ปาก)</button>
+          <button type="button" class="reg-btn" data-reg="เลิก" style="padding: 4px 14px; border-radius: 8px; border: 1px solid var(--glass-border); background: var(--glass-bg); color: var(--text-primary); cursor: pointer; font-size: 0.9rem;">คำเลิกใช้ (เลิก)</button>
+        </div>
+        <div id="registerWordsList" style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px;">`;
+
+      if (regData && regData.words && regData.words.length > 0) {
+        regData.words.forEach(x => {
+          html += `<span class="rw" data-word="${escapeHtml(x.word)}" style="padding: 4px 12px; border-radius: 999px; background: #F8FAFC; border: 1px solid #E2E8F0; color: var(--text-primary); font-size: 0.95rem; cursor: pointer;">${escapeHtml(x.word)}</span>`;
+        });
+      } else {
+        html += `<span style="color: var(--text-muted); font-size: 0.9rem;">ไม่พบคำในระดับภาษานี้</span>`;
+      }
+      html += `</div>
+        <div style="margin-top: 8px; font-size: 0.85rem; color: var(--text-muted);">กรองตามทะเบียนคำในพจนานุกรม (RID) · เรียงตามความถี่</div>
+      </div>`;
+
+      responseBody.innerHTML = html;
+      attachIntentChipListeners();
+
+      // Word click to lookup
+      responseBody.querySelectorAll('.rw').forEach(el => {
+        el.addEventListener('click', () => {
+          const w = el.getAttribute('data-word');
+          if (w) {
+            searchInput.value = w;
+            executeGeneralSearch(w, null);
+            window.scrollTo({ top: 0, behavior: "smooth" });
+          }
+        });
+      });
+
+      // Register button click to switch register on the fly
+      responseBody.querySelectorAll('.reg-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          responseBody.querySelectorAll('.reg-btn').forEach(b => {
+            b.style.background = 'var(--glass-bg)';
+            b.style.color = 'var(--text-primary)';
+            b.style.borderColor = 'var(--glass-border)';
+          });
+          btn.style.background = '#4F46E5';
+          btn.style.color = 'white';
+          btn.style.borderColor = '#4F46E5';
+
+          const reg = btn.getAttribute('data-reg');
+          const listEl = document.getElementById('registerWordsList');
+          if (listEl) listEl.innerHTML = `<span style="color: var(--text-muted);">กำลังโหลด...</span>`;
+          try {
+            const rRes = await fetch(`${API_BASE}/api/register?reg=${encodeURIComponent(reg)}&q=${encodeURIComponent(query)}`);
+            if (rRes.ok) {
+              const rData = await rRes.json();
+              if (rData.words && rData.words.length > 0) {
+                listEl.innerHTML = rData.words.map(x => `
+                  <span class="rw" data-word="${escapeHtml(x.word)}" style="padding: 4px 12px; border-radius: 999px; background: #F8FAFC; border: 1px solid #E2E8F0; color: var(--text-primary); font-size: 0.95rem; cursor: pointer;">${escapeHtml(x.word)}</span>
+                `).join(' ');
+                listEl.querySelectorAll('.rw').forEach(el => {
+                  el.addEventListener('click', () => {
+                    const w = el.getAttribute('data-word');
+                    if (w) {
+                      searchInput.value = w;
+                      executeGeneralSearch(w, null);
+                    }
+                  });
+                });
+              } else {
+                listEl.innerHTML = `<span style="color: var(--text-muted); font-size: 0.9rem;">ไม่พบคำในระดับภาษานี้</span>`;
+              }
+            }
+          } catch (_) {}
+        });
+      });
+
+    } catch (e) {
+      responseBody.innerHTML = `<p style="color: var(--accent-magenta);">เกิดข้อผิดพลาดในการดึงข้อมูลช่วยเขียน: ${escapeHtml(e.message)}</p>`;
+    }
+  }
+
+  // =========================================================================
+  // โหมด 5: คำทับศัพท์ทางการ (Transliteration Mode - ORST)
+  // =========================================================================
+  async function executeTranslitSearch(query, guess = null) {
+    setState('active');
+    responseStatusText.textContent = `คำทับศัพท์ทางการ: "${query}"`;
+    responseDrawer.classList.add('show');
+    responseBody.innerHTML = `<p style="color:var(--text-secondary);">กำลังค้นหาคำทับศัพท์จากราชบัณฑิตยสภา...</p>`;
+
+    try {
+      const res = await fetch(`${API_BASE}/api/translit?q=` + encodeURIComponent(query));
+      if (!res.ok) throw new Error('Network response was not ok');
+      const data = await res.json();
+
+      let html = '';
+      if (guess) html += renderIntentConfirmation(guess, query);
+      html += `<div class="response-query-tag" style="background: rgba(5, 150, 105, 0.1); color: #059669;">โหมด: คำทับศัพท์ทางการ (Transliteration - ORST)</div>`;
+
+      if (data.hits && data.hits.length > 0) {
+        html += `<h4 style="margin-top: 16px; color: var(--text-secondary); font-size: 1.2rem;">คำทับศัพท์ทางการ: “${escapeHtml(query)}”</h4>`;
+        html += `<ul style="list-style: none; padding: 0; margin-top: 12px;">`;
+        data.hits.forEach(h => {
+          html += `<li style="padding: 14px 16px; margin-bottom: 10px; border-radius: 12px; background: rgba(5, 150, 105, 0.05); border: 1px solid rgba(5, 150, 105, 0.2);">
+            <div style="font-size: 1.3rem; font-weight: 700; color: var(--text-primary); display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+              <span style="font-family: sans-serif;">${escapeHtml(h.english)}</span>
+              <span style="color: #059669; font-size: 1.1rem;">⇄</span>
+              <span style="color: #059669;">${escapeHtml(h.thai)}</span>
+            </div>
+            ${h.note ? `<div style="margin-top: 6px; font-size: 0.95rem; color: var(--text-secondary);">หมายเหตุ: ${escapeHtml(h.note)}</div>` : ''}
+          </li>`;
+        });
+        html += `</ul>`;
+        if (data.source) {
+          html += `<div style="margin-top: 8px; font-size: 0.85rem; color: var(--text-muted);">${escapeHtml(data.source)}</div>`;
+        }
+      } else {
+        html += `<div class="response-highlight-box" style="border-left-color: #059669;">
+          <p>ไม่พบคำทับศัพท์ทางการของ "${escapeHtml(query)}" ในฐานข้อมูลราชบัณฑิตยสภา</p>
+          <p style="font-size: 0.9rem; color: #64748B;">รองรับการค้นหาทั้งภาษาไทย (เช่น "คอมพิวเตอร์") และภาษาอังกฤษ (เช่น "internet")</p>
+        </div>`;
+      }
+
+      responseBody.innerHTML = html;
+      attachIntentChipListeners();
+
+    } catch (e) {
+      responseBody.innerHTML = `<p style="color: var(--accent-magenta);">เกิดข้อผิดพลาดในการดึงข้อมูลคำทับศัพท์: ${escapeHtml(e.message)}</p>`;
+    }
+  }
+
+  // =========================================================================
+  // โหมด 6: ศัพท์เฉพาะทาง/บัญญัติ (Specialized Terminology Mode)
+  // =========================================================================
+  async function executeSpecializedSearch(query, guess = null) {
+    setState('active');
+    responseStatusText.textContent = `ศัพท์เฉพาะทาง/บัญญัติ: "${query}"`;
+    responseDrawer.classList.add('show');
+    responseBody.innerHTML = `<p style="color:var(--text-secondary);">กำลังค้นหาศัพท์เฉพาะทางจาก WACHA Engine...</p>`;
+
+    try {
+      const res = await fetch(`${API_BASE}/api/lookup?q=` + encodeURIComponent(query));
+      if (!res.ok) throw new Error('Network response was not ok');
+      const data = await res.json();
+
+      let html = '';
+      if (guess) html += renderIntentConfirmation(guess, query);
+      html += `<div class="response-query-tag" style="background: rgba(219, 39, 119, 0.1); color: #DB2777;">โหมด: ศัพท์เฉพาะทางและศัพท์บัญญัติ (Specialized Terminology)</div>`;
+
+      if (data.entry) {
+        const entry = data.entry;
+        html += `<div class="response-highlight-box" style="border-left-color: #DB2777;">
+          <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px;">
+            <span style="font-size: 1.35rem; font-weight: 700; color: var(--text-primary);">${escapeHtml(entry.word)}</span>
+            ${entry.pos ? `<span style="font-size: 0.95rem; color: #DB2777; font-weight: 500;">${escapeHtml(entry.pos)}</span>` : ''}
+            ${entry.subject ? `<span style="padding: 2px 10px; border-radius: 999px; background: rgba(219, 39, 119, 0.1); color: #DB2777; font-size: 0.85rem; font-weight: 600;">สาขาวิชา: ${escapeHtml(entry.subject)}</span>` : ''}
+            ${entry.source ? `<span style="font-size: 0.8rem; color: var(--text-muted); opacity: 0.75; margin-left: auto;">${escapeHtml(entry.source)}</span>` : ''}
+          </div>
+          <p style="font-size: 1.05rem; line-height: 1.5; color: var(--text-secondary);">${escapeHtml(entry.definition || '')}</p>
+        </div>`;
+
+        // Radial SVG graph
+        if (data.related && data.related.length > 0) {
+          html += `<h4 style="margin-top: 24px; color: var(--text-secondary); text-align: center;">แผนภาพเครือข่ายความสัมพันธ์คำศัพท์</h4>`;
+          html += buildGraphSvg(data);
+        }
+
+        // Related Technical Terms
+        if (data.related && data.related.length > 0) {
+          html += `<h4 style="margin-top: 20px; color: var(--text-secondary);">ศัพท์ที่เกี่ยวโยงในสาขาวิชา</h4>`;
+          html += `<ul style="list-style: none; padding: 0; margin-top: 10px;">`;
+          data.related.forEach(r => {
+            html += `<li style="padding: 12px 0; border-bottom: 1px dashed var(--glass-border);">
+              <strong style="color: #DB2777; font-size: 1.25rem; cursor: pointer;" class="rw" data-word="${escapeHtml(r.word)}">${escapeHtml(r.word)}</strong>
+              <span style="font-size: 0.95rem; color: var(--text-muted); margin-left: 10px;">ความสัมพันธ์: ${typeof r.score === 'number' ? r.score.toFixed(2) : r.score}</span>
+              <div style="font-size: 1.05rem; line-height: 1.6; color: var(--text-primary); margin-top: 6px; padding-left: 14px; border-left: 3px solid #DB2777;">`;
+            (r.path || []).forEach(p => {
+              html += `<div style="padding: 2px 0;">↳ ${escapeHtml(p)}</div>`;
+            });
+            html += `</div></li>`;
+          });
+          html += `</ul>`;
+        }
+
+      } else {
+        html += `<div class="response-highlight-box" style="border-left-color: #DB2777;">
+          <p>ไม่พบศัพท์เฉพาะทางสำหรับ "${escapeHtml(query)}" ในคลังศัพท์บัญญัติ</p>
+        </div>`;
+      }
+
+      responseBody.innerHTML = html;
+      attachIntentChipListeners();
+
+      responseBody.querySelectorAll('.rw').forEach(el => {
+        el.addEventListener('click', () => {
+          const w = el.getAttribute('data-word');
+          if (w) {
+            searchInput.value = w;
+            executeSpecializedSearch(w, null);
+            window.scrollTo({ top: 0, behavior: "smooth" });
+          }
+        });
+      });
+
+    } catch (e) {
+      responseBody.innerHTML = `<p style="color: var(--accent-magenta);">เกิดข้อผิดพลาดในการดึงข้อมูลศัพท์เฉพาะทาง: ${escapeHtml(e.message)}</p>`;
     }
   }
 
