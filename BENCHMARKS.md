@@ -314,6 +314,22 @@ with the hand-verified relation graph (no contradiction → safe to ship). **Rev
 adjacent candidates (ความบริสุทธิ์ 0.74, ความจงรักภักดี 0.73, ความยิ่งใหญ่ 0.72, ความซื่อสัตย์ 0.71), clearly
 labeled `source:"vector"` and composed with (never replacing) BM25.
 
+### 4.8 Intent classification (R12 INTENT, measured)
+
+Deterministic router: layer-1 keyword rules, then a thai2fit centroid fallback only when no rule fires.
+No trained classifier.
+
+| layer | metric | value |
+|---|---|---|
+| Layer-1 keyword rules | regression fixture (22 real-shaped queries) | **22/22 correct** |
+| Layer-2 vector fallback | held-out no-keyword queries (10) @ threshold 0.20 | fired 9/10, **6/10 correct** (~60–67% long tail) |
+| latency | rule pass | sub-ms (literal `str::contains` over ~40 keywords) |
+| latency | fallback | one query-centroid + 5 seed-centroid cosines over 300-dim (sub-ms; centroids are ≤5 word lookups each) |
+
+Threshold 0.20 chosen from a 0.10–0.30 sweep (stable 0.10–0.25). The fallback only fires when layer-1 finds
+nothing, and a wrong guess degrades to a routed mode with a one-tap correction line (INTENT-3) — never worse
+than the pre-R12 General default. Honest number reported: the fallback is a long-tail aid, not a 90% claim.
+
 **⚠️ v2 also caused a regression, found on review (2026-09-14).** `ที่เก็บเงินของรัฐ` returned **`คลัง`
 at rank 1 in v1**; in v2 `คลัง` **falls out of the top 5 entirely** (now: หัวเบี้ย, ค่าธรรมเนียม, ส่วนลด,
 เงินตรา, ภาษี). The coverage damping that fixed the single-rare-term noise penalises entries with **terse**

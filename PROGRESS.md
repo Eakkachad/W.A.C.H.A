@@ -67,6 +67,7 @@ files too and note it here — this log is the record of *that it changed*, thos
 | **Round 7** — deliverables | **done** — `rounds/VERIFY_R7.md` + `BENCHMARKS.md` | 2026-09-14 |
 | **Round 10** — ingest real ORST event data (RID ๒๕๕๔ + คำทับศัพท์ + ศัพท์เฉพาะทาง + วิวัฒนาการ ๓ ยุค) | **done** — 8 phases (U1/R/R3/T/E/W/U2/P), X cut; 40,681 entries; public WASM licence-gated; `rounds/VERIFY_R10.md` | 2026-09-15 |
 | **Round 11** — job-menu front door + naming assistant + sound-symbolism + register/rhyme + pretrained vectors | **done** — ROUTER/NAME/SOUND/WRITE/VEC/P shipped, BRIDGE cut; thai2fit (MIT) 45.9% overlap; 114 lib tests; `VERIFY_R11.md` | 2026-09-14 |
+| **Round 12** — deterministic intent detection (one free-text box) + PIE/English-cognate BRIDGE revived | **done** — INTENT-1/2/3 + BRIDGE-1/2/3, nothing cut; intent rules 22/22 + vector 6/10; cognates 38/43=88.4% corroborated; 121 lib tests; `VERIFY_R12.md` | 2026-09-14 |
 | Day 2 — demo/submit | not started | — |
 
 **A real product crate now exists** (`wacha/`) in addition to the `poc/` feasibility harness. The
@@ -1883,3 +1884,40 @@ verify_pitch AFTER (the R6/R7 guard): all pass.
 
 Full detail + raw numbers in `VERIFY_R11.md`; latency-sensitive paths in `BENCHMARKS.md` §4.5 (rhyme) / §4.6
 (register) / §4.7 (vectors).
+
+### 2026-09-14 (Round 12) — one free-text box (intent detection) + PIE/BRIDGE revived
+
+Two things: (1) turn the R11 "click a card, then type" flow into **"type anything into one box"** via a
+deterministic intent router; (2) revive the English-cognate BRIDGE that R11 correctly cut — its source
+(`ThaiDict_Script`) is now staged at `data/thaidict_script_ref/` (git-ignored). Ran `NEXT_STEPS_R12.md`
+order INTENT-1→2→3→BRIDGE-1→2→3. **All six phases landed — nothing cut.** 121 lib + 4 poc + 1 alloc tests
+green after every phase; verify_pitch ALL PASS; rank guard 51.3%; `katgpt-rs` untouched (settled, not
+re-opened); `README.md`/`.gitignore` not touched.
+
+**INTENT-1 (`a54463c`) — rules, no ML.** New `intent.rs`: `classify_intent` → one of 6 intents with a
+human-readable reason, layer-1 keyword rules in priority order. A trained classifier was explicitly NOT
+built (settled design). 22/22 real-query regression fixture passes.
+
+**INTENT-2 (`634e401`) — thai2fit fallback for the long tail.** Only fires when no keyword matches: average
+the query's in-vocab vectors (R11 thai2fit, no new dependency), cosine vs 5 intent seed-centroids, pick the
+nearest above a threshold. Threshold 0.20 chosen from a real sweep; **honest 6/10** on hand-written held-out
+no-keyword queries — a long-tail aid, not a 90% claim, and a wrong guess degrades gracefully.
+
+**INTENT-3 (`a794043`) — one box + transparency, cards kept.** `/api/intent` route + a free-text box that
+detects intent, routes to the mode's render path, and shows "เราคิดว่าคุณอยาก [X] — ใช่ไหม?" with one-tap
+correction. Fetch failure → general search (never blank). The 5 R11 job cards stay exactly as an override.
+Verified live: naming/translit/roots via rules, แมว → general (usable), descriptive query → naming via the
+vector fallback (0.38).
+
+**BRIDGE (`beb89da`) — revived, honesty-gated at 88.4%.** BRIDGE-1 (the gate, mirroring R9 D1 / R10 R3 / R11
+VEC): `verify_cognates.py` cross-checked all 43 seed entries against Kaikki's real `etymology_texts`, keeping
+only those Kaikki independently corroborates on source language. **38/43 = 88.4% kept** — above the 1/3
+droppable floor, ships at full strength. Dropped 4 (no Kaikki etymology) + 1 (ตรี — Kaikki says Khmer, not
+Sanskrit; the gate caught the contradiction). BRIDGE-2 ported the 38 into `Entry.english_cognates` (45
+attachments). BRIDGE-3 surfaces a cognate line (CLI + web) for verified words only — มารดา → mother/maternal/
+matriarch/matrix (PIE *méh₂tēr), ศูนย์ → zero/cipher/cave/cavity — while native หมา renders complete with no
+line and no gap. Only the corroborated derived `data/english_cognates.tsv` is committed; the seed reference
+stays git-ignored.
+
+The product concept shifted from "search a word" to "tell it what you want, in one box." Full detail in
+`VERIFY_R12.md`; intent hit rates + latency in `BENCHMARKS.md` §4.8; `MENTOR_BRIEF.md` TL;DR + §4 updated.
