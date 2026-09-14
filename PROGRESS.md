@@ -66,6 +66,7 @@ files too and note it here — this log is the record of *that it changed*, thos
 | **Round 7 C/S1b/E1** — reverse dict / dense trie / allocator | not started (optional, droppable; spine finished cleanly) | — |
 | **Round 7** — deliverables | **done** — `rounds/VERIFY_R7.md` + `BENCHMARKS.md` | 2026-09-14 |
 | **Round 10** — ingest real ORST event data (RID ๒๕๕๔ + คำทับศัพท์ + ศัพท์เฉพาะทาง + วิวัฒนาการ ๓ ยุค) | **done** — 8 phases (U1/R/R3/T/E/W/U2/P), X cut; 40,681 entries; public WASM licence-gated; `rounds/VERIFY_R10.md` | 2026-09-15 |
+| **Round 11** — job-menu front door + naming assistant + sound-symbolism + register/rhyme + pretrained vectors | **done** — ROUTER/NAME/SOUND/WRITE/VEC/P shipped, BRIDGE cut; thai2fit (MIT) 45.9% overlap; 114 lib tests; `VERIFY_R11.md` | 2026-09-14 |
 | Day 2 — demo/submit | not started | — |
 
 **A real product crate now exists** (`wacha/`) in addition to the `poc/` feasibility harness. The
@@ -1826,3 +1827,59 @@ criteria) is the lowest leverage. Deliberately not attempted; recorded rather th
 Data now: 76,649 words / 40,681 entries / 59,542 graph entities / 73,020 triples. Full detail + raw numbers
 in `rounds/VERIFY_R10.md`. The product now demonstrably uses three of the four official assigned data groups plus
 the cross-edition timeline — Problem Fit (25%) + Innovation (20%) = the 45% that matters most.
+
+### 2026-09-14 (Round 11) — a job-menu front door + two real new capabilities
+
+Reframe round following a planning conversation (naming market research, sound-symbolism research, a fresh
+`katgpt-rs` audit, and a decision to use PyThaiNLP's pretrained `thai2fit_wv` instead of training anything).
+The product stops presenting as "search a word → get a definition" and becomes **"วันนี้อยากให้ภาษาไทย
+ทำอะไรให้คุณดี"** — five task doors over the *same* engine. Ran `NEXT_STEPS_R11.md` order
+ROUTER→NAME→SOUND→WRITE→VEC→BRIDGE→P. Must-do floor (ROUTER+NAME) plus all three should-do phases landed;
+BRIDGE cut honestly. 114 lib + 4 poc + 1 alloc tests green after every phase; `verify_pitch` + `verify_r5`
+§8/§9/§10 all pass; `katgpt-rs` untouched (re-confirmed unusable this round); `README.md`/`.gitignore` not
+touched.
+
+**ROUTER (`52c56f0`) — the front door, presentation-only.** 5 job cards (ตั้งชื่อ / หาคำให้ใช่ / ศัพท์เฉพาะทาง
+/ รากคำ-วิวัฒนาการ / คำทับศัพท์), each a client-side mode that changes the placeholder and reorders the SAME
+profile sections (DOM reorder over `data-sec` keys). Proven presentation-only: `/api/lookup` + `/api/reverse`
+are **byte-identical** before/after. Five doors, one engine — the reframe the user asked for without becoming
+five products.
+
+**NAME (`bcbd26b`) — the flagship, and a real cited market gap.** Naming assistant inside the naming mode,
+both paths reusing the existing engine: direct `lookup` (ดารา/วารี/อรุณ/ชัย/มณี, meaning + รากคำ) and
+context-clue `reverse` with a *curated, pre-verified* query list (ความกล้าหาญ→วีรบุรุษ, แสงในตอนเช้า→อรุณ).
+Native-Thai names (ฟ้า/ดาว) render complete with their Proto-Tai root — the majority case looks intentional,
+not degraded. The gap is genuine and citable: every existing Thai naming tool (Myhora, Mongkolname,
+Thaibabyname) is numerology/astrology; none grounds a name in real etymology.
+
+**SOUND (`c3ffd18`) — deterministic, hedged.** New `sound.rs` maps a Thai respelling to a hard↔soft axis
+(no ML), shown as a badge in naming mode. The mandatory hedge is in the UI on every appearance
+("รูปแบบจากงานวิจัยเรื่องสัทสัญลักษณ์ทั่วไป ยังไม่ใช่ข้อพิสูจน์เฉพาะภาษาไทย"), pinned by a test. **Deviation:**
+the plan's tone component was dropped — weakest evidence, and the respelling doesn't encode tone. Live:
+ตุ๊กตา 5/5 > ดารา 2/5 > มาลี 1/5.
+
+**WRITE (`e93adbc`) — two near-zero-cost tools, plus a real bug fix.** Register filter first exposed that the
+R10 reshape emitted `{register}` in braces while the parser only read parens — 1,212 {โบ} tags were silently
+dropped; fixed. `register ราชา` → genuine ราชาศัพท์ (ผม/คุณ/ทราบ/ดิฉัน). Loose rhyme finder (new `rhyme.rs`,
+final-rime key, NOT classical meter): 38,550 words / 234 keys / 35 ms; บ้าน → การ/งาน/ด้าน/ท่าน/อาหาร.
+
+**VEC (`04d95f4`) — pretrained vectors, licence-gated, measured.** Confirmed thai2fit MIT **before** download.
+Downloaded once, exported only the wacha-vocab overlap to a gitignored 35 MB blob (nothing trained). Real
+coverage **28,589 = 45.9%** of wacha vocab; flat-array cosine NN ~3.9 ms (no ANN index). NN sanity agrees with
+the hand graph (related 0.29–0.65 ≫ unrelated 0.05–0.07). Fed as a clearly-labeled `source:"vector"` candidate
+into the reverse-dictionary ranking, composed with BM25 — ความกล้าหาญ gains ความบริสุทธิ์/ความจงรักภักดี
+(0.71–0.74). Used locally; gated out of any public deploy per the RID/ศัพท์บัญญัติ discipline.
+
+**BRIDGE — cut, honestly.** The English-cognate bonus needed the external `ThaiDict_Script` seed (not
+available locally, no confirmed URL) AND a corroborating source — but Kaikki's etymology stops at the
+immediate borrowing (มารดา → "ยืมมาจากบาลี มาตา", no PIE→English chain). With neither the data nor a way to
+verify it, shipping would mean exactly the unverifiable claims the plan warned against. Droppable phase, cut
+and recorded rather than pushed through. No code written.
+
+**P (`a56e599`) — pitch pass.** Reframed the deck around the job-menu front door + the naming market gap;
+added the sound-symbolism feature with its hedge intact ("ห้ามตัดออก"); strengthened the honest katgpt-rs line
+(Kimi-K3 gibberish, 17.7 GB, 28 LLM-serving crates with nothing to serve) as engineering discipline. Re-ran
+verify_pitch AFTER (the R6/R7 guard): all pass.
+
+Full detail + raw numbers in `VERIFY_R11.md`; latency-sensitive paths in `BENCHMARKS.md` §4.5 (rhyme) / §4.6
+(register) / §4.7 (vectors).
