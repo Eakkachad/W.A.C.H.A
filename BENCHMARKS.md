@@ -269,6 +269,31 @@ query's descriptive words, so BM25 over glosses cannot reach them. v2's enrichme
 conceptual queries and its damping compressed single-rare-term noise (R3's top score fell 11 → 2.7), but it
 is not a fix for the structural cases. Reported as-is, not curated.
 
+### 4.5 Loose rhyme index (R11 WRITE-2, measured)
+
+The rhyme finder keys each headword by its final rime — (final-consonant class per มาตราตัวสะกด, vowel
+nucleus, long/short) — extracted from the RID pronunciation respelling (falling back to the headword). Two
+words sharing a key loosely rhyme. **Deliberately bounded**: this is loose rhyme, not classical เอก/โท
+meter matching (a scope trap explicitly avoided this round).
+
+| metric | value |
+|---|---|
+| indexed words | 38,550 |
+| distinct rhyme keys | 234 |
+| **build time (full corpus, at web startup)** | **35 ms** (measured; 24 ms in a warm native run) |
+| lookup (`rhymes_of`) | O(1) map hit + freq sort of the bucket; sub-ms |
+
+Verified real rhymes (not key collisions): `บ้าน` → การ, งาน, ด้าน, ท่าน, อาหาร, ผ่าน, รัฐบาล (all แม่กน,
+long า); `กด` → กฎ, กรด (แม่กด, short อ). CLI `rhyme`, web `/api/rhyme`.
+
+### 4.6 Register filter (R11 WRITE-1, measured)
+
+`Register` (แบบ/โบ/ปาก/ราชา/เลิก) was parsed per-sense but the R10 reshape emitted it in `{braces}` while the
+importer only read `(parens)` — so RID register tags were silently dropped until R11 fixed the parser.
+1,212 RID senses carry `{โบ}`. `register ราชา` → ผม, คุณ, ทราบ, ดิฉัน, เท้า, สตรี, โค (genuine ราชาศัพท์);
+composable with the reverse-dictionary candidate set when a topic query is given. CLI `register`, web
+`/api/register`. Self-contained scan over the dictionary — no separate index, sub-ms.
+
 **⚠️ v2 also caused a regression, found on review (2026-09-14).** `ที่เก็บเงินของรัฐ` returned **`คลัง`
 at rank 1 in v1**; in v2 `คลัง` **falls out of the top 5 entirely** (now: หัวเบี้ย, ค่าธรรมเนียม, ส่วนลด,
 เงินตรา, ภาษี). The coverage damping that fixed the single-rare-term noise penalises entries with **terse**

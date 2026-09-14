@@ -26,6 +26,7 @@ pub mod import;
 pub mod learner;
 pub mod relations;
 pub mod reverse;
+pub mod rhyme;
 pub mod segmenter;
 pub mod sound;
 pub mod tcc;
@@ -463,6 +464,52 @@ impl Engine {
     /// Number of headwords with an evolution timeline.
     pub fn evolution_count(&self) -> usize {
         self.evolution.len()
+    }
+
+    /// R11 WRITE-1 — register filter. Returns headwords whose ANY sense carries
+    /// the requested register marker (แบบ/โบ/ปาก/ราชา/เลิก), ranked by frequency.
+    /// Self-contained (Engine owns the dictionary). The web layer composes this
+    /// with the reverse-dictionary candidate set when a topic query is supplied.
+    pub fn register_search(&self, marker: &str, k: usize) -> Vec<(String, u64)> {
+        use crate::dictionary::Register;
+        let Some(target) = Register::from_marker(marker.trim()) else {
+            return Vec::new();
+        };
+        let mut hits: Vec<(String, u64)> = self
+            .dict
+            .all_entries()
+            .filter(|e| e.senses.iter().any(|s| s.register == Some(target)))
+            .map(|e| (e.headword.clone(), self.dict.frequency(&e.headword)))
+            .collect();
+        hits.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+        hits.dedup_by(|a, b| a.0 == b.0); // homographs share a headword
+        hits.truncate(k);
+        hits
+    }
+
+    /// True iff any sense of `word` carries the given register marker (used by the
+    /// web layer to filter reverse-dictionary candidates by register).
+    pub fn word_has_register(&self, word: &str, marker: &str) -> bool {
+        use crate::dictionary::Register;
+        let Some(target) = Register::from_marker(marker.trim()) else {
+            return false;
+        };
+        self.dict.get(word).map(|e| e.senses.iter().any(|s| s.register == Some(target))).unwrap_or(false)
+    }
+
+    /// R11 WRITE-2 — build the loose rhyme index from every entry's pronunciation
+    /// (falling back to the headword when a pronunciation is absent).
+    pub fn build_rhyme_index(&self) -> crate::rhyme::RhymeIndex {
+        crate::rhyme::RhymeIndex::build(
+            self.dict.all_entries().map(|e| {
+                (e.headword.clone(), e.pronunciation.clone().unwrap_or_default())
+            }),
+        )
+    }
+
+    /// Word frequency (for ranking rhyme candidates).
+    pub fn frequency(&self, word: &str) -> u64 {
+        self.dict.frequency(word)
     }
 
     pub fn word_count(&self) -> usize {

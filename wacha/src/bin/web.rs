@@ -101,6 +101,16 @@ fn main() {
         t_rev.elapsed().as_millis()
     );
     let rindex = Arc::new(rindex);
+    // R11 WRITE-2: loose rhyme index — built once at startup, shared.
+    let t_rh = std::time::Instant::now();
+    let rhyme = engine.build_rhyme_index();
+    println!(
+        "rhyme index: {} words / {} keys in {} ms",
+        rhyme.word_count(),
+        rhyme.key_count(),
+        t_rh.elapsed().as_millis()
+    );
+    let rhyme = Arc::new(rhyme);
     let addr = format!("{host}:{port}");
     let listener = match TcpListener::bind(&addr) {
         Ok(l) => l,
@@ -122,8 +132,9 @@ fn main() {
             Ok(stream) => {
                 let engine = Arc::clone(&engine);
                 let rindex = Arc::clone(&rindex);
+                let rhyme = Arc::clone(&rhyme);
                 thread::spawn(move || {
-                    if let Err(e) = handle(stream, &engine, &rindex) {
+                    if let Err(e) = handle(stream, &engine, &rindex, &rhyme) {
                         eprintln!("connection error: {e}");
                     }
                 });
@@ -133,7 +144,7 @@ fn main() {
     }
 }
 
-fn handle(mut stream: TcpStream, engine: &Engine, rindex: &wacha::reverse::ReverseIndex) -> std::io::Result<()> {
+fn handle(mut stream: TcpStream, engine: &Engine, rindex: &wacha::reverse::ReverseIndex, rhyme: &wacha::rhyme::RhymeIndex) -> std::io::Result<()> {
     let mut reader = BufReader::new(stream.try_clone()?);
 
     // Parse the request line: METHOD PATH HTTP/1.1
@@ -167,7 +178,7 @@ fn handle(mut stream: TcpStream, engine: &Engine, rindex: &wacha::reverse::Rever
     }
 
     // Route.
-    let (status, content_type, body) = route(path, engine, rindex);
+    let (status, content_type, body) = route(path, engine, rindex, rhyme);
     let response = format!(
         "HTTP/1.1 {status}\r\n\
          Content-Type: {content_type}\r\n\
@@ -183,7 +194,7 @@ fn handle(mut stream: TcpStream, engine: &Engine, rindex: &wacha::reverse::Rever
     Ok(())
 }
 
-fn route(path: &str, engine: &Engine, rindex: &wacha::reverse::ReverseIndex) -> (&'static str, &'static str, Vec<u8>) {
+fn route(path: &str, engine: &Engine, rindex: &wacha::reverse::ReverseIndex, rhyme: &wacha::rhyme::RhymeIndex) -> (&'static str, &'static str, Vec<u8>) {
     if path == "/" || path.starts_with("/?") {
         return ("200 OK", "text/html; charset=utf-8", INDEX_HTML.as_bytes().to_vec());
     }
@@ -210,7 +221,63 @@ fn route(path: &str, engine: &Engine, rindex: &wacha::reverse::ReverseIndex) -> 
         let json = evolution_json(engine, &query);
         return ("200 OK", "application/json; charset=utf-8", json.into_bytes());
     }
+    if let Some(qs) = path.strip_prefix("/api/rhyme") {
+        let query = extract_query_param(qs, "q").unwrap_or_default();
+        let json = rhyme_json(engine, rhyme, &query);
+        return ("200 OK", "application/json; charset=utf-8", json.into_bytes());
+    }
+    if let Some(qs) = path.strip_prefix("/api/register") {
+        let reg = extract_query_param(qs, "reg").unwrap_or_default();
+        let query = extract_query_param(qs, "q").unwrap_or_default();
+        let json = register_json(engine, rindex, &reg, &query);
+        return ("200 OK", "application/json; charset=utf-8", json.into_bytes());
+    }
     ("404 Not Found", "text/plain; charset=utf-8", b"not found".to_vec())
+}
+
+/// Rhyme JSON: `{ "query", "rhymes":[word,...] }` (loose rhyme, ranked by freq).
+fn rhyme_json(engine: &Engine, rhyme: &wacha::rhyme::RhymeIndex, query: &str) -> String {
+    let mut words = rhyme.rhymes_of(query.trim());
+    words.sort_by(|a, b| engine.frequency(b).cmp(&engine.frequency(a)).then(a.cmp(b)));
+    words.truncate(20);
+    let mut s = String::from("{");
+    s.push_str(&format!("\"query\":{},", json_str(query)));
+    s.push_str("\"rhymes\":[");
+    for (i, w) in words.iter().enumerate() {
+        if i > 0 { s.push(','); }
+        s.push_str(&json_str(w));
+    }
+    s.push_str("]}");
+    s
+}
+
+/// Register JSON: `{ "reg", "query", "words":[{word,freq}] }`. When `query` is set,
+/// the register filter is composed with the reverse-dictionary candidate set.
+fn register_json(engine: &Engine, rindex: &wacha::reverse::ReverseIndex, reg: &str, query: &str) -> String {
+    let words: Vec<(String, u64)> = if query.trim().is_empty() {
+        engine.register_search(reg, 20)
+    } else {
+        // compose: reverse-dictionary candidates filtered to the target register
+        let hits = rindex.search(query, 60, |s| engine.segment_words(s));
+        let mut v: Vec<(String, u64)> = hits
+            .into_iter()
+            .filter(|h| engine.word_has_register(&h.word, reg))
+            .map(|h| (h.word.clone(), engine.frequency(&h.word)))
+            .collect();
+        v.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+        v.dedup_by(|a, b| a.0 == b.0);
+        v.truncate(20);
+        v
+    };
+    let mut s = String::from("{");
+    s.push_str(&format!("\"reg\":{},\"query\":{},", json_str(reg), json_str(query)));
+    s.push_str("\"words\":[");
+    for (i, (w, f)) in words.iter().enumerate() {
+        if i > 0 { s.push(','); }
+        s.push_str(&format!("{{\"word\":{},\"freq\":{}}}", json_str(w), f));
+    }
+    s.push_str("]}");
+    s
 }
 
 /// Evolution-timeline JSON: `{ "query", "timeline":[{ "edition","definition","is_draft","draft_label" }] }`.

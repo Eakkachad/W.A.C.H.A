@@ -159,6 +159,15 @@
     <button id="rev" title="ค้นคำจากคำอธิบายความหมาย (reverse dictionary)">ค้นจากความหมาย</button>
     <button id="tl" title="คำทับศัพท์ทางการ อังกฤษ⇄ไทย (ราชบัณฑิตยสภา)">คำทับศัพท์</button>
     <button id="ev" title="วิวัฒนาการคำ ๓ ยุค ๒๕๔๒→๒๕๕๔→๒๕๖๙ (อักษร ก)">วิวัฒนาการคำ</button>
+    <button id="rh" title="หาคำคล้องจอง (loose rhyme)" hidden>คำคล้องจอง</button>
+    <select id="regsel" title="กรองระดับภาษา" hidden>
+      <option value="">— ระดับภาษา —</option>
+      <option value="ราชา">ราชาศัพท์</option>
+      <option value="แบบ">ภาษาแบบแผน</option>
+      <option value="ปาก">ภาษาปาก</option>
+      <option value="โบ">คำโบราณ</option>
+      <option value="เลิก">คำเลิกใช้</option>
+    </select>
   </div>
   <div class="hint" id="hint" hidden>
     ลอง: <code>แมว</code> <code>ครู</code> <code>อ่าน</code> <code>สุนัข</code> <code>พจนานุกรม</code>
@@ -236,6 +245,10 @@ function setMode(mode) {
   $("#hint").hidden = mode !== "general";
   $("#modelabel").textContent = m.label;
   qEl.placeholder = m.placeholder;
+  // WRITE controls appear only in writing mode.
+  $("#rh").hidden = mode !== "writing";
+  $("#regsel").hidden = mode !== "writing";
+  if ($("#regsel")) $("#regsel").value = "";
   let noteHtml = m.note ? `<div class="mode-note">${m.note}</div>` : "";
   if (m.examples && m.examples.length) {
     noteHtml += `<div class="mode-examples">ลองตัวอย่างที่ยืนยันแล้ว: `
@@ -325,6 +338,53 @@ async function lookup(word) {
     resultEl.innerHTML = `<div class="card"><span class="empty">เกิดข้อผิดพลาด: ${esc(e)}</span></div>`;
   }
 }
+async function rhymeSearch(word) {
+  word = (word || "").trim();
+  if (!word) { resultEl.innerHTML = ""; return; }
+  resultEl.innerHTML = `<div class="card"><span class="empty">กำลังหาคำคล้องจอง “${esc(word)}”…</span></div>`;
+  try {
+    const res = await fetch(`/api/rhyme?q=${encodeURIComponent(word)}`);
+    const data = await res.json();
+    let html = `<div class="card def"><h2>คำคล้องจอง (loose rhyme): “${esc(word)}”</h2>`;
+    if (!data.rhymes || !data.rhymes.length) {
+      html += `<span class="empty">ไม่พบคำคล้องจอง</span></div>`;
+      resultEl.innerHTML = html; return;
+    }
+    html += `<div>` + data.rhymes.map(w =>
+      `<span class="chip subword" data-w="${esc(w)}">${esc(w)}</span>`).join(" ") + `</div>`;
+    html += `<div class="prov">คล้องจองแบบหลวม (สระ + มาตราตัวสะกดเดียวกัน) — ไม่ใช่สัมผัสบังคับตามฉันทลักษณ์ · เรียงตามความถี่</div></div>`;
+    resultEl.innerHTML = html;
+    resultEl.querySelectorAll(".subword").forEach(el =>
+      el.addEventListener("click", () => { qEl.value = el.dataset.w; lookup(el.dataset.w); }));
+  } catch (e) {
+    resultEl.innerHTML = `<div class="card"><span class="empty">เกิดข้อผิดพลาด: ${esc(e)}</span></div>`;
+  }
+}
+
+async function registerSearch(reg, query) {
+  reg = (reg || "").trim();
+  if (!reg) { return; }
+  const q = (query || "").trim();
+  resultEl.innerHTML = `<div class="card"><span class="empty">กำลังกรองคำระดับ “${esc(reg)}”…</span></div>`;
+  try {
+    const res = await fetch(`/api/register?reg=${encodeURIComponent(reg)}&q=${encodeURIComponent(q)}`);
+    const data = await res.json();
+    let html = `<div class="card def"><h2>คำระดับ “${esc(reg)}”${q ? ` ที่เกี่ยวกับ “${esc(q)}”` : ""}</h2>`;
+    if (!data.words || !data.words.length) {
+      html += `<span class="empty">ไม่พบคำในระดับภาษานี้${q ? " ที่ตรงกับคำค้น" : ""}</span></div>`;
+      resultEl.innerHTML = html; return;
+    }
+    html += `<div>` + data.words.map(x =>
+      `<span class="chip subword" data-w="${esc(x.word)}">${esc(x.word)}</span>`).join(" ") + `</div>`;
+    html += `<div class="prov">กรองตามทะเบียนคำในพจนานุกรม (RID) · เรียงตามความถี่</div></div>`;
+    resultEl.innerHTML = html;
+    resultEl.querySelectorAll(".subword").forEach(el =>
+      el.addEventListener("click", () => { qEl.value = el.dataset.w; lookup(el.dataset.w); }));
+  } catch (e) {
+    resultEl.innerHTML = `<div class="card"><span class="empty">เกิดข้อผิดพลาด: ${esc(e)}</span></div>`;
+  }
+}
+
 async function evolutionSearch(hw) {
   hw = (hw || "").trim();
   if (!hw) { resultEl.innerHTML = ""; return; }
@@ -664,6 +724,8 @@ $("#go").addEventListener("click", () => lookup(qEl.value));
 $("#rev").addEventListener("click", () => reverseSearch(qEl.value));
 $("#tl").addEventListener("click", () => translitSearch(qEl.value));
 $("#ev").addEventListener("click", () => evolutionSearch(qEl.value));
+$("#rh").addEventListener("click", () => rhymeSearch(qEl.value));
+$("#regsel").addEventListener("change", (e) => { if (e.target.value) registerSearch(e.target.value, qEl.value); });
 qEl.addEventListener("keydown", (e) => { if (e.key === "Enter") lookup(qEl.value); });
 document.querySelectorAll(".hint code").forEach(c => {
   c.addEventListener("click", () => { qEl.value = c.textContent; lookup(c.textContent); });

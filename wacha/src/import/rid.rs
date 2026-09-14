@@ -254,6 +254,21 @@ fn parse_sense(s: &str) -> Result<(Sense, Option<String>, bool), ImportError> {
         }
     }
 
+    // {register} — the brace form the R10 reshape emits (แบบ/โบ/ปาก/ราชา/เลิก).
+    // (The reshape writes register in braces; the parser previously only read the
+    //  parenthetical form, so RID register tags were silently dropped — R11 WRITE-1.)
+    while rest.starts_with('{') {
+        if let Some(i) = rest.find('}') {
+            let tag = rest[1..i].trim();
+            if let Some(reg) = Register::from_marker(tag) {
+                register = Some(reg);
+            }
+            rest = rest[i + 1..].trim();
+        } else {
+            break;
+        }
+    }
+
     // `ดู <xref>` cross-reference. Two legitimate shapes in the real data:
     //   (a) pure redirect  — the sense IS "ดู X" (no standalone definition), and
     //   (b) trailing ref   — "def... ดู X" at the END of the sense.

@@ -122,6 +122,21 @@ fn main() {
                 }
                 print_evolution(&engine, &hw);
             }
+            "rhyme" => {
+                let w = rest.join(" ");
+                if w.is_empty() {
+                    eprintln!("usage: wacha rhyme <word>  (loose rhyme finder)");
+                    std::process::exit(2);
+                }
+                print_rhyme(&engine, &w);
+            }
+            "register" => {
+                if rest.is_empty() {
+                    eprintln!("usage: wacha register <แบบ|โบ|ปาก|ราชา|เลิก>");
+                    std::process::exit(2);
+                }
+                print_register(&engine, &rest[0]);
+            }
             // Bare word with no subcommand -> treat as a lookup.
             other => {
                 let word = std::iter::once(other.to_string())
@@ -590,6 +605,34 @@ fn print_segmentation(tokens: &[Token]) {
         println!("  ({oov} out-of-vocabulary cluster(s), shown in [brackets])");
     }
 }
+fn print_rhyme(engine: &Engine, word: &str) {
+    let idx = engine.build_rhyme_index();
+    let mut rhymes = idx.rhymes_of(word);
+    rhymes.sort_by(|a, b| engine.frequency(b).cmp(&engine.frequency(a)).then(a.cmp(b)));
+    println!("\n──────── คำคล้องจอง: {word} ────────");
+    if rhymes.is_empty() {
+        println!("(ไม่พบคำคล้องจอง — no loose rhymes found)");
+        return;
+    }
+    println!("คำที่คล้องจอง (loose rhyme — สระ + มาตราตัวสะกดเดียวกัน):");
+    for w in rhymes.iter().take(15) {
+        println!("  • {w}");
+    }
+    println!("  (คล้องจองแบบหลวม ไม่ใช่สัมผัสบังคับตามฉันทลักษณ์)");
+}
+
+fn print_register(engine: &Engine, marker: &str) {
+    let hits = engine.register_search(marker, 20);
+    println!("\n──────── คำในทะเบียน “{marker}” ────────");
+    if hits.is_empty() {
+        println!("(ไม่พบคำในทะเบียนนี้ — ทะเบียนที่รองรับ: แบบ/โบ/ปาก/ราชา/เลิก)");
+        return;
+    }
+    for (w, f) in &hits {
+        println!("  • {w}  (ความถี่ {f})");
+    }
+}
+
 fn print_evolution(engine: &Engine, headword: &str) {
     use wacha::evolution::DRAFT_2569_LABEL;
     let timeline = engine.evolution_timeline(headword);
