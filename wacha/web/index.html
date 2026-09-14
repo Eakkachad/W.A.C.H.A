@@ -34,6 +34,20 @@
   .hint code {
     background: var(--panel2); padding: 1px 6px; border-radius: 5px; cursor: pointer;
   }
+  .menu-lead { text-align: center; font-size: 1.35rem; font-weight: 700; margin: 22px 0 16px; }
+  .menu-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 560px) { .menu-grid { grid-template-columns: 1fr; } }
+  .job { text-align: left; padding: 16px 18px; border-radius: 14px; cursor: pointer;
+    background: var(--panel); border: 1px solid var(--edge); color: var(--ink);
+    display: flex; flex-direction: column; gap: 6px; transition: border-color .15s, background .15s; }
+  .job:hover { border-color: var(--accent); background: var(--panel2); }
+  .job b { font-size: 1.12rem; color: var(--accent); }
+  .job span { font-size: .9rem; color: var(--muted); line-height: 1.5; }
+  .modebar { display: flex; align-items: center; gap: 14px; margin: 18px 0 4px; flex-wrap: wrap; }
+  .modebar #modelabel { font-weight: 700; font-size: 1.1rem; margin-right: auto; }
+  .linkbtn { background: none; border: 0; color: var(--accent); cursor: pointer; font-size: .92rem; padding: 4px 6px; }
+  .linkbtn:hover { text-decoration: underline; }
+  .mode-note { color: var(--muted); font-size: .88rem; margin: 0 0 10px; }
   .card {
     background: var(--panel); border: 1px solid var(--edge); border-radius: 14px;
     padding: 16px 18px; margin-top: 16px;
@@ -115,14 +129,29 @@
   <div class="backronym">Word Architecture · Cluster-aware Hybrid Analysis</div>
 </header>
 <main>
-  <div class="search">
+  <div id="jobmenu">
+    <div class="menu-lead">วันนี้อยากให้ภาษาไทยทำอะไรให้คุณดี?</div>
+    <div class="menu-grid">
+      <button class="job" data-mode="naming"><b>ตั้งชื่อ</b><span>ตั้งชื่อลูก คนรัก สัตว์เลี้ยง บริษัท ผ่านรากศัพท์จริง ไม่ใช่เลขศาสตร์</span></button>
+      <button class="job" data-mode="writing"><b>หาคำให้ใช่กับสิ่งที่กำลังเขียน</b><span>กรองระดับภาษา (ทางการ/ราชาศัพท์/ปาก) + หาคำคล้องจอง</span></button>
+      <button class="job" data-mode="specialized"><b>เข้าใจศัพท์เฉพาะทาง</b><span>ศัพท์บัญญัติข้ามศาสตร์ แพทย์ · จิตวิทยา · ปรัชญา</span></button>
+      <button class="job" data-mode="roots"><b>สำรวจรากคำ / วิวัฒนาการคำ</b><span>รากคำ (บาลี/สันสกฤต/เขมร/อังกฤษ) + นิยาม ๓ ยุค</span></button>
+      <button class="job" data-mode="translit"><b>ตรวจคำทับศัพท์</b><span>อังกฤษ⇄ไทย ตามหลักเกณฑ์ราชบัณฑิตยสภา</span></button>
+    </div>
+  </div>
+  <div id="modebar" class="modebar" hidden>
+    <span id="modelabel"></span>
+    <button id="menuback" class="linkbtn">← เมนูหลัก</button>
+    <button id="general" class="linkbtn">ค้นหาทั่วไป</button>
+  </div>
+  <div class="search" id="searchbar" hidden>
     <input id="q" type="text" placeholder="พิมพ์คำภาษาไทย เช่น แมว, ครู, อ่าน…" autofocus>
     <button id="go">ค้นหา</button>
     <button id="rev" title="ค้นคำจากคำอธิบายความหมาย (reverse dictionary)">ค้นจากความหมาย</button>
     <button id="tl" title="คำทับศัพท์ทางการ อังกฤษ⇄ไทย (ราชบัณฑิตยสภา)">คำทับศัพท์</button>
     <button id="ev" title="วิวัฒนาการคำ ๓ ยุค ๒๕๔๒→๒๕๕๔→๒๕๖๙ (อักษร ก)">วิวัฒนาการคำ</button>
   </div>
-  <div class="hint">
+  <div class="hint" id="hint" hidden>
     ลอง: <code>แมว</code> <code>ครู</code> <code>อ่าน</code> <code>สุนัข</code> <code>พจนานุกรม</code>
     · ค้นจากความหมาย: <code>สัตว์เลี้ยงเฝ้าบ้าน</code> <code>ยานพาหนะที่มีสี่ล้อ</code>
   </div>
@@ -134,6 +163,86 @@
 const $ = (s) => document.querySelector(s);
 const resultEl = $("#result");
 const qEl = $("#q");
+
+// ── R11 ROUTER: job-menu front door ──────────────────────────────────────────
+// Presentation layer only. The engine (/api/lookup, /api/reverse) is unchanged;
+// a mode decides placeholder copy, which call fires first, and the order the
+// SAME rendered sections appear in.
+let MODE = null;
+const MODES = {
+  naming: {
+    label: "ตั้งชื่อ — ผ่านรากศัพท์จริง",
+    placeholder: "พิมพ์คำที่มีในใจ (เช่น มารดา, ดารา) หรือกด ‘ค้นจากความหมาย’ แล้วพิมพ์คุณสมบัติที่อยากได้",
+    note: "โหมดตั้งชื่อ: ค้นคำที่มีในใจเพื่อดูความหมาย + รากคำ + คำใกล้เคียงเป็นทางเลือก · หรือค้นจากความหมายเพื่อหาคำจากคุณสมบัติที่อยากได้",
+    // sections emphasised first (by CSS-less DOM reorder after render)
+    order: ["def", "rellist-card", "graph-card", "learner", "translit", "evolution", "seg"],
+  },
+  writing: {
+    label: "หาคำให้ใช่กับสิ่งที่กำลังเขียน",
+    placeholder: "พิมพ์คำ (ดูระดับภาษา/คำคล้องจอง) หรือกด ‘ค้นจากความหมาย’ เพื่อหาคำใกล้เคียง",
+    note: "โหมดการเขียน: เน้นระดับภาษา (ทางการ/ราชาศัพท์/ปาก) และคำคล้องจอง",
+    order: ["def", "rellist-card", "graph-card", "learner", "translit", "evolution", "seg"],
+  },
+  specialized: {
+    label: "เข้าใจศัพท์เฉพาะทาง",
+    placeholder: "พิมพ์ศัพท์เฉพาะทาง (เช่น อปรกติ, อภิธรรม) เพื่อดูสาขา + คำข้ามศาสตร์",
+    note: "โหมดศัพท์เฉพาะทาง: เน้นสาขาวิชา + คำบัญญัติเดียวกันข้ามศาสตร์",
+    order: ["def", "graph-card", "rellist-card", "learner", "translit", "evolution", "seg"],
+  },
+  roots: {
+    label: "สำรวจรากคำ / วิวัฒนาการคำ",
+    placeholder: "พิมพ์คำ (เช่น กระดาษ, กรรม) เพื่อดูรากคำ + นิยาม ๓ ยุค",
+    note: "โหมดรากคำ: เน้นรากศัพท์ (บาลี/สันสกฤต/เขมร/อังกฤษ) + วิวัฒนาการนิยาม ๓ ยุค (อักษร ก)",
+    order: ["def", "evolution", "translit", "graph-card", "rellist-card", "learner", "seg"],
+  },
+  translit: {
+    label: "ตรวจคำทับศัพท์",
+    placeholder: "พิมพ์คำอังกฤษ (computer) หรือคำทับศัพท์ไทย (คอมพิวเตอร์)",
+    note: "โหมดคำทับศัพท์: อังกฤษ⇄ไทย ตามหลักเกณฑ์ราชบัณฑิตยสภา",
+    order: ["def", "translit", "evolution", "graph-card", "rellist-card", "learner", "seg"],
+  },
+  general: {
+    label: "ค้นหาทั่วไป",
+    placeholder: "พิมพ์คำภาษาไทย เช่น แมว, ครู, อ่าน…",
+    note: "",
+    order: null, // keep the original render order untouched
+  },
+};
+
+function setMode(mode) {
+  MODE = mode;
+  const m = MODES[mode] || MODES.general;
+  $("#jobmenu").hidden = true;
+  $("#searchbar").hidden = false;
+  $("#modebar").hidden = false;
+  $("#hint").hidden = mode !== "general";
+  $("#modelabel").textContent = m.label;
+  qEl.placeholder = m.placeholder;
+  resultEl.innerHTML = m.note ? `<div class="mode-note">${m.note}</div>` : "";
+  // translit mode leads with the transliteration tool; others start empty.
+  qEl.value = "";
+  qEl.focus();
+}
+
+function showMenu() {
+  MODE = null;
+  $("#jobmenu").hidden = false;
+  $("#searchbar").hidden = true;
+  $("#modebar").hidden = true;
+  $("#hint").hidden = true;
+  resultEl.innerHTML = "";
+}
+
+// Reorder the already-rendered .card sections per the active mode. Pure DOM
+// reordering — every section's own markup + event wiring is untouched, so the
+// data shown is identical; only the vertical order changes.
+function reorderForMode() {
+  const m = MODES[MODE];
+  if (!m || !m.order) return;
+  const byKey = {};
+  resultEl.querySelectorAll("[data-sec]").forEach(el => { byKey[el.getAttribute("data-sec")] = el; });
+  m.order.forEach(key => { if (byKey[key]) resultEl.appendChild(byKey[key]); });
+}
 
 function esc(s) {
   return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -253,8 +362,11 @@ async function reverseSearch(desc) {
 
 function render(d) {
   let html = "";
+  // R11 ROUTER: keep the active mode's note at the top of the result.
+  const _m = MODES[MODE];
+  if (_m && _m.note) html += `<div class="mode-note">${_m.note}</div>`;
   // Segmentation
-  html += `<div class="card"><h2>การตัดคำ (segmentation)</h2><div class="seg">`;
+  html += `<div class="card" data-sec="seg"><h2>การตัดคำ (segmentation)</h2><div class="seg">`;
   if (d.segmentation.length === 0) {
     html += `<span class="empty">—</span>`;
   } else {
@@ -267,7 +379,7 @@ function render(d) {
   html += `</div></div>`;
 
   // Definition
-  html += `<div class="card def"><h2>นิยาม (definition)</h2>`;
+  html += `<div class="card def" data-sec="def"><h2>นิยาม (definition)</h2>`;
   if (d.entry) {
     html += `<div><span class="word">${esc(d.entry.word)}</span><span class="pos">${esc(d.entry.pos)}</span></div>`;
     html += `<div class="body">${esc(d.entry.definition)}</div>`;
@@ -311,7 +423,7 @@ function render(d) {
 
   // Learner content (offline-precomputed enrichment, clearly labeled)
   if (d.learner) {
-    html += `<div class="card learner"><h2>คำอธิบายง่าย (สำหรับผู้เรียน)</h2>`;
+    html += `<div class="card learner" data-sec="learner"><h2>คำอธิบายง่าย (สำหรับผู้เรียน)</h2>`;
     html += `<div class="body">${esc(d.learner.simple)}</div>`;
     html += `<div class="example">ตัวอย่าง: ${esc(d.learner.example)}</div>`;
     html += `<div class="prov">เนื้อหาสำหรับผู้เรียน · จัดทำล่วงหน้าแบบออฟไลน์ · ที่มา: ${esc(d.learner.source)}</div>`;
@@ -320,7 +432,7 @@ function render(d) {
 
   // U2 — the same one query surfaces its transliteration + evolution dimensions.
   if (d.translit && d.translit.length) {
-    html += `<div class="card def"><h2>คำทับศัพท์ที่เกี่ยวข้อง (transliteration)</h2><ul>`;
+    html += `<div class="card def" data-sec="translit"><h2>คำทับศัพท์ที่เกี่ยวข้อง (transliteration)</h2><ul>`;
     for (const h of d.translit) {
       const note = h.note ? ` <span class="meta">· ${esc(h.note)}</span>` : "";
       html += `<li><b>${esc(h.english)}</b> &nbsp;⇄&nbsp; <b>${esc(h.thai)}</b>${note}</li>`;
@@ -328,7 +440,7 @@ function render(d) {
     html += `</ul><div class="prov"><span class="badge lic">ประมวลคำทับศัพท์ภาษาอังกฤษ พ.ศ. 2563 (ราชบัณฑิตยสภา)</span></div></div>`;
   }
   if (d.evolution && d.evolution.length) {
-    html += `<div class="card def"><h2>พจนานุกรม ๓ ยุค (word evolution 2542→2554→2569)</h2>`;
+    html += `<div class="card def" data-sec="evolution"><h2>พจนานุกรม ๓ ยุค (word evolution 2542→2554→2569)</h2>`;
     for (const e of d.evolution) {
       html += `<div class="evo-ed"><div class="ex-h">พจนานุกรม พ.ศ. ${esc(e.edition)}</div>`;
       html += `<div class="body">${esc(e.definition)}</div>`;
@@ -339,7 +451,7 @@ function render(d) {
   }
 
   // Related words: interactive graph (centerpiece) + text list (fallback/detail)
-  html += `<div class="card"><h2>แผนภาพความสัมพันธ์ — คลิกคำเพื่อสำรวจต่อ (explainable graph)</h2>`;
+  html += `<div class="card" data-sec="graph-card"><h2>แผนภาพความสัมพันธ์ — คลิกคำเพื่อสำรวจต่อ (explainable graph)</h2>`;
   if (d.related.length === 0) {
     html += `<span class="empty">ไม่มีข้อมูลความสัมพันธ์ (no relationship data)</span>`;
   } else {
@@ -358,7 +470,7 @@ function render(d) {
   html += `</div>`;
 
   // Related words with explanation (text detail — kept as the accessible fallback)
-  html += `<div class="card"><h2>คำที่เกี่ยวข้อง — พร้อมคำอธิบาย (explainable)</h2>`;
+  html += `<div class="card" data-sec="rellist-card"><h2>คำที่เกี่ยวข้อง — พร้อมคำอธิบาย (explainable)</h2>`;
   if (d.related.length === 0) {
     html += `<span class="empty">ไม่มีข้อมูลความสัมพันธ์ (no relationship data)</span>`;
   } else {
@@ -414,6 +526,9 @@ function render(d) {
       window.scrollTo({ top: 0, behavior: "smooth" });
     })
   );
+
+  // R11 ROUTER: reorder the rendered sections to match the active mode's emphasis.
+  reorderForMode();
 }
 
 // Extract the relation label connecting the query word to a related word,
@@ -494,6 +609,19 @@ qEl.addEventListener("keydown", (e) => { if (e.key === "Enter") lookup(qEl.value
 document.querySelectorAll(".hint code").forEach(c => {
   c.addEventListener("click", () => { qEl.value = c.textContent; lookup(c.textContent); });
 });
+
+// ── R11 ROUTER wiring ────────────────────────────────────────────────────────
+document.querySelectorAll(".job").forEach(btn =>
+  btn.addEventListener("click", () => setMode(btn.dataset.mode))
+);
+$("#menuback").addEventListener("click", showMenu);
+$("#general").addEventListener("click", () => setMode("general"));
+// Boot into the job menu (the front door). ?mode=… deep-links a specific door.
+(function boot() {
+  const m = new URLSearchParams(location.search).get("mode");
+  if (m && MODES[m]) setMode(m); else showMenu();
+})();
+
 </script>
 </body>
 </html>
