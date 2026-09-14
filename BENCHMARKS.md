@@ -120,6 +120,28 @@ distinct related pairs (0.68%)**. It is a statement about the rare agreement set
 Thai WordNet and Wiktionary encode largely *disjoint* synonym knowledge, so combining them adds coverage
 more than redundancy, and the rare agreements (band A) are disproportionately trustworthy.
 
+### 4.0b Corroboration audit re-run at n=100 **per band**, fresh seed (R8 A2)
+
+To narrow the R7 CIs, the audit was re-run at **n=100 per measured-precision band** (A/B/C, not raw
+tiers) with a **fresh seed `0x8a2d2026`** (≠ the R7 tier-fit `0x4e362026`), same pre-registered band
+definitions, single rater (`wacha auditbands`; verdicts in
+`wacha/data/corroboration_audit_bands_2026-09-14.md`). Bands available: A 1,017 · B 11,411 · C 145,819.
+
+| band | n | precision (count) | 95% CI (Wald, n=100) |
+|---|---|---|---|
+| A multi-source | 100 | **96%** (96/100) | ±3.8 → [92, 100] |
+| B ORST + isolated pair | 100 | **90%** (90/100) | ±5.9 → [84, 96] |
+| C single-source synset ≥3 | 100 | **42%** (42/100) | ±9.7 → [32, 52] |
+
+**The finding holds and is now firmer.** At n=100 the CIs are ~⅓ narrower than at n=40. Band C is the
+worst by a wide, clearly-separated margin (42% vs 90–96%) — if anything slightly *below* the R7 55%
+estimate (the two CIs overlap in [40, 52]), confirming it is a coin-flip-quality band and validating the
+T2 decision to warn (⚠) band C only. Bands A vs B (96% vs 90%) still overlap at the edges, so we do **not**
+claim a firm A>B ordering. Band C's misses are dominated by big single-source Wiktionary "synonyms" lists
+that lump words sharing a head morpheme (น้ำ…/หัว…/ข้าว…); its hits are largely correct royal/poetic
+register synonyms (นฤปะ/อธิป, ยุพเรศ/ยุพิน, กุญชร/คชาชาติ) — the band genuinely mixes both. **Single rater;
+no inter-rater agreement (second rater dropped).**
+
 ### 4.1 Ranking quality — precision@5 on a held-out sample (R7 T1)
 
 Fresh stratified sample, **seed `0x52372026` (different from the tier-fit seed** so this is not scored on

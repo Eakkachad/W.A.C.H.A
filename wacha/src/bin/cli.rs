@@ -64,6 +64,7 @@ fn main() {
             "stats" => print_stats(&engine),
             "audit" => print_audit(&engine),
             "corroboration" => print_corroboration(&engine),
+            "auditbands" => print_audit_bands(&engine, rest),
             "patk" => print_patk(&engine, rest),
             "probe" => {
                 if rest.len() != 2 {
@@ -369,12 +370,64 @@ fn print_pair_debug(engine: &Engine, query: &str, cand: &str) {
     }
 }
 
+/// A2: per-BAND corroboration audit sample (measured-precision bands, not raw
+/// tiers), n=100 per band, with a FRESH seed distinct from the R7 tier audit's
+/// `0x4e362026`. Bands (pre-registered in `relations::precision_band`):
+///   A(2) = tier 2 (multi-source) · B(1) = tiers 3+0 (ORST + isolated pair) ·
+///   C(0) = tier 1 (single-source synset ≥3). Prints the sampled pairs grouped
+///   by band for a single-rater hand-audit (report agreement per band).
+fn print_audit_bands(engine: &Engine, rest: &[String]) {
+    let seed: u64 = rest
+        .first()
+        .and_then(|s| {
+            let t = s.trim_start_matches("0x");
+            u64::from_str_radix(t, 16).ok()
+        })
+        .unwrap_or(0x8a2d_2026); // fresh A2 seed (≠ R7 tier-audit 0x4e362026)
+    const PER_BAND: usize = 100;
+
+    let pairs = engine.enumerate_relation_pairs();
+    // tier -> band, same mapping as relations::precision_band.
+    let band_of = |tier: u8| -> u8 { match tier { 2 => 2, 3 | 0 => 1, _ => 0 } };
+    let bname = |b: u8| match b { 2 => "A (multi-source, ~92%)", 1 => "B (ORST+isolated, ~80%)", _ => "C (single-source synset≥3, ~55%)" };
+
+    println!("=== A2 corroboration audit: n={PER_BAND}/band, FRESH seed {seed:#x} (R7 used 0x4e362026) ===");
+    // Band totals.
+    let mut band_total = [0usize; 3];
+    for p in &pairs {
+        band_total[band_of(p.tier) as usize] += 1;
+    }
+    for b in (0u8..=2).rev() {
+        println!("band {} — {} : {} pairs available", b, bname(b), band_total[b as usize]);
+    }
+    for band in (0u8..=2).rev() {
+        let mut idxs: Vec<usize> = pairs
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| band_of(p.tier) == band)
+            .map(|(i, _)| i)
+            .collect();
+        // Deterministic shuffle by hash(seed, index) — same scheme as the tier audit.
+        idxs.sort_by_key(|&i| {
+            let mut h = seed ^ (i as u64).wrapping_mul(0x9E3779B97F4A7C15);
+            h ^= h >> 33; h = h.wrapping_mul(0xff51afd7ed558ccd); h ^= h >> 33;
+            h
+        });
+        let take = idxs.len().min(PER_BAND);
+        println!("\n--- band {band} = {} — sampled {} of {} ---", bname(band), take, idxs.len());
+        for &i in idxs.iter().take(take) {
+            let p = &pairs[i];
+            let names = wacha::relations::RelationEngine::source_set_names(p.src_set).join("+");
+            println!("  {} ⟷ {}   [{}]", p.a, p.b, names);
+        }
+    }
+}
+
 /// Phase N: cross-source corroboration — source-overlap table + a seeded,
 /// stratified-by-tier sample for hand-audit. Tiers are PRE-REGISTERED in
 /// `relations::corroboration_tier` (defined before any audit).
 fn print_corroboration(engine: &Engine) {
-    use std::collections::BTreeMap;
-    let pairs = engine.enumerate_relation_pairs();
+    use std::collections::BTreeMap;    let pairs = engine.enumerate_relation_pairs();
     println!("total distinct related pairs: {}", pairs.len());
 
     // Source-overlap table: count pairs by their exact attesting-source SET.
