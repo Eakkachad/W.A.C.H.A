@@ -20,13 +20,51 @@ DELAY=0.6                                 # >= 500 ms
 # Curated demo English queries (book_id=0 = all disciplines). Chosen to show the
 # many-to-many, discipline-disambiguated value: field (the §1.2 showcase),
 # computer/IT, maths, law, linguistics, science.
+#
+# R8 A1: expanded for DEMO BREADTH (not corpus share) — a handful of common
+# terms from ~40 disciplines so a judge from any field finds their own
+# vocabulary. Still well under the ~500 ceiling. Same hard limits apply
+# (>=500ms, single-thread, stop on first non-200, never re-fetch a cached term).
+# book_id=0 = all disciplines, so each English term returns its cross-discipline
+# Thai equivalents — the disambiguation that is this dataset's whole value.
 TERMS=(
-  field computer algorithm memory network data function variable
-  set group ring matrix vector domain kernel field-effect
-  language grammar phoneme morpheme syntax semantics
-  law contract liability jurisdiction evidence
-  energy force mass velocity acceleration field-strength
-  cell tissue organ gene protein enzyme
+  # computer / IT
+  field computer algorithm memory network data function variable file cache
+  server client protocol database interface compiler bandwidth encryption
+  # mathematics
+  set group ring matrix vector domain kernel field-effect integral derivative
+  probability theorem topology geometry algebra
+  # linguistics
+  language grammar phoneme morpheme syntax semantics dialect lexicon vowel consonant
+  # law
+  law contract liability jurisdiction evidence tort statute plaintiff defendant appeal
+  # physics
+  energy force mass velocity acceleration field-strength momentum quantum relativity friction
+  # biology / medicine
+  cell tissue organ gene protein enzyme virus bacteria vaccine antibody
+  diagnosis symptom therapy syndrome tumor
+  # chemistry
+  atom molecule compound acid base catalyst ion oxidation solvent polymer
+  # economics / finance
+  economy market inflation currency capital tariff dividend equity asset liability-econ
+  # education / psychology
+  education curriculum pedagogy cognition motivation perception memory-psych behavior intelligence
+  # sociology / political science
+  society culture democracy sovereignty bureaucracy ideology citizenship migration
+  # philosophy
+  ethics logic metaphysics epistemology aesthetics dialectic ontology
+  # astronomy / earth science
+  galaxy planet orbit gravity eclipse atmosphere climate erosion sediment mineral
+  # botany / agriculture
+  seed root leaf photosynthesis fertilizer irrigation harvest germination pollination
+  # zoology
+  species habitat predator ecosystem migration-zoo mammal reptile amphibian
+  # engineering / architecture
+  circuit voltage turbine structure foundation cantilever alloy welding
+  # arts / music
+  rhythm melody harmony composition sculpture perspective pigment canvas
+  # geography / statistics
+  latitude longitude plateau delta mean median variance correlation sample
 )
 
 fetched=0
