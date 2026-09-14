@@ -117,6 +117,7 @@
     <input id="q" type="text" placeholder="พิมพ์คำภาษาไทย เช่น แมว, ครู, อ่าน…" autofocus>
     <button id="go">ค้นหา</button>
     <button id="rev" title="ค้นคำจากคำอธิบายความหมาย (reverse dictionary)">ค้นจากความหมาย</button>
+    <button id="tl" title="คำทับศัพท์ทางการ อังกฤษ⇄ไทย (ราชบัณฑิตยสภา)">คำทับศัพท์</button>
   </div>
   <div class="hint">
     ลอง: <code>แมว</code> <code>ครู</code> <code>อ่าน</code> <code>สุนัข</code> <code>พจนานุกรม</code>
@@ -163,6 +164,31 @@ async function lookup(word) {
     resultEl.innerHTML = `<div class="card"><span class="empty">เกิดข้อผิดพลาด: ${esc(e)}</span></div>`;
   }
 }
+async function translitSearch(term) {
+  term = (term || "").trim();
+  if (!term) { resultEl.innerHTML = ""; return; }
+  resultEl.innerHTML = `<div class="card"><span class="empty">กำลังค้นคำทับศัพท์ “${esc(term)}”…</span></div>`;
+  try {
+    const res = await fetch(`/api/translit?q=${encodeURIComponent(term)}`);
+    const data = await res.json();
+    let html = `<div class="card def"><h2>คำทับศัพท์ (transliteration): “${esc(term)}”</h2>`;
+    if (!data.hits || !data.hits.length) {
+      html += `<span class="empty">ไม่พบคำทับศัพท์ทางการของคำนี้</span></div>`;
+      resultEl.innerHTML = html;
+      return;
+    }
+    html += `<ul>`;
+    for (const h of data.hits) {
+      const note = h.note ? ` <span class="meta">· หมายเหตุ: ${esc(h.note)}</span>` : "";
+      html += `<li><b>${esc(h.english)}</b> &nbsp;⇄&nbsp; <b>${esc(h.thai)}</b>${note}</li>`;
+    }
+    html += `</ul><div class="prov"><span class="badge lic">${esc(data.source || "")}</span></div></div>`;
+    resultEl.innerHTML = html;
+  } catch (e) {
+    resultEl.innerHTML = `<div class="card"><span class="empty">เกิดข้อผิดพลาด: ${esc(e)}</span></div>`;
+  }
+}
+
 
 async function reverseSearch(desc) {
   desc = (desc || "").trim();
@@ -413,6 +439,7 @@ function buildGraphSvg(d) {
 
 $("#go").addEventListener("click", () => lookup(qEl.value));
 $("#rev").addEventListener("click", () => reverseSearch(qEl.value));
+$("#tl").addEventListener("click", () => translitSearch(qEl.value));
 qEl.addEventListener("keydown", (e) => { if (e.key === "Enter") lookup(qEl.value); });
 document.querySelectorAll(".hint code").forEach(c => {
   c.addEventListener("click", () => { qEl.value = c.textContent; lookup(c.textContent); });

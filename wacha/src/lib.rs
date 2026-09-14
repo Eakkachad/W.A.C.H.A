@@ -27,6 +27,7 @@ pub mod relations;
 pub mod reverse;
 pub mod segmenter;
 pub mod tcc;
+pub mod translit;
 pub mod wordnet;
 
 use dictionary::{Dictionary, Entry};
@@ -40,6 +41,9 @@ pub struct Engine {
     segmenter: Segmenter,
     relations: RelationEngine,
     learner: LearnerStore,
+    /// Optional ORST transliteration index (R10 Phase T). Empty unless loaded
+    /// from `data/translit.tsv` via `load_from_dir*`.
+    translit: crate::translit::Translit,
 }
 
 /// The result of the full lookup journey for one query word.
@@ -104,7 +108,7 @@ impl Engine {
         let (all_words, dict) = Self::assemble_dict(word_list, entries, freq_text);
         let segmenter = Segmenter::from_words(all_words);
         let relations = RelationEngine::from_dictionary_with_wordnet(&dict, &wordnet::WordNet::embedded());
-        Self { dict, segmenter, relations, learner: LearnerStore::embedded() }
+        Self { dict, segmenter, relations, learner: LearnerStore::embedded(), translit: crate::translit::Translit::default() }
     }
 
     /// Same as [`Engine::build`], but reuses an already-built (e.g. disk-cached)
@@ -148,7 +152,7 @@ impl Engine {
             &wordnet::WordNet::embedded(),
             cache_dir,
         );
-        Self { dict, segmenter, relations, learner: LearnerStore::embedded() }
+        Self { dict, segmenter, relations, learner: LearnerStore::embedded(), translit: crate::translit::Translit::default() }
     }
 
     /// Same as [`Engine::build_from_segmenter`], but injects a PREBUILT global
@@ -173,7 +177,7 @@ impl Engine {
             &wordnet::WordNet::embedded(),
             pr_bytes,
         );
-        Self { dict, segmenter, relations, learner: LearnerStore::embedded() }
+        Self { dict, segmenter, relations, learner: LearnerStore::embedded(), translit: crate::translit::Translit::default() }
     }
 
     /// Shared helper: fold a word list + entries + optional freq table into the
@@ -323,6 +327,16 @@ impl Engine {
         }
 
         let cache_path = dir.join("words_th.datrie.cache");
+        // Optional ORST transliteration index (R10 Phase T). Open (published)
+        // reference, so it is loaded in BOTH the full and public builds.
+        let translit = match std::fs::read_to_string(dir.join("translit.tsv")) {
+            Ok(txt) => {
+                let t = crate::translit::Translit::from_tsv(&txt);
+                log(&format!("loaded {} transliteration pairs from translit.tsv", t.len()));
+                t
+            }
+            Err(_) => crate::translit::Translit::default(),
+        };
         // Expected hash of the FULL merged vocab (words_th + all entry headwords).
         let t_hash = Instant::now();
         let expected_hash = crate::segmenter::vocab_hash(word_list.iter());
@@ -333,13 +347,14 @@ impl Engine {
                 Ok(seg) => {
                     log(&format!("segmenter cache validated + deserialized in {:?}", t_load.elapsed()));
                     let t = Instant::now();
-                    let engine = Self::build_from_segmenter_cached(
+                    let mut engine = Self::build_from_segmenter_cached(
                         word_list,
                         entries,
                         freq_txt.as_deref(),
                         seg,
                         Some(dir),
                     );
+                    engine.translit = translit;
                     log(&format!(
                         "loaded segmenter from cache {} in {:?} (skipped ~43s trie build)",
                         cache_path.display(),
@@ -356,7 +371,8 @@ impl Engine {
 
         log("building trie from scratch (first run is slow, ~40s for 62k words)…");
         let t = Instant::now();
-        let engine = Self::build(word_list, entries, freq_txt.as_deref());
+        let mut engine = Self::build(word_list, entries, freq_txt.as_deref());
+        engine.translit = translit;
         log(&format!("engine built in {:?}", t.elapsed()));
         match engine.segmenter().save_cache(&cache_path) {
             Ok(()) => log(&format!("wrote segmenter cache to {}", cache_path.display())),
@@ -367,6 +383,17 @@ impl Engine {
 
     pub fn segmenter(&self) -> &Segmenter {
         &self.segmenter
+    }
+
+    /// Transliteration lookup (R10 Phase T), either direction. Empty unless
+    /// `data/translit.tsv` was loaded. See [`crate::translit`].
+    pub fn translit_lookup(&self, query: &str) -> Vec<crate::translit::TranslitHit> {
+        self.translit.lookup(query)
+    }
+
+    /// Number of transliteration pairs loaded.
+    pub fn translit_count(&self) -> usize {
+        self.translit.len()
     }
 
     pub fn word_count(&self) -> usize {

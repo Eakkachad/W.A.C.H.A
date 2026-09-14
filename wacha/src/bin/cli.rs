@@ -106,6 +106,14 @@ fn main() {
                 }
                 print_lookup(&engine, &engine.lookup(&word, 8), &word);
             }
+            "translit" => {
+                let term = rest.join(" ");
+                if term.is_empty() {
+                    eprintln!("usage: wacha translit <english or คำทับศัพท์>");
+                    std::process::exit(2);
+                }
+                print_translit(&engine, &term);
+            }
             // Bare word with no subcommand -> treat as a lookup.
             other => {
                 let word = std::iter::once(other.to_string())
@@ -574,6 +582,21 @@ fn print_segmentation(tokens: &[Token]) {
         println!("  ({oov} out-of-vocabulary cluster(s), shown in [brackets])");
     }
 }
+fn print_translit(engine: &Engine, term: &str) {
+    use wacha::translit::TRANSLIT_SOURCE;
+    let hits = engine.translit_lookup(term);
+    println!("\n──────── คำทับศัพท์: {term} ────────");
+    if hits.is_empty() {
+        println!("(ไม่พบคำทับศัพท์ — no official transliteration found)");
+        return;
+    }
+    for h in &hits {
+        let note = if h.note.is_empty() { String::new() } else { format!("  · หมายเหตุ: {}", h.note) };
+        println!("  {}  ⇄  {}{}", h.english, h.thai, note);
+    }
+    println!("  (ที่มา: {TRANSLIT_SOURCE})");
+}
+
 
 fn print_lookup(_engine: &Engine, r: &Lookup, query: &str) {
     println!("\n──────── {query} ────────");

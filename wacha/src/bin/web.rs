@@ -200,7 +200,34 @@ fn route(path: &str, engine: &Engine, rindex: &wacha::reverse::ReverseIndex) -> 
         let json = reverse_json(engine, rindex, &query);
         return ("200 OK", "application/json; charset=utf-8", json.into_bytes());
     }
+    if let Some(qs) = path.strip_prefix("/api/translit") {
+        let query = extract_query_param(qs, "q").unwrap_or_default();
+        let json = translit_json(engine, &query);
+        return ("200 OK", "application/json; charset=utf-8", json.into_bytes());
+    }
     ("404 Not Found", "text/plain; charset=utf-8", b"not found".to_vec())
+}
+
+/// Transliteration JSON: `{ "query", "source", "hits":[{ "english","thai","note" }] }`.
+fn translit_json(engine: &Engine, query: &str) -> String {
+    let hits = engine.translit_lookup(query);
+    let mut s = String::from("{");
+    s.push_str(&format!("\"query\":{},", json_str(query)));
+    s.push_str(&format!("\"source\":{},", json_str(wacha::translit::TRANSLIT_SOURCE)));
+    s.push_str("\"hits\":[");
+    for (i, h) in hits.iter().enumerate() {
+        if i > 0 {
+            s.push(',');
+        }
+        s.push_str(&format!(
+            "{{\"english\":{},\"thai\":{},\"note\":{}}}",
+            json_str(&h.english),
+            json_str(&h.thai),
+            json_str(&h.note)
+        ));
+    }
+    s.push_str("]}");
+    s
 }
 
 /// Reverse-dictionary JSON: `{ "query", "hits":[{ "word", "score", "matched":[] }] }`.
