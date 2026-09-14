@@ -48,6 +48,10 @@
   .linkbtn { background: none; border: 0; color: var(--accent); cursor: pointer; font-size: .92rem; padding: 4px 6px; }
   .linkbtn:hover { text-decoration: underline; }
   .mode-note { color: var(--muted); font-size: .88rem; margin: 0 0 10px; }
+  .mode-examples { margin: 0 0 12px; color: var(--muted); font-size: .9rem; }
+  .chip.demo { display: inline-block; padding: 3px 12px; margin: 3px 3px; border-radius: 12px;
+    background: #1c2740; border: 1px solid var(--accent); color: var(--accent); cursor: pointer; font-size: .95rem; }
+  .chip.demo:hover { background: var(--accent); color: #10142b; }
   .card {
     background: var(--panel); border: 1px solid var(--edge); border-radius: 14px;
     padding: 16px 18px; margin-top: 16px;
@@ -176,6 +180,15 @@ const MODES = {
     note: "โหมดตั้งชื่อ: ค้นคำที่มีในใจเพื่อดูความหมาย + รากคำ + คำใกล้เคียงเป็นทางเลือก · หรือค้นจากความหมายเพื่อหาคำจากคุณสมบัติที่อยากได้",
     // sections emphasised first (by CSS-less DOM reorder after render)
     order: ["def", "rellist-card", "graph-card", "learner", "translit", "evolution", "seg"],
+    // curated, pre-verified demo names (direct) + context-clue queries (reverse)
+    examples: [
+      { q: "ดารา", kind: "lookup", tip: "ชื่อ (ดาว · สันสกฤต ตารา)" },
+      { q: "วารี", kind: "lookup", tip: "ชื่อ (น้ำ · สันสกฤต วาริ)" },
+      { q: "อรุณ", kind: "lookup", tip: "ชื่อ (รุ่งอรุณ)" },
+      { q: "ฟ้า", kind: "lookup", tip: "ชื่อไทยแท้ (รากไทดั้งเดิม)" },
+      { q: "ความกล้าหาญ", kind: "reverse", tip: "ค้นจากคุณสมบัติ → วีรบุรุษ" },
+      { q: "แสงในตอนเช้า", kind: "reverse", tip: "ค้นจากคุณสมบัติ → อรุณ" },
+    ],
   },
   writing: {
     label: "หาคำให้ใช่กับสิ่งที่กำลังเขียน",
@@ -218,8 +231,23 @@ function setMode(mode) {
   $("#hint").hidden = mode !== "general";
   $("#modelabel").textContent = m.label;
   qEl.placeholder = m.placeholder;
-  resultEl.innerHTML = m.note ? `<div class="mode-note">${m.note}</div>` : "";
-  // translit mode leads with the transliteration tool; others start empty.
+  let noteHtml = m.note ? `<div class="mode-note">${m.note}</div>` : "";
+  if (m.examples && m.examples.length) {
+    noteHtml += `<div class="mode-examples">ลองตัวอย่างที่ยืนยันแล้ว: `
+      + m.examples.map(e =>
+          `<span class="chip demo" data-q="${esc(e.q)}" data-kind="${e.kind}" title="${esc(e.tip)}">${esc(e.q)}</span>`
+        ).join(" ")
+      + `</div>`;
+  }
+  resultEl.innerHTML = noteHtml;
+  // wire the curated demo chips (each is pre-verified to work)
+  resultEl.querySelectorAll(".chip.demo").forEach(el =>
+    el.addEventListener("click", () => {
+      qEl.value = el.dataset.q;
+      if (el.dataset.kind === "reverse") reverseSearch(el.dataset.q);
+      else lookup(el.dataset.q);
+    })
+  );
   qEl.value = "";
   qEl.focus();
 }
@@ -242,6 +270,22 @@ function reorderForMode() {
   const byKey = {};
   resultEl.querySelectorAll("[data-sec]").forEach(el => { byKey[el.getAttribute("data-sec")] = el; });
   m.order.forEach(key => { if (byKey[key]) resultEl.appendChild(byKey[key]); });
+  if (MODE === "naming") namingRelabel();
+}
+
+// R11 NAME: naming-oriented relabeling of the SAME sections (presentation only).
+// The flagship: no Thai naming tool grounds a name in real etymology — this does.
+function namingRelabel() {
+  const set = (sec, text) => {
+    const h = resultEl.querySelector(`[data-sec="${sec}"] > h2`);
+    if (h) h.textContent = text;
+  };
+  set("def", "ความหมายของชื่อนี้ (meaning)");
+  set("rellist-card", "คำใกล้เคียงที่อาจเป็นทางเลือกอื่น (alternatives)");
+  set("graph-card", "แผนที่ความหมายใกล้เคียง — คลิกเพื่อสำรวจชื่ออื่น");
+  // Relabel the etymology sub-line inside the definition card as "รากศัพท์ของชื่อ".
+  const etymH = resultEl.querySelector('[data-sec="def"] .etym .ex-h');
+  if (etymH) etymH.textContent = "รากศัพท์ของชื่อ (etymology): ";
 }
 
 function esc(s) {
