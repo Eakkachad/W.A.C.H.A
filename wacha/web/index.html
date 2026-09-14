@@ -113,6 +113,11 @@
   .chip.subword:hover { background: #26334f; border-color: var(--accent2); }
   .evo-ed { margin: 10px 0; padding: 8px 12px; border-left: 3px solid var(--accent2); background: #161f33; }
   .evo-ed .draft { margin-top: 6px; color: #ffcc66; font-size: .9rem; font-weight: 600; }
+  .sound { margin-top: 12px; padding-top: 10px; border-top: 1px dashed #2a3550; }
+  .sound .ex-h { color: var(--accent2); font-size: .9rem; }
+  .sound-badge { display: inline-block; padding: 2px 12px; border-radius: 12px; font-weight: 700;
+    background: rgba(124,156,255,.16); color: var(--accent); border: 1px solid var(--accent); margin: 0 6px; }
+  .sound-hedge { margin-top: 6px; color: #ffcc66; font-size: .82rem; font-style: italic; }
   .legend { margin-top: 12px; color: var(--muted); font-size: .82rem; text-align: center; line-height: 1.9; }
   .g-node.src-wn circle { stroke: var(--oov); stroke-dasharray: 4 3; }
   .g-edge.src-wn { stroke: var(--oov); stroke-dasharray: 4 3; opacity: .7; }
@@ -459,6 +464,16 @@ function render(d) {
         + d.entry.sub_entries.map(w =>
             `<span class="chip subword" data-w="${esc(w)}">${esc(w)}</span>`).join(" ")
         + `</div>`;
+    }
+    // R11 SOUND — hard↔soft character badge, shown in naming mode only, ALWAYS
+    // with the mandatory research hedge (never present it as settled Thai fact).
+    if (MODE === "naming" && d.sound) {
+      const s = d.sound;
+      const why = (s.why && s.why.length) ? ` · ${s.why.map(esc).join(" · ")}` : "";
+      html += `<div class="sound"><span class="ex-h">บุคลิกเสียงของชื่อ: </span>`
+        + `<span class="sound-badge">${esc(s.label)}</span>`
+        + `<span class="meta">(ระดับ ${s.bucket}/5${why})</span>`
+        + `<div class="sound-hedge">⚠ ${esc(s.hedge)}</div></div>`;
     }
   } else {
     html += `<span class="empty">ไม่พบนิยามของคำนี้ในพจนานุกรม (no dictionary entry)</span>`;

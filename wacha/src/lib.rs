@@ -27,6 +27,7 @@ pub mod learner;
 pub mod relations;
 pub mod reverse;
 pub mod segmenter;
+pub mod sound;
 pub mod tcc;
 pub mod translit;
 pub mod wordnet;
@@ -73,6 +74,10 @@ pub struct Lookup {
     /// Word-evolution timeline (2542→2554→2569), non-empty only for ก-headwords
     /// present in ≥1 edition (Phase W). The 2569 row carries its draft flag.
     pub evolution: Vec<crate::evolution::EvolutionEntry>,
+    /// R11 sound-symbolism profile (hard↔soft character), computed from the
+    /// entry's pronunciation (or the query word if none). Always present; the
+    /// UI shows it with a mandatory research hedge. `None` only if query empty.
+    pub sound: Option<crate::sound::SoundProfile>,
 }
 
 /// A display-friendly view of a dictionary entry.
@@ -101,6 +106,9 @@ pub struct EntryView {
     /// ลูกคำ (sub-entries): real compound headwords derived from this entry.
     /// Each is itself a lookupable headword (free cross-navigation). May be empty.
     pub sub_entries: Vec<String>,
+    /// Pronunciation respelling (e.g. "[กอ]"), if the entry carries one — the
+    /// input to the R11 sound-symbolism scorer. May be empty.
+    pub pronunciation: Option<String>,
 }
 
 impl Engine {
@@ -704,6 +712,7 @@ impl Engine {
                     .map(|et| (et.lang.clone(), et.form.clone()))
                     .collect(),
                 sub_entries: e.sub_entries.clone(),
+                pronunciation: e.pronunciation.clone(),
             }
         });
         let related = self.relations.related(query, top_k);
@@ -712,7 +721,16 @@ impl Engine {
         // dimensions when they exist (empty otherwise — no extra cost).
         let translit = self.translit.lookup(query);
         let evolution = self.evolution.timeline(query);
-        Lookup { segmentation, entry, related, learner, translit, evolution }
+        // R11 SOUND: score the entry's pronunciation if present, else the query word.
+        let sound = {
+            let basis = entry
+                .as_ref()
+                .and_then(|e| e.pronunciation.clone())
+                .filter(|p| !p.trim().is_empty())
+                .unwrap_or_else(|| query.to_string());
+            if basis.trim().is_empty() { None } else { Some(crate::sound::score(&basis)) }
+        };
+        Lookup { segmentation, entry, related, learner, translit, evolution, sound }
     }
 
     /// Number of words with offline-precomputed learner content loaded.

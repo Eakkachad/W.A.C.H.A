@@ -486,7 +486,19 @@ fn lookup_json(engine: &Engine, query: &str) -> String {
             json_str(label)
         ));
     }
-    s.push_str("]}");
+    s.push_str("]");
+    // R11 SOUND: hard↔soft sound-symbolism profile (always present; UI hedges it)
+    match &r.sound {
+        Some(sp) => {
+            let why = sp.why.iter().map(|w| json_str(w)).collect::<Vec<_>>().join(",");
+            s.push_str(&format!(
+                ",\"sound\":{{\"score\":{:.2},\"bucket\":{},\"label\":{},\"why\":[{}],\"hedge\":{}}}",
+                sp.score, sp.bucket, json_str(sp.label), why, json_str(wacha::sound::HEDGE)
+            ));
+        }
+        None => s.push_str(",\"sound\":null"),
+    }
+    s.push_str("}");
     s
 }
 
