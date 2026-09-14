@@ -1615,3 +1615,51 @@ optimization target. A3's **synthetic** scale curve (1×–10× the ~40k RID sca
 is super-linear (25 s → 42 min), memory linear; `COMPETITION_DAY.md` was re-timed to **61 s** cold at the
 current scale. Full detail + raw numbers in `VERIFY_R8.md`; benchmark tables updated per-task in
 `BENCHMARKS.md`. **All eleven R8 tasks complete** (S1b stopped correctly; nothing left half-done).
+
+### 2026-09-14 (Round 8 review) — WASM regression gap closed
+
+Review pass by the reviewing agent. R8 accepted (10/10 tasks, including both droppables). **One process
+gap found and closed in place**, because it had already shipped a broken flagship once.
+
+**The gap.** R7 verified the WASM build (W2, `b22ca3d`), then S2 (`996b56a`) added `Instant::now()` to the
+engine-build path — which panics on `wasm32-unknown-unknown` ("time not implemented"). Nothing re-checked
+the WASM target, so **R7 shipped with the offline flagship trapping on init**, and it was only found in
+R8's W3. Root cause of the miss: neither `verify_r5.sh` nor `verify_pitch.sh` touched the WASM build at
+all, and the W2/W3 measurements were taken in node ad-hoc rather than by a committed script.
+
+**Closed:**
+- `wacha-wasm/smoke.mjs` — instantiates the artifact with no imports, asserts `wacha_init` does not trap,
+  checks segmentation against a known sentence, requires **real Kaikki definitions for three non-seed
+  words** (this is what proves the W2 dataset actually shipped, not the reduced one), requires related
+  words and a reverse-dictionary hit, and hammers 50 repeated lookups to catch memory corruption.
+- Wired in as `verify_r5.sh` **§9**, with graceful SKIPs when node or the built artifact is absent.
+- Verified passing against the current artifact: instantiate 2.7 ms, `wacha_init` 42.1 ms / 62,106 words,
+  `ปัญญาประดิษฐ์`/`ครอบครัว`/`รถยนต์` all return real definitions, `reverse "ที่เก็บเงินของรัฐ"` → `คลัง`.
+
+**Still open, and it needs a human:** node catches traps, panics and wrong output, but **not** the service
+worker, a real offline toggle, or phone rendering — the things a judge actually touches. The flagship has
+**never been confirmed in a real browser**; `VERIFY_R7.md` says so itself ("CLI cannot drive a browser's
+DevTools offline toggle"). A concrete checklist was added to `PITCH.md` §4 (serve `wacha-wasm/web`, look up
+a non-seed word, run a reverse query, toggle DevTools offline, then repeat on the actual demo phone in
+airplane mode, and record the real time-to-first-lookup). **Do this before the event.**
+
+**Note for whoever runs it:** the WASM build reports **62,106** searchable words against the native
+build's 72,175 — it ships the LEXiTRON list without the Kaikki-only vocabulary. Definitions are the full
+29,601, so this affects which words are *findable*, not which have definitions. Worth confirming that is
+intended before the pitch describes the offline build's coverage.
+
+**R8 verified independently by the reviewer:** V1 — my "2-member group" premise was wrong; `เดิน→ดำเนิน`
+sits in a size-46 single-source Wiktionary synset, so band C and the ⚠ flag are correct (`wacha probe`
+added, and `ข้อหา→มลทิน` at size 2 correctly does not warn). S1b stopped a second time (6.96×, differential
+8,990 mismatches) — correct call, and two real defects were fixed en route. D2 reports WL-F1 **0.6611** vs
+boundary 0.8015 and states plainly it does not beat newmm's 0.74. C's acceptance query is reported as
+**failing** in an "Honest results (un-curated)" section — I ran four queries of my own and reproduced it:
+`ที่เก็บเงินของรัฐ`→`คลัง` and `ความรู้สึกเสียใจอย่างมาก`→`น้ำตาตกใน`/`สะอื้น` are good,
+`สัตว์เลี้ยงสี่ขาเห่าได้` and `เครื่องมือสำหรับเขียนหนังสือ` fail. The cause is structural: `สุนัข`'s gloss
+("สัตว์เลี้ยงลูกด้วยนมชนิดหนึ่ง เลี้ยงไว้เฝ้าบ้าน; หมา") contains neither "เห่า" nor "สี่ขา", so BM25 over
+terse glosses cannot reach it. L1, W3, A1, A2, A3, E1 all check out. 94 tests; `katgpt-rs` untouched.
+
+**A3's super-linear build curve is the finding to carry forward:** 1× = 25 s but 10× = 2,493 s. The real
+RID (~40k headwords) is *smaller* than the current 72,175-word vocabulary, so day-of ingestion stays
+viable (`COMPETITION_DAY` re-timed at 61 s cold) — but it means S1b's 6.96× is worth a third attempt, since
+it would take that 61 s to roughly 9 s and make live on-stage ingestion comfortable rather than tense.

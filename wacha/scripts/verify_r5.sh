@@ -89,3 +89,21 @@ hr "done"
 
 hr "8. pitch regression (T4) — PITCH.md §3 demo claims vs live engine"
 bash "$(dirname "$0")/verify_pitch.sh" || echo "PITCH REGRESSION FAILED — fix PITCH.md §3"
+
+hr "9. WASM smoke test — the offline flagship must still instantiate and answer"
+# Why this exists: R7 verified the WASM build (W2), then S2 added Instant::now()
+# to the engine build path, which panics on wasm32. Nothing re-checked WASM, so
+# R7 shipped with the flagship trapping on init. This catches that class of bug.
+# Node is enough for traps/panics/wrong output; it does NOT replace the
+# real-browser + offline-toggle check on the pre-event human checklist.
+WASM_DIR="$(cd "$(dirname "$0")/../../wacha-wasm" 2>/dev/null && pwd)"
+if [ -z "$WASM_DIR" ] || [ ! -f "$WASM_DIR/smoke.mjs" ]; then
+  echo "SKIP: wacha-wasm/smoke.mjs not found"
+elif ! command -v node >/dev/null 2>&1; then
+  echo "SKIP: node not installed (WASM smoke test not run)"
+elif [ ! -f "$WASM_DIR/web/wacha_wasm.wasm" ]; then
+  echo "SKIP: web/wacha_wasm.wasm not built — run 'cd wacha-wasm && bash web/build.sh'"
+else
+  node "$WASM_DIR/smoke.mjs" "$WASM_DIR/web/wacha_wasm.wasm" \
+    || echo "WASM SMOKE FAILED — the offline flagship is broken, do not ship"
+fi
